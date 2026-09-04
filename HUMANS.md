@@ -89,8 +89,8 @@ write `/proc`, sysfs, or cgroup files.
 ## Verify
 
 ```sh
-cargo test
-cargo clippy --all-targets -- --deny warnings
+cargo test --locked
+cargo clippy --locked --all-targets -- --deny warnings
 cargo fmt --check
 heft --once
 ```

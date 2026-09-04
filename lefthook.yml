@@ -15,13 +15,13 @@ pre-commit:
       run: cargo fmt --check
     - name: clippy
       glob: "*.{rs,toml}"
-      run: cargo clippy --all-targets -- -D warnings
+      run: cargo clippy --locked --all-targets -- -D warnings
 
 pre-push:
   parallel: true
   jobs:
     - name: test
-      run: cargo test
+      run: cargo test --locked
     - name: deny
       run: cargo deny --locked check
     - name: machete

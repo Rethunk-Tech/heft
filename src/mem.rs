@@ -87,12 +87,12 @@ pub fn read_gpu() -> GpuPool {
             continue;
         }
         let dir = ent.path().join("device");
-        if let Some(t) = read_u64(&dir.join("mem_info_vram_total")) {
-            if let Some(u) = read_u64(&dir.join("mem_info_vram_used")) {
-                vram_total = vram_total.saturating_add(t);
-                vram_used = vram_used.saturating_add(u);
-                vram_found = true;
-            }
+        if let Some(t) = read_u64(&dir.join("mem_info_vram_total"))
+            && let Some(u) = read_u64(&dir.join("mem_info_vram_used"))
+        {
+            vram_total = vram_total.saturating_add(t);
+            vram_used = vram_used.saturating_add(u);
+            vram_found = true;
         }
         if let Some(t) = read_u64(&dir.join("mem_info_gtt_total")) {
             gtt_total = gtt_total.saturating_add(t);

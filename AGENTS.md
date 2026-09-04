@@ -122,8 +122,8 @@ JSON shape: `host.users[].applications|user_services|containers`,
 
 ```
 cargo fmt
-cargo clippy --all-targets -- -D warnings
-cargo test
+cargo clippy --locked --all-targets -- -D warnings
+cargo test --locked
 cargo deny --locked check
 cargo machete
 ```

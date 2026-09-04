@@ -5,7 +5,7 @@ Read [AGENTS.md](AGENTS.md) first — grouping invariants live there, not here.
 ## Setup
 
 [HUMANS.md](HUMANS.md) is the runbook. Toolchain: stable Rust (Fedora 1.98 is
-fine; CI uses current stable). MSRV is `rust-version` in `Cargo.toml` (1.85,
+fine; CI uses current stable). MSRV is `rust-version` in `Cargo.toml` (1.88,
 edition 2024).
 
 ```sh
@@ -13,8 +13,8 @@ lefthook install     # per clone; hooks are not committed by git
 cargo binstall cargo-deny cargo-machete   # pre-push; do not sudo
 ```
 
-Pre-commit runs `cargo fmt --check` and `cargo clippy --all-targets -- -D warnings`
-when Rust or Cargo.toml is staged. Pre-push runs `cargo test`, `cargo deny --locked check`,
+Pre-commit runs `cargo fmt --check` and `cargo clippy --locked --all-targets -- -D warnings`
+when Rust or Cargo.toml is staged. Pre-push runs `cargo test --locked`, `cargo deny --locked check`,
 and `cargo machete`.
 
 ## Gates
@@ -23,8 +23,8 @@ Run before a commit that touches code:
 
 ```sh
 cargo fmt
-cargo clippy --all-targets -- -D warnings
-cargo test
+cargo clippy --locked --all-targets -- -D warnings
+cargo test --locked
 cargo deny --locked check
 cargo machete
 ```

@@ -636,12 +636,8 @@ fn pct_weight(p: f64) -> u64 {
 fn cpu_header_line(tree: &HostTree, width: usize) -> Line<'static> {
     let prefix = " CPU [";
     let mid = format!("] {:>5}%  ", fmt_pct(tree.cpu_pct));
-    let disk = disk_suffix(tree);
     let legend_len = "usr/sys/wait".len();
-    let show_disk =
-        !disk.is_empty() && width >= prefix.len() + 8 + mid.len() + legend_len + disk.len();
-    let extra = if show_disk { disk.len() } else { 0 };
-    let bar_w = width.saturating_sub(prefix.len() + mid.len() + legend_len + extra);
+    let bar_w = width.saturating_sub(prefix.len() + mid.len() + legend_len);
     let parts = [
         (pct_weight(tree.cpu_user_pct), Color::Cyan),
         (pct_weight(tree.cpu_system_pct), Color::Magenta),
@@ -655,9 +651,6 @@ fn cpu_header_line(tree: &HostTree, width: usize) -> Line<'static> {
     spans.push(Span::styled("sys", Style::default().fg(Color::Magenta)));
     spans.push(Span::raw("/"));
     spans.push(Span::styled("wait", Style::default().fg(Color::Yellow)));
-    if show_disk {
-        spans.push(Span::raw(disk));
-    }
     Line::from(spans)
 }
 
@@ -703,18 +696,6 @@ fn mem_header_line(tree: &HostTree, width: usize) -> Line<'static> {
     spans.push(Span::raw("/"));
     spans.push(Span::styled("buf", Style::default().fg(Color::Green)));
     Line::from(spans)
-}
-
-fn disk_suffix(tree: &HostTree) -> String {
-    let m = host_m(tree);
-    if m.disk_r_bps.is_none() && m.disk_w_bps.is_none() {
-        return String::new();
-    }
-    format!(
-        "  {} R  {} W",
-        fmt_rate(m.disk_r_bps),
-        fmt_rate(m.disk_w_bps)
-    )
 }
 
 fn stacked_bar(width: usize, parts: &[(u64, Color)], capacity: u64) -> Vec<Span<'static>> {
@@ -922,5 +903,37 @@ mod tests {
     fn share_cells_leaves_remainder_for_idle() {
         let cells = share_cells(&[18, 10, 5], 100, 20);
         assert_eq!(cells.iter().sum::<usize>(), 6);
+    }
+
+    #[test]
+    fn cpu_header_omits_disk_rates_and_fills_width() {
+        let tree = HostTree {
+            cpu_pct: 9.6,
+            cpu_user_pct: 5.0,
+            cpu_system_pct: 3.0,
+            cpu_wait_pct: 1.6,
+            system: vec![IdentNode {
+                id: "sys".into(),
+                title: "sys".into(),
+                nproc: 1,
+                metrics: Metrics {
+                    disk_r_bps: Some(96.4e6),
+                    disk_w_bps: Some(833.2e3),
+                    ..Metrics::default()
+                },
+                instances: Vec::new(),
+                containers: Vec::new(),
+            }],
+            ..HostTree::default()
+        };
+        let width = 80;
+        let text = cpu_header_line(&tree, width).to_string();
+        assert!(text.contains("usr"));
+        assert!(text.contains("wait"));
+        assert!(!text.contains("/s R"));
+        assert!(!text.contains("/s W"));
+        let bar = text.chars().filter(|c| *c == '█' || *c == '░').count();
+        let mid = format!("] {:>5}%  ", fmt_pct(tree.cpu_pct)).len();
+        assert_eq!(bar, width - " CPU [".len() - mid - "usr/sys/wait".len());
     }
 }

@@ -107,7 +107,8 @@ unfilled). Header MEM is one MemTotal bar when the APU VRAM carve-out is unified
 VRAM/GTT resident paint first inside used, then Cached/Buffers, then anon, clipped
 so the stack never exceeds `used.min(MemTotal)`. Discrete VRAM as a second tank
 is out of scope. TUI header is 2 unbordered rows; the only persistent rules are
-header↔tree and tree↔footer.
+header↔tree and tree↔footer. Disk R/W rates are table columns only — not on the
+header (the formatted rates change width every tick).
 
 TUI sampling runs on a background thread; the ratatui loop only swaps in the
 last complete tree and never blocks on `/proc` I/O. `--once` / `--json` take

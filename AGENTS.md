@@ -1,0 +1,101 @@
+# heft — agent guide
+
+Read-only Linux process monitor. Binary name `heft`.
+
+## Start here
+
+@HUMANS.md — install, keys, XDG, live verify.
+
+## Layout
+
+```
+src/main.rs          clap: TUI default, --once, --json, --interval
+src/lib.rs           modules
+src/types.rs         Process, Metrics, HostTree, JSON shape
+src/proc.rs          every visible PID; blank metrics on EACCES
+src/cpu.rs           /proc/stat + per-pid utime/stime rates
+src/mem.rs           meminfo, statm RSS, host VRAM
+src/io.rs            /proc/pid/io rates and smaps_rollup PSS
+src/gpu.rs           amdgpu fdinfo; drm-client-id dedupe
+src/classify.rs      launcher / worker / shell / terminal / compositor tables
+src/identity.rs      cgroup parse, merge key + display name
+src/containers.rs    GET-only docker/podman; project vs per-container
+src/group.rs         Host → User → Applications | User Services | Containers, System
+src/config.rs        XDG view.json; persist only on explicit save
+src/once.rs          table and JSON
+src/ui.rs            ratatui header + tree table
+tests/fixtures/      GUI + docker grouping snapshots
+```
+
+No `sysinfo` crate. No `nix` unless rustix cannot do it; v1 uses `std` + `libc`.
+Never read `/proc/pid/mem`. Never ptrace.
+
+## Grouping invariants
+
+- **Host** is the machine, not the compositor or a terminal.
+- Bucket: docker/libpod scope or helper that names that id → Containers;
+  `uid==0 && ppid==2` or leftover `system.slice` → System; else that uid's User.
+- Under a User: user-instance unit `*.service` not starting with `app-` →
+  User Services; else Applications. `init.scope` + `systemd --user` is a user
+  service. Known compositors are user services even if the unit looks like an
+  app.
+- Identity is `exe` basename (else `comm`), not the inherited cgroup. Ignore
+  terminal transients, toolkit-named Chromium scopes, and file-manager dbus
+  scopes for the *name*; Chromium scopes may still be an instance key when they
+  belong to this app.
+- Launchers (`bwrap`, `flatpak`, `zypak-helper`, `snap-confine`, `bunx`, `npx`,
+  `AppRun`, `firejail`, `xdg-dbus-proxy`) have no top-level row; their cost
+  bills to the unique payload identity and they still appear inside the
+  expanded process list. Nested bwrap folds into the payload.
+- Workers (`--type=*`, `chrome_crashpad_handler`, Electron `MainThread`,
+  `npm`/`node`/`python` under a real app that is not a shell/terminal/compositor/systemd)
+  fold into that app.
+- Split when the child's resolved identity differs and the child is a real app.
+  Idle interactive shells stay their own Applications row.
+- Generic interpreters (`bun`, `python`, `java`, `node`, `MainThread`) fall back
+  to the user unit or a distinctive script basename so they do not collapse into
+  one interpreter row. `main.js` is not distinctive.
+- Containers: never System, never `dockerd`/`containerd`/`engined` the user
+  service. Project key is `com.supabase.cli.project` → `supabase:<name>`, else
+  `supabase_<role>_<project>` names, else `com.docker.compose.project`. No
+  project → one row per container name. `engined.spec` is not a merge key.
+  `containerd-shim-runc-v2 -id`, `docker-proxy -container-ip`, `conmon`,
+  `runc`/`crun` bill to that container. Owner: workdir path uid, else
+  `engined.service` uid for `engined-*` / `engined.spec`, else Host → Containers.
+
+## Sampler
+
+CPU `%core` = `100 * Δ(utime+stime) / (CLK_TCK * dt)` (can exceed 100).
+`%machine` = `%core / nproc`. PSS from `smaps_rollup`; RSS from `statm`.
+Disk from `read_bytes`/`write_bytes`. GPU: prefer `drm-resident-vram` /
+`drm-resident-gtt` over `drm-total-*`; engine ns deltas → gfx% / compute%.
+
+`--once` / `--json` take two snapshots `interval` seconds apart.
+
+JSON shape: `host.users[].applications|user_services|containers`,
+`host.containers`, `host.system`. Project identities include
+`containers[].processes[]`.
+
+## Gates
+
+```
+cargo fmt
+cargo clippy --all-targets -- -D warnings
+cargo test
+```
+
+Suite stays under 30s. No live GPU in CI. Docker sock is optional in CI;
+grouping tests use `tests/fixtures/`.
+
+Release profile: LTO, `codegen-units = 1`, strip, `panic = abort`.
+
+## Conventions
+
+- Comments explain non-obvious why, never history.
+- Never suppress a linter. No `any` equivalent (`unwrap` on I/O is a bug).
+- Greenfield: no shims, no dead exports.
+- Conventional commits; explicit paths; no AI trailers. **Push only when told.**
+
+## Git
+
+Remote is `Rethunk-Tech/heft`, private.

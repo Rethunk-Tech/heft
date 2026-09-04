@@ -12,6 +12,16 @@ use std::os::unix::fs::MetadataExt;
 use crate::identity::docker_scope_id;
 use crate::types::Process;
 
+/// Docker/containerd ids are hex. Byte-slicing `s[..12]` panics when 12 is not a
+/// UTF-8 boundary; release is `panic = abort`.
+fn hex_id(s: &str) -> Option<&str> {
+    (s.len() >= 12 && s.bytes().all(|b| b.is_ascii_hexdigit())).then_some(s)
+}
+
+fn hex12(s: &str) -> Option<&str> {
+    hex_id(s).and_then(|id| id.get(..12))
+}
+
 fn path_owner(path: &Path) -> Option<u32> {
     std::fs::symlink_metadata(path).ok().map(|m| m.uid())
 }
@@ -58,8 +68,8 @@ impl ContainerIndex {
             if item.state.as_deref() == Some("exited") || item.state.as_deref() == Some("dead") {
                 continue;
             }
-            let inspect = unix_get(&sock, &format!("/containers/{}/json", item.id))
-                .ok()
+            let inspect = hex_id(&item.id)
+                .and_then(|id| unix_get(&sock, &format!("/containers/{id}/json")).ok())
                 .and_then(|b| serde_json::from_slice::<Inspect>(&b).ok());
             idx.insert_item(&item, inspect.as_ref());
         }
@@ -101,12 +111,15 @@ impl ContainerIndex {
         inspect: Option<&Inspect>,
         workdir_uids: Option<&HashMap<PathBuf, u32>>,
     ) {
+        let Some(id) = hex_id(&item.id).map(str::to_ascii_lowercase) else {
+            return;
+        };
         let name = item
             .names
             .first()
             .map(|n| n.trim_start_matches('/').to_string())
             .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| format!("docker-{}", item.id.chars().take(12).collect::<String>()));
+            .unwrap_or_else(|| format!("docker-{}", hex12(&id).unwrap_or(id.as_str())));
         let labels = item.labels.clone().unwrap_or_default();
         let (ident_key, ident_title, member_name) = project_identity(&name, &labels);
         let workdir = labels.get("com.supabase.cli.workdir").cloned().or_else(|| {
@@ -134,7 +147,7 @@ impl ContainerIndex {
             return;
         }
         let info = ContainerInfo {
-            id: item.id.clone(),
+            id,
             name,
             ident_key,
             ident_title,
@@ -145,31 +158,29 @@ impl ContainerIndex {
         };
         self.index_ids(&info);
         for ip in ips {
-            self.by_ip.insert(ip, item.id.clone());
+            self.by_ip.insert(ip, info.id.clone());
         }
     }
 
     fn index_ids(&mut self, info: &ContainerInfo) {
-        self.by_id.insert(info.id.clone(), info.clone());
-        if info.id.len() >= 12 {
-            self.by_id.insert(info.id[..12].to_string(), info.clone());
+        let Some(id) = hex_id(&info.id) else {
+            return;
+        };
+        self.by_id.insert(id.to_ascii_lowercase(), info.clone());
+        if let Some(short) = hex12(id) {
+            self.by_id.insert(short.to_ascii_lowercase(), info.clone());
         }
     }
 
-    pub fn get(&self, id: &str) -> Option<&ContainerInfo> {
+    pub fn get(&self, raw: &str) -> Option<&ContainerInfo> {
+        let id = hex_id(raw)?.to_ascii_lowercase();
         self.by_id
-            .get(id)
-            .or_else(|| {
-                if id.len() >= 12 {
-                    self.by_id.get(&id[..12])
-                } else {
-                    None
-                }
-            })
+            .get(&id)
+            .or_else(|| id.get(..12).and_then(|s| self.by_id.get(s)))
             .or_else(|| {
                 self.by_id
                     .values()
-                    .find(|c| c.id.starts_with(id) || id.starts_with(&c.id))
+                    .find(|c| c.id.starts_with(&id) || id.starts_with(&c.id))
             })
     }
 
@@ -207,13 +218,12 @@ pub fn helper_id(p: &Process) -> Option<String> {
         || matches!(name.as_str(), "conmon" | "runc" | "crun");
     if is_shim || is_runtime {
         if let Some(id) = crate::classify::cmdline_flag_value(&p.cmdline, "-id") {
-            return Some(id.to_ascii_lowercase());
+            return hex_id(id).map(str::to_ascii_lowercase);
         }
-        for arg in &p.cmdline {
-            if arg.len() >= 12 && arg.bytes().all(|b| b.is_ascii_hexdigit()) {
-                return Some(arg.to_ascii_lowercase());
-            }
-        }
+        return p
+            .cmdline
+            .iter()
+            .find_map(|arg| hex_id(arg).map(str::to_ascii_lowercase));
     }
     None
 }
@@ -273,17 +283,49 @@ fn docker_sock() -> Option<PathBuf> {
     if podman.exists() { Some(podman) } else { None }
 }
 
+fn docker_get_path(path: &str) -> bool {
+    if path
+        .bytes()
+        .any(|b| matches!(b, b'\r' | b'\n' | b'\0' | b' '))
+    {
+        return false;
+    }
+    if path == "/containers/json" {
+        return true;
+    }
+    path.strip_prefix("/containers/")
+        .and_then(|rest| rest.strip_suffix("/json"))
+        .is_some_and(|id| hex_id(id).is_some())
+}
+
+fn http_2xx(head: &[u8]) -> bool {
+    head.split(|&b| b == b' ')
+        .nth(1)
+        .and_then(|c| c.get(..3))
+        .is_some_and(|c| c[0] == b'2' && c[1].is_ascii_digit() && c[2].is_ascii_digit())
+}
+
 fn unix_get(sock: &Path, path: &str) -> Result<Vec<u8>, crate::types::Error> {
+    if !docker_get_path(path) {
+        return Err(crate::types::Error("invalid docker path".into()));
+    }
     let mut s = UnixStream::connect(sock)?;
     s.set_read_timeout(Some(Duration::from_secs(2)))?;
     s.set_write_timeout(Some(Duration::from_secs(2)))?;
     write!(s, "GET {path} HTTP/1.0\r\nHost: localhost\r\n\r\n")?;
+    const MAX: usize = 4 * 1024 * 1024;
     let mut buf = Vec::new();
-    s.read_to_end(&mut buf)?;
+    s.take(MAX as u64 + 1).read_to_end(&mut buf)?;
+    if buf.len() > MAX {
+        return Err(crate::types::Error("docker response too large".into()));
+    }
     let sep = buf
         .windows(4)
         .position(|w| w == b"\r\n\r\n")
         .ok_or_else(|| crate::types::Error("short docker response".into()))?;
+    if !http_2xx(&buf[..sep]) {
+        return Err(crate::types::Error("docker HTTP error".into()));
+    }
     Ok(buf[sep + 4..].to_vec())
 }
 
@@ -364,5 +406,55 @@ mod tests {
         let (k, _, m) = project_identity("engined-whisper", &HashMap::new());
         assert_eq!(k, "engined-whisper");
         assert!(m.is_none());
+    }
+
+    fn runc(id: &str) -> Process {
+        Process {
+            comm: "runc".into(),
+            cmdline: vec!["runc".into(), "-id".into(), id.into()],
+            ..Process::default()
+        }
+    }
+
+    fn info(id: &str) -> ContainerInfo {
+        ContainerInfo {
+            id: id.into(),
+            name: "x".into(),
+            ident_key: "x".into(),
+            ident_title: "x".into(),
+            member_name: None,
+            ips: Vec::new(),
+            owner_uid: None,
+            running: true,
+        }
+    }
+
+    #[test]
+    fn untrusted_helper_id_does_not_panic_or_index() {
+        // 11 ASCII + U+00E9 (2 bytes) = 13 bytes; byte 12 is mid-character.
+        let mid = "01234567890é";
+        assert_eq!(mid.len(), 13);
+        assert!(mid.get(..12).is_none());
+        assert!(helper_id(&runc(mid)).is_none());
+        assert!(helper_id(&runc("zzzzzzzzzzzzz")).is_none());
+
+        let mut idx = ContainerIndex::default();
+        idx.index_ids(&info(mid));
+        idx.index_ids(&info("zzzzzzzzzzzzz"));
+        assert!(idx.by_id.is_empty());
+        assert!(idx.get(mid).is_none());
+        assert!(idx.get("zzzzzzzzzzzzz").is_none());
+
+        let hex = "0123456789abcdef";
+        idx.index_ids(&info(hex));
+        assert!(idx.get(hex).is_some());
+        assert!(idx.get("0123456789ab").is_some());
+        assert!(idx.get(mid).is_none());
+        assert_eq!(helper_id(&runc(hex)).as_deref(), Some(hex));
+
+        assert!(!docker_get_path("/containers/0123456789ab\r\nHost: x/json"));
+        assert!(!docker_get_path(&format!("/containers/{mid}/json")));
+        assert!(docker_get_path("/containers/json"));
+        assert!(docker_get_path("/containers/0123456789ab/json"));
     }
 }

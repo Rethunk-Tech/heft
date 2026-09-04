@@ -112,6 +112,18 @@ fn compute_place(
         };
     }
 
+    // Pipe helpers under a launcher (flatpak bwrap `cat`) or an app (vivaldi).
+    // Immediate parent only — never a sibling identity under a mixed shell.
+    if classify::is_session_noise(p)
+        && let Some(parent) = resolve_one(p.ppid, curr, containers, memo, walking)
+        && parent.folder != Folder::System
+    {
+        return Place {
+            instance: identity::instance_key(p, None),
+            ..parent
+        };
+    }
+
     if classify::is_foldable_helper(p) {
         if let Some(payload) = unique_descendant_ident(p.pid, curr, containers, memo, walking) {
             return Place {
@@ -254,9 +266,18 @@ fn unique_descendant_ident(
 ) -> Option<Place> {
     let mut kids = Vec::new();
     for child in curr.values().filter(|c| c.ppid == pid) {
-        if classify::is_foldable_helper(child) || classify::is_worker(child) {
+        if classify::is_foldable_helper(child) || classify::is_session_noise(child) {
             if let Some(p) = unique_descendant_ident(child.pid, curr, containers, memo, walking) {
                 kids.push(p);
+            }
+            continue;
+        }
+        if classify::is_worker(child) {
+            if let Some(p) = unique_descendant_ident(child.pid, curr, containers, memo, walking) {
+                kids.push(p);
+            } else {
+                // Zygote-only sandbox: no non-worker grandchild to resolve.
+                kids.push(user_place(child));
             }
             continue;
         }

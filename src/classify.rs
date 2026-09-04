@@ -13,7 +13,11 @@ const LAUNCHERS: &[&str] = &[
     "firejail",
     "xdg-dbus-proxy",
     "zypak-sandbox",
+    "startvesktop",
 ];
+
+/// zypak-helper subcommand, not a payload.
+const HINT_SKIP: &[&str] = &["child"];
 
 const GENERICS: &[&str] = &[
     "bun",
@@ -92,15 +96,26 @@ pub fn is_launcher(p: &Process) -> bool {
     let named = name_of(p);
     let names = [p.comm.as_str(), named.as_str()];
     for n in names {
-        let l = norm(n);
-        if LAUNCHERS.iter().any(|x| norm(x) == l) {
-            return true;
-        }
-        if l.ends_with(".appimage") {
+        if is_launcher_name(n) {
             return true;
         }
     }
+    // `bash /app/bin/startvesktop`: comm is the shell, payload is argv.
+    for arg in p.cmdline.iter().skip(1) {
+        if arg.starts_with('-') {
+            continue;
+        }
+        if is_launcher_name(&basename(arg)) {
+            return true;
+        }
+        break;
+    }
     false
+}
+
+pub fn is_session_noise(p: &Process) -> bool {
+    let l = norm(&name_of(p));
+    l == "cat" || norm(&p.comm) == "cat"
 }
 
 pub fn is_generic(p: &Process) -> bool {
@@ -208,12 +223,18 @@ pub fn launcher_payload_hint(p: &Process) -> Option<String> {
                 continue;
             }
             let b = basename(arg);
-            if !b.is_empty() && !is_launcher_name(&b) {
-                return Some(b);
+            if b.is_empty() || is_launcher_name(&b) || is_hint_skip(&b) {
+                continue;
             }
+            return Some(b);
         }
     }
     None
+}
+
+fn is_hint_skip(name: &str) -> bool {
+    let l = norm(name);
+    HINT_SKIP.iter().any(|x| norm(x) == l)
 }
 
 pub fn looks_script(arg: &str) -> bool {
@@ -279,11 +300,37 @@ mod tests {
             exe: Some("/home/x/cursor.appimage".into()),
             ..Process::default()
         }));
+        assert!(is_launcher(&p("startvesktop", &["startvesktop"])));
+        assert!(is_launcher(&p("bash", &["bash", "/app/bin/startvesktop"])));
+        assert!(is_session_noise(&p("cat", &["cat"])));
         assert!(is_worker(&p("cursor", &["cursor", "--type=renderer"])));
         assert!(is_interactive_shell(&p("bash", &["-bash"])));
         assert!(!is_interactive_shell(&p(
             "bash",
             &["bash", "/app/bin/startvesktop"]
         )));
+        let zypak = p(
+            "bwrap",
+            &[
+                "bwrap",
+                "--args",
+                "72",
+                "--",
+                "/app/bin/zypak-helper",
+                "child",
+                "-",
+                "/app/bin/vesktop/vesktop.bin",
+                "--type=zygote",
+            ],
+        );
+        assert_eq!(
+            launcher_payload_hint(&zypak).as_deref(),
+            Some("vesktop.bin")
+        );
+        assert_eq!(
+            launcher_payload_hint(&p("bwrap", &["/usr/bin/bwrap", "--", "startvesktop"]))
+                .as_deref(),
+            None
+        );
     }
 }

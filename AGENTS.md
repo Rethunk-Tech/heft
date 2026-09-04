@@ -44,9 +44,11 @@ Never read `/proc/pid/mem`. Never ptrace.
   scopes for the *name*; Chromium scopes may still be an instance key when they
   belong to this app.
 - Launchers (`bwrap`, `flatpak`, `zypak-helper`, `snap-confine`, `bunx`, `npx`,
-  `AppRun`, `firejail`, `xdg-dbus-proxy`) have no top-level row; their cost
-  bills to the unique payload identity and they still appear inside the
-  expanded process list. Nested bwrap folds into the payload.
+  `AppRun`, `firejail`, `xdg-dbus-proxy`, `startvesktop`) have no top-level row;
+  their cost bills to the unique payload identity and they still appear inside
+  the expanded process list. Nested bwrap folds into the payload. `cat` under a
+  launcher or app bills to that parent; it does not break unique-payload
+  folding and does not become its own row.
 - Workers (`--type=*`, `chrome_crashpad_handler`, Electron `MainThread`,
   `npm`/`node`/`python` under a real app that is not a shell/terminal/compositor/systemd)
   fold into that app.

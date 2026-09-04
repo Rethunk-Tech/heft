@@ -127,6 +127,21 @@ fn gui_and_docker_fixture() {
         "bwrap must bill to payload"
     );
     assert!(
+        !has(&user.applications, "startvesktop"),
+        "startvesktop is a launcher: {:?}",
+        titles(&user.applications)
+    );
+    assert!(
+        !has(&user.applications, "cat"),
+        "cat session noise must not be an Applications row: {:?}",
+        titles(&user.applications)
+    );
+    assert!(
+        !has(&user.applications, "child"),
+        "zypak-helper child is not an identity: {:?}",
+        titles(&user.applications)
+    );
+    assert!(
         !has(&user.applications, "nautilus"),
         "minecraft must not become nautilus"
     );
@@ -139,6 +154,11 @@ fn gui_and_docker_fixture() {
     assert!(
         !has(&user.user_services, "cursor"),
         "cursor in a helper service must stay Applications: {:?}",
+        titles(&user.user_services)
+    );
+    assert!(
+        !has(&user.user_services, "cat"),
+        "cat under an app must not leak into User Services: {:?}",
         titles(&user.user_services)
     );
 

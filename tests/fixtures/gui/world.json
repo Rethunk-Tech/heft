@@ -395,6 +395,21 @@
       "stime": 1
     },
     {
+      "pid": 404,
+      "ppid": 401,
+      "pgrp": 404,
+      "sid": 404,
+      "uid": 1000,
+      "comm": "cat",
+      "exe": "/usr/bin/cat",
+      "cmdline": [
+        "cat"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-ghostty-surface-transient-1.scope",
+      "utime": 1,
+      "stime": 0
+    },
+    {
       "pid": 402,
       "ppid": 401,
       "pgrp": 402,
@@ -681,6 +696,75 @@
       "stime": 1
     },
     {
+      "pid": 733,
+      "ppid": 730,
+      "pgrp": 733,
+      "sid": 733,
+      "uid": 1000,
+      "comm": "cat",
+      "exe": "/usr/bin/cat",
+      "cmdline": [
+        "cat"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-flatpak-dev.vencord.Vesktop-1.scope",
+      "utime": 1,
+      "stime": 0
+    },
+    {
+      "pid": 734,
+      "ppid": 730,
+      "pgrp": 734,
+      "sid": 734,
+      "uid": 1000,
+      "comm": "cat",
+      "exe": "/usr/bin/cat",
+      "cmdline": [
+        "cat"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-flatpak-dev.vencord.Vesktop-1.scope",
+      "utime": 1,
+      "stime": 0
+    },
+    {
+      "pid": 735,
+      "ppid": 730,
+      "pgrp": 735,
+      "sid": 735,
+      "uid": 1000,
+      "comm": "bwrap",
+      "exe": "/usr/bin/bwrap",
+      "cmdline": [
+        "/usr/bin/bwrap",
+        "--args",
+        "72",
+        "--",
+        "/app/bin/zypak-helper",
+        "child",
+        "-",
+        "/app/bin/vesktop/vesktop.bin",
+        "--type=zygote"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-flatpak-dev.vencord.Vesktop-1.scope",
+      "utime": 1,
+      "stime": 0
+    },
+    {
+      "pid": 736,
+      "ppid": 735,
+      "pgrp": 736,
+      "sid": 736,
+      "uid": 1000,
+      "comm": "vesktop.bin",
+      "exe": "/app/bin/vesktop/vesktop.bin",
+      "cmdline": [
+        "/app/bin/vesktop/vesktop.bin",
+        "--type=zygote"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-flatpak-dev.vencord.Vesktop-1.scope",
+      "utime": 10,
+      "stime": 1
+    },
+    {
       "pid": 740,
       "ppid": 1,
       "pgrp": 740,
@@ -710,6 +794,21 @@
       "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-gnome-vivaldi\\x2dstable-1.scope",
       "utime": 10,
       "stime": 1
+    },
+    {
+      "pid": 742,
+      "ppid": 740,
+      "pgrp": 742,
+      "sid": 742,
+      "uid": 1000,
+      "comm": "cat",
+      "exe": "/usr/bin/cat",
+      "cmdline": [
+        "cat"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/session.slice/org.gnome.Shell@user.service",
+      "utime": 1,
+      "stime": 0
     },
     {
       "pid": 800,

@@ -11,10 +11,10 @@ use crossterm::terminal::{
 };
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
-use ratatui::layout::{Constraint, Layout};
+use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Paragraph, Row, Table};
+use ratatui::widgets::{Block, Borders, Clear, Paragraph, Row, Table};
 
 use crate::config::{self, View};
 use crate::cpu;
@@ -95,6 +95,7 @@ struct App {
     filter_edit: bool,
     col_off: u16,
     status: String,
+    help: bool,
 }
 
 pub fn run(interval: Duration) -> Result<(), Error> {
@@ -126,6 +127,7 @@ fn run_loop(
         filter_edit: false,
         col_off: 0,
         status: String::new(),
+        help: false,
     };
     loop {
         let rows = flatten(&app.tree, &app.expand, &app.view);
@@ -450,6 +452,14 @@ fn handle_key(
         }
         return Ok(false);
     }
+    if matches!(code, KeyCode::Char('?') | KeyCode::F(1)) {
+        app.help = !app.help;
+        return Ok(false);
+    }
+    if app.help && code == KeyCode::Esc {
+        app.help = false;
+        return Ok(false);
+    }
     match code {
         KeyCode::Char('q') => return Ok(true),
         KeyCode::Esc => return Ok(true),
@@ -583,6 +593,9 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &App, rows: &[Flat]) {
         )
         .block(Block::default().borders(Borders::ALL));
     f.render_widget(table, chunks[1]);
+    if app.help {
+        draw_help(f, chunks[1]);
+    }
 
     let filter = if app.filter_edit {
         format!("filter> {}_", app.view.filter)
@@ -592,10 +605,38 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &App, rows: &[Flat]) {
         format!("filter: {}", app.view.filter)
     };
     let footer = format!(
-        " q quit  / filter  c sort ({})  s save  [ ] scroll  {}  {}",
+        " q quit  / filter  c sort ({})  s save  [ ] scroll  ? help  {}  {}",
         app.view.sort, filter, app.status
     );
     f.render_widget(Paragraph::new(footer), chunks[2]);
+}
+
+fn draw_help(f: &mut ratatui::Frame<'_>, area: Rect) {
+    let text = "\
+ q / Esc              quit
+ ↑ ↓  j k             move
+ ← →  h l  Enter  Space  expand / collapse
+ /                    filter (Enter apply, Esc cancel)
+ c                    cycle sort column
+ d                    reverse sort
+ s                    save view
+ [ ]                  scroll columns
+ ? / F1               toggle this help
+
+ Observe only — no kill, nice, or signals.";
+    let width = 56.min(area.width.saturating_sub(2));
+    let height = 16.min(area.height.saturating_sub(1)).max(3);
+    let popup = Rect {
+        x: area.x + (area.width.saturating_sub(width)) / 2,
+        y: area.y + (area.height.saturating_sub(height)) / 2,
+        width,
+        height,
+    };
+    f.render_widget(Clear, popup);
+    f.render_widget(
+        Paragraph::new(text).block(Block::default().borders(Borders::ALL).title("keys")),
+        popup,
+    );
 }
 
 fn folder_n(idents: &[IdentNode]) -> u32 {

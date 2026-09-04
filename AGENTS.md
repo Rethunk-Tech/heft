@@ -4,7 +4,7 @@ Read-only Linux process monitor. Binary name `heft`.
 
 ## Start here
 
-@HUMANS.md — install, keys, XDG, live verify.
+@HUMANS.md — install, keys, XDG, sample cadence, live verify.
 
 ## Layout
 
@@ -24,6 +24,7 @@ src/group.rs         Host → User → Applications | User Services | Containers
 src/config.rs        XDG view.json; persist only on explicit save
 src/once.rs          table and JSON
 src/ui.rs            ratatui header + tree table
+tests/grouping.rs    integration tests over tests/fixtures/
 tests/fixtures/      GUI + docker grouping snapshots
 ```
 
@@ -33,61 +34,46 @@ Never read `/proc/pid/mem`. Never ptrace.
 ## Grouping invariants
 
 - **Host** is the machine, not the compositor or a terminal.
-- Bucket: docker/libpod scope or helper that names that id → Containers;
-  `uid==0 && ppid==2` or leftover `system.slice` → System; else that uid's User.
+- Bucket (`src/group.rs`): docker/libpod scope or helper that names that id →
+  Containers; `identity::is_kernel` or leftover `system.slice`
+  (`in_system_slice` and not `in_user_slice`) → System; else that uid's User.
 - Under a User: user-instance unit `*.service` not starting with `app-` →
   User Services; else Applications. `init.scope` + `systemd --user` is a user
-  service. Known compositors are user services even if the unit looks like an
-  app.
-- Identity is `exe` basename (else `comm`), not the inherited cgroup. Ignore
-  terminal transients, toolkit-named Chromium scopes, and file-manager dbus
-  scopes for the *name*; Chromium scopes may still be an instance key when they
-  belong to this app.
-- Launchers (`bwrap`, `flatpak`, `zypak-helper`, `snap-confine`, `bunx`, `npx`,
-  `AppRun`, `firejail`, `xdg-dbus-proxy`, `startvesktop`) have no top-level row;
-  their cost bills to the unique payload identity and they still appear inside
-  the expanded process list. Nested bwrap folds into the payload. `cat` under a
-  launcher or app bills to that parent; it does not break unique-payload
+  service. Known compositors (`classify::is_compositor`) are user services even
+  if the unit looks like an app.
+- Display name is `classify::name_of` (`exe` basename else `comm`), not the
+  inherited cgroup. `identity::lying_unit` skips terminal transients, Chromium
+  toolkit scopes (`org.chromium.chromium`), `dbus:` activation, `run-u*`, and
+  `flatpak-session-helper` for unit-based identity. `instance_key` uses a real
+  user unit only when it is not lying; otherwise `pgid`.
+- Launchers (`classify.rs` `LAUNCHERS`, plus names ending `.appimage`) have no
+  top-level row; cost bills to the unique payload identity; they still appear
+  inside the expanded process list. Nested bwrap folds into the payload. `cat`
+  under a launcher or app bills to that parent; it does not break unique-payload
   folding and does not become its own row.
-- Workers (`--type=*`, `chrome_crashpad_handler`, `crashhelper`, Electron `MainThread`,
-  `npm`/`npx`/`node`/`python` under a real app that is not a shell/terminal/compositor/systemd)
-  fold into that app. Walk ancestors skipping launchers and other generics;
-  do not invent a script-basename identity (`context7-mcp`) when a launching
-  agent (`claude`, `cursor`) is above. Processes stay visible on expand.
-  `crashhelper` matches exe/cmdline (`/usr/lib64/firefox/crashhelper`) even
-  when PPID is user systemd.
-- GNOME session plumbing (`gdm-*`, `gnome-session*`, `gnome-keyring*`,
-  `gnome-shell-*`, `gnome-calendar`, `gnome-clocks`, `Xwayland`, and `gjs`
-  running gnome-shell Notifications/ScreenSaver) is User Services folded into
-  `gnome-shell`. User-session `dbus-broker` / `dbus-broker-launch` are
-  User Services, never Applications. `lying_unit` matches `dbus:` activation
-  scopes, not `dbus-broker.service`. Session helpers stay User Services even
-  when reparented to user systemd: `ibus-portal` / `ibus-dconf` / `ibus-x11` /
-  `ibus-engine-*` → `ibus-daemon`, `at-spi2-registryd` → `at-spi-bus-launcher`,
-  `goa-identity-service` → `goa-daemon`, `p11-kit-server`/`p11-kit-remote` →
-  `p11-kit` (never `flatpak-session-helper`; Cursor shares that cgroup).
-  A User Services logical group is one identity for processes that share a
-  systemd unit family, RPM/package family, D-Bus well-known name family, or
-  documented process architecture — not a comm prefix. Merge `gsd-*` plugins
-  (`org.gnome.SettingsDaemon.*`, package `gnome-settings-daemon`) into
-  `gnome-settings-daemon`; keep `gsd-disk-utility-notify` (`gnome-disk-utility`)
-  as its own row. Merge GVFS (`gvfsd*`, volume monitors, `gvfs-*.service`,
-  including `gvfs-goa-volume-monitor` and unit-bound `wsdd`) into `gvfs`, never
-  into `goa-daemon`. `flatpak-session-helper` and `flatpak-portal` are `flatpak`
-  session infrastructure; `xdg-dbus-proxy` with no app-flatpak cgroup folds
-  there, app-bound proxy bills to that app. `xdg-desktop-portal` + backends +
-  document/permission portals are `xdg-desktop-portal`. EDS factories/alarm
-  notify are `evolution-data-server`. `pipewire` + `pipewire-pulse` are
-  `pipewire`; `wireplumber` stays separate (different package). `gcr-ssh-agent`
-  absorbs `ssh-agent` only in that unit. `abrt-applet` stays its own row.
-  Independent apps (vivaldi, cursor, claude, vesktop, firefox, ghostty) never
-  fold into gnome-shell or these service identities. A CLI such as `majordomo`
-  (`lead get` under a ghostty transient bwrap) is Applications, not a service.
+- Workers (`classify::is_worker`) fold into that app. Walk ancestors skipping
+  launchers and other generics; do not invent a script-basename identity
+  (`context7-mcp`) when a launching agent (`claude`, `cursor`) is above.
+  Processes stay visible on expand. `crash_helper_app` matches exe/cmdline
+  even when PPID is user systemd.
+- User Services grouping is one identity for processes that share a systemd
+  unit family, RPM/package family, D-Bus well-known name family, or documented
+  process architecture — not a comm prefix. Mappings live in
+  `classify::session_helper_ident`. Exceptions: prefix lookalikes with a
+  different product stay out (`gsd-disk-utility-notify`, independent `wsdd`,
+  `wireplumber`); independent apps never fold into gnome-shell or these
+  service identities; a CLI such as `majordomo` is Applications;
+  `p11-kit` must not fold into `flatpak-session-helper` (Cursor shares that
+  cgroup); user-session `dbus-broker` is User Services, never Applications
+  (`lying_unit` matches `dbus:` activation, not `dbus-broker.service`);
+  app-bound `xdg-dbus-proxy` bills to that app, unbound folds into `flatpak`;
+  `gcr-ssh-agent` absorbs `ssh-agent` only in that unit.
 - Split when the child's resolved identity differs and the child is a real app.
   Idle interactive shells stay their own Applications row.
-- Generic interpreters (`bun`, `python`, `java`, `node`, `MainThread`) fall back
-  to the user unit or a distinctive script basename so they do not collapse into
-  one interpreter row. `main.js` is not distinctive.
+- Generic interpreters (`classify.rs` `GENERICS`) fall back to the user unit or
+  a distinctive script basename (`identity::generic_fallback`) so they do not
+  collapse into one interpreter row. Non-distinctive script basenames live in
+  that function.
 - Containers: never System, never `dockerd`/`containerd`/`engined` the user
   service. Project key is `com.supabase.cli.project` → `supabase:<name>`, else
   `supabase_<role>_<project>` names, else `com.docker.compose.project`. No
@@ -98,51 +84,39 @@ Never read `/proc/pid/mem`. Never ptrace.
 
 ## Sampler
 
-CPU `%core` = `100 * Δ(utime+stime) / (CLK_TCK * dt)` (can exceed 100).
-`%machine` = `%core / nproc`. RSS from `statm`. TUI PSS from `smaps_rollup` on
-`--pss-interval` (default 5s, ≥ `--interval`); last per-PID PSS is reused
-between passes (vanished PIDs drop; new PIDs blank until the next rollup).
-`--once` / `--json` always read PSS on the published snapshot. Disk from
-`read_bytes`/`write_bytes`. GPU: prefer `drm-resident-vram` /
-`drm-resident-gtt` over `drm-total-*`; engine ns deltas → gfx% / compute%.
-Header CPU is `/proc/stat` Δ user+nice / system+irq+softirq / iowait (idle+steal
-unfilled). Header MEM is one MemTotal bar when the APU VRAM carve-out is unified;
-VRAM/GTT resident paint first inside used, then Cached/Buffers, then anon, clipped
-so the stack never exceeds `used.min(MemTotal)`. Discrete VRAM as a second tank
-is out of scope. TUI header is 2 unbordered rows; the only persistent rules are
-header↔tree and tree↔footer. Disk R/W rates are table columns only — not on the
-header (the formatted rates change width every tick).
+| metric | formula / source |
+| --- | --- |
+| `%core` | `100 * Δ(utime+stime) / (CLK_TCK * dt)` (can exceed 100) |
+| `%machine` | `%core / nproc` |
+| RSS | `/proc/pid/statm` |
+| PSS | `/proc/pid/smaps_rollup` — cadence in [HUMANS.md](HUMANS.md) |
+| Disk R/W | Δ `read_bytes` / `write_bytes` from `/proc/pid/io` |
+| GPU mem | prefer `drm-resident-vram` / `drm-resident-gtt` over `drm-total-*` |
+| gfx% / compute% | engine ns deltas from amdgpu fdinfo |
+
+| surface | rule |
+| --- | --- |
+| CPU bar | `/proc/stat` Δ user+nice / system+irq+softirq / iowait; idle+steal unfilled |
+| MEM bar | one MemTotal width when APU VRAM is unified; VRAM/GTT resident, then Cached/Buffers, then anon; clip so the stack never exceeds `used.min(MemTotal)` (`mem::clip_used`) |
+| Discrete VRAM | out of scope as a second tank |
+| Layout | 2 unbordered header rows; persistent rules: header↔tree and tree↔footer |
+| Disk R/W | table columns only (formatted rates change width every tick) |
 
 TUI sampling runs on a background thread; the ratatui loop only swaps in the
-last complete tree and never blocks on `/proc` I/O. Sleep uses `--interval`
-(`saturating_sub`); a PSS pass may stretch that tick. `--once` / `--json` take
-two snapshots `interval` seconds apart.
+last complete tree and never blocks on `/proc` I/O. Sample cadence (`--interval`,
+`--pss-interval`, `--once` / `--json`): [HUMANS.md](HUMANS.md).
 
-JSON shape: `host.users[].applications|user_services|containers`,
+JSON shape (`src/types.rs` `HostTree`): `host.users[].applications|user_services|containers`,
 `host.containers`, `host.system`. Project identities include
 `containers[].processes[]`.
 
 ## Gates
 
-```
-cargo fmt
-cargo clippy --locked --all-targets -- -D warnings
-cargo test --locked
-cargo deny --locked check
-cargo machete
-```
-
+Contributor commands: [CONTRIBUTING.md](CONTRIBUTING.md) (same as CI / lefthook).
 Suite stays under 30s. No live GPU in CI. Docker sock is optional in CI;
-grouping tests use `tests/fixtures/`.
+grouping tests use `tests/fixtures/` via `tests/grouping.rs`.
 
 Release profile: LTO, `codegen-units = 1`, strip, `panic = abort`.
-
-## Conventions
-
-- Comments explain non-obvious why, never history.
-- Never suppress a linter. No `any` equivalent (`unwrap` on I/O is a bug).
-- Greenfield: no shims, no dead exports.
-- Conventional commits; explicit paths; no AI trailers. **Push only when told.**
 
 ## Git
 

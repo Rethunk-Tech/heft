@@ -4,9 +4,8 @@ Read [AGENTS.md](AGENTS.md) first — grouping invariants live there, not here.
 
 ## Setup
 
-[HUMANS.md](HUMANS.md) is the runbook. Toolchain: stable Rust (Fedora 1.98 is
-fine; CI uses current stable). MSRV is `rust-version` in `Cargo.toml` (1.88,
-edition 2024).
+[HUMANS.md](HUMANS.md) is the runbook. Toolchain: stable Rust (CI uses current
+stable). MSRV is `rust-version` in [Cargo.toml](Cargo.toml).
 
 ```sh
 lefthook install     # per clone; hooks are not committed by git
@@ -22,7 +21,7 @@ and `cargo machete`.
 Run before a commit that touches code:
 
 ```sh
-cargo fmt
+cargo fmt --check
 cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked
 cargo deny --locked check

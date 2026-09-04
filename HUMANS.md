@@ -22,9 +22,11 @@ heft --pss-interval 5     # TUI only: how often to read smaps_rollup (default 5s
 ```
 
 `--interval` is the catch-all (default 1s, floor 0.05s): `/proc` walk, RSS,
-io, GPU, grouping, and CPU/disk/GPU rates. `--pss-interval` (default 5s, at
-least `--interval`) is TUI-only; between those reads heft reuses last per-PID
-PSS so rates stay honest. New PIDs show a blank PSS until the next rollup.
+io, GPU, grouping, and CPU/disk/GPU rates. The TUI sleeps `--interval` minus
+sample time; a PSS pass may stretch that tick. `--pss-interval` (default 5s,
+at least `--interval`) is TUI-only; between those reads heft reuses last
+per-PID PSS (vanished PIDs drop). New PIDs show a blank PSS until the next
+rollup.
 
 `--json` / `--once` take two `/proc` walks separated by `--interval` so rates
 exist, and always read PSS on the published sample (`--pss-interval` is
@@ -34,10 +36,11 @@ ignored).
 
 | key | action |
 | --- | --- |
-| `q` | quit |
+| `q` / `Esc` | quit |
 | `↑` `↓` / `j` `k` | move the cursor |
+| `PgUp` `PgDn` / `Home` `End` | page or jump the cursor |
 | `←` `→` / `h` `l` / Enter / Space | collapse or expand |
-| `[` `]` | scroll columns when the terminal is narrower than the table |
+| `[` `]` / `<` `>` | scroll columns when the terminal is narrower than the table |
 | `/` | filter by name (Enter applies, Esc cancels) |
 | `c` | cycle the sort column (default PSS descending) |
 | `d` | reverse the sort direction |
@@ -60,17 +63,15 @@ Other users, User Services, Host-level Containers, and System start collapsed.
   user — not as Host.
 - **Applications** vs **User Services**: a user-instance `*.service` whose name
   does not start with `app-` is a user service (`earshotd.service`,
-  `engined.service`, `org.gnome.Shell@user.service`). Session helpers
-  (`ibus-portal`, AT-SPI registry, GOA, p11-kit, GNOME Settings Daemon plugins
-  as `gnome-settings-daemon`, `gsd-disk-utility-notify`, GVFS, Flatpak session
-  helpers, xdg-desktop-portal, evolution-data-server, `abrt-applet`,
-  gnome-shell GJS backends) sit in User Services even when D-Bus used an
-  `app-` or `dbus:` unit. Everything else under the user is an application.
+  `engined.service`, `org.gnome.Shell@user.service`). Known compositors and
+  session plumbing sit in User Services even when D-Bus used an `app-` or
+  `dbus:` unit. Everything else under the user is an application. Merge
+  identities: [AGENTS.md](AGENTS.md).
 - **Containers** under a user are workloads heft can attribute (workdir owner,
   or `engined-*` / `engined.spec` using the `engined.service` uid). Unattributed
   running containers sit on Host → Containers.
-- **System** is kernel threads (`ppid == 2`) and leftover `system.slice`
-  (including `dockerd` / `containerd`). Container scopes never go here.
+- **System** is kernel threads and leftover `system.slice` (including
+  `dockerd` / `containerd`). Container scopes never go here.
 
 Other uids appear as extra User nodes when `/proc` lists them. Metrics heft
 cannot read (`smaps_rollup`, `io`, fdinfo, `exe`) render as a blank cell.
@@ -97,7 +98,7 @@ cgroup files.
 
 ```sh
 cargo test --locked
-cargo clippy --locked --all-targets -- --deny warnings
+cargo clippy --locked --all-targets -- -D warnings
 cargo fmt --check
 heft --once
 ```

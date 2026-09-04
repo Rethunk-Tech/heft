@@ -53,7 +53,8 @@ fn read_pid(pid: u32, want_pss: bool, prev: Option<&Process>) -> Option<Process>
         (None, None, GpuCounters::default())
     } else {
         let (r, w) = pio::read_io(pid);
-        (r, w, gpu::read_pid(pid, prev.map(|p| &p.gpu)))
+        // want_pss is also the GPU full fdinfo walk (PSS tick / --once publish).
+        (r, w, gpu::read_pid(pid, want_pss))
     };
     Some(Process {
         pid,

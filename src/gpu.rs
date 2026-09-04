@@ -5,7 +5,11 @@ use std::path::Path;
 
 use crate::types::GpuCounters;
 
-pub fn read_pid(pid: u32, prev: Option<&GpuCounters>) -> GpuCounters {
+/// `full_scan` is the PSS / `--once` published pass. Prime and TUI catch-all
+/// ticks pass false: dri/drm symlink names are enough, and a first sighting
+/// must not walk every fdinfo. Clients whose fd names omit dri/drm show up
+/// on the next full_scan (up to `--pss-interval`).
+pub fn read_pid(pid: u32, full_scan: bool) -> GpuCounters {
     let drm_fds = match drm_fd_nums(pid) {
         Err(e) if e.kind() == io::ErrorKind::PermissionDenied => return GpuCounters::default(),
         Err(_) => Vec::new(),
@@ -16,7 +20,7 @@ pub fn read_pid(pid: u32, prev: Option<&GpuCounters>) -> GpuCounters {
     } else {
         read_fdinfo_files(pid, &drm_fds)
     };
-    if !needs_full_fdinfo(prev, &filtered) {
+    if !needs_full_fdinfo(full_scan, &filtered) {
         return filtered;
     }
     read_all_fdinfo(pid)
@@ -31,10 +35,8 @@ fn has_counters(g: &GpuCounters) -> bool {
     g.vram_bytes.is_some() || g.gtt_bytes.is_some() || g.gfx_ns.is_some() || g.compute_ns.is_some()
 }
 
-/// Full fdinfo walk when the symlink prefilter found nothing: first sample of a
-/// PID, or a PID that previously had GPU counters and now looks empty.
-fn needs_full_fdinfo(prev: Option<&GpuCounters>, filtered: &GpuCounters) -> bool {
-    !has_counters(filtered) && prev.is_none_or(has_counters)
+fn needs_full_fdinfo(full_scan: bool, filtered: &GpuCounters) -> bool {
+    full_scan && !has_counters(filtered)
 }
 
 fn drm_fd_nums(pid: u32) -> io::Result<Vec<u32>> {
@@ -225,16 +227,15 @@ mod tests {
     }
 
     #[test]
-    fn full_fdinfo_when_first_or_drop() {
+    fn full_fdinfo_only_when_asked_and_prefilter_empty() {
         let empty = GpuCounters::default();
         let live = GpuCounters {
             vram_bytes: Some(1),
             ..GpuCounters::default()
         };
-        assert!(needs_full_fdinfo(None, &empty));
-        assert!(needs_full_fdinfo(Some(&live), &empty));
-        assert!(!needs_full_fdinfo(Some(&empty), &empty));
-        assert!(!needs_full_fdinfo(None, &live));
-        assert!(!needs_full_fdinfo(Some(&live), &live));
+        assert!(!needs_full_fdinfo(false, &empty));
+        assert!(!needs_full_fdinfo(false, &live));
+        assert!(needs_full_fdinfo(true, &empty));
+        assert!(!needs_full_fdinfo(true, &live));
     }
 }

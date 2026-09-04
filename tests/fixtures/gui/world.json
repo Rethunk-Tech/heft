@@ -725,6 +725,21 @@
       "cgroup": "0::/user.slice/user-42.slice/user@42.service/app.slice/sshd.service",
       "utime": 10,
       "stime": 1
+    },
+    {
+      "pid": 3992501,
+      "ppid": 100,
+      "pgrp": 3992501,
+      "sid": 3992501,
+      "uid": 1000,
+      "comm": "cursor",
+      "exe": "/tmp/.mount_cursor/usr/share/cursor/cursor",
+      "cmdline": [
+        "/home/u/Apps/cursor.appimage"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/flatpak-session-helper.service",
+      "utime": 10,
+      "stime": 1
     }
   ]
 }

@@ -1,0 +1,14 @@
+{
+  "State": {
+    "Running": true,
+    "Pid": 1
+  },
+  "NetworkSettings": {
+    "IPAddress": "172.17.0.2",
+    "Networks": {
+      "bridge": {
+        "IPAddress": "172.17.0.2"
+      }
+    }
+  }
+}

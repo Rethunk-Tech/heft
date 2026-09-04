@@ -136,6 +136,11 @@ fn gui_and_docker_fixture() {
     assert!(has(&user.user_services, "engined"));
     assert!(has(&user.user_services, "gnome-shell"));
     assert!(!has(&user.user_services, "ghostty"));
+    assert!(
+        !has(&user.user_services, "cursor"),
+        "cursor in a helper service must stay Applications: {:?}",
+        titles(&user.user_services)
+    );
 
     assert!(has(&user.containers, "supabase:caldera"));
     assert!(has(&user.containers, "engined-whisper"));

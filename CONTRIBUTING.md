@@ -5,7 +5,15 @@ Read [AGENTS.md](AGENTS.md) first — grouping invariants live there, not here.
 ## Setup
 
 [HUMANS.md](HUMANS.md) is the runbook. Toolchain: stable Rust (Fedora 1.98 is
-fine; CI uses current stable).
+fine; CI uses current stable). MSRV is `rust-version` in `Cargo.toml` (1.85,
+edition 2024).
+
+```sh
+lefthook install     # per clone; hooks are not committed by git
+```
+
+Pre-commit runs `cargo fmt --check` and `cargo clippy --all-targets -- -D warnings`
+when Rust or Cargo.toml is staged. Pre-push runs `cargo test`.
 
 ## Gates
 

@@ -9,12 +9,13 @@ pub fn print_table(interval: Duration) -> Result<(), Error> {
     let mut out = io::stdout();
     writeln!(
         out,
-        "HOST  cpu {:>5.1}%  ram {} / {}  vram {} / {}  nproc {}",
+        "HOST  cpu {:>5.1}%  usr {:>4.1} sys {:>4.1} wait {:>4.1}  mem {} / {}  nproc {}",
         tree.cpu_pct,
+        tree.cpu_user_pct,
+        tree.cpu_system_pct,
+        tree.cpu_wait_pct,
         fmt_bytes(Some(tree.mem_used_bytes)),
         fmt_bytes(Some(tree.mem_total_bytes)),
-        fmt_bytes(tree.vram_used_bytes),
-        fmt_bytes(tree.vram_total_bytes),
         tree.nproc
     )?;
     writeln!(

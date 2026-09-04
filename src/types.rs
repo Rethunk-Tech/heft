@@ -28,16 +28,22 @@ pub struct GpuCounters {
     pub compute_ns: Option<u64>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct HostHeader {
     pub nproc: u32,
     pub clk_tck: u64,
     pub page_size: u64,
     pub cpu_pct: f64,
+    pub cpu_user_pct: f64,
+    pub cpu_system_pct: f64,
+    pub cpu_wait_pct: f64,
     pub mem_used_bytes: u64,
     pub mem_total_bytes: u64,
+    pub mem_buffers_bytes: u64,
+    pub mem_cached_bytes: u64,
     pub vram_used_bytes: Option<u64>,
     pub vram_total_bytes: Option<u64>,
+    pub unified_memory: bool,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -103,12 +109,18 @@ pub enum Folder {
 pub struct HostTree {
     pub nproc: u32,
     pub cpu_pct: f64,
+    pub cpu_user_pct: f64,
+    pub cpu_system_pct: f64,
+    pub cpu_wait_pct: f64,
     pub mem_used_bytes: u64,
     pub mem_total_bytes: u64,
+    pub mem_buffers_bytes: u64,
+    pub mem_cached_bytes: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vram_used_bytes: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vram_total_bytes: Option<u64>,
+    pub unified_memory: bool,
     pub users: Vec<UserNode>,
     pub containers: Vec<IdentNode>,
     pub system: Vec<IdentNode>,

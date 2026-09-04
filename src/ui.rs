@@ -12,15 +12,18 @@ use crossterm::terminal::{
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::{Modifier, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Row, Table};
 
 use crate::config::{self, View};
 use crate::cpu;
+use crate::mem::{self, MemParts};
 use crate::once::{fmt_bytes, fmt_opt_pct, fmt_pct, fmt_rate};
 use crate::proc;
 use crate::types::{Error, HostTree, IdentNode, Metrics, ProcNode};
+
+const HEADER_ROWS: u16 = 2;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Sort {
@@ -513,24 +516,15 @@ fn handle_key(
 
 fn draw(f: &mut ratatui::Frame<'_>, app: &App, rows: &[Flat]) {
     let chunks = Layout::vertical([
-        Constraint::Length(3),
+        Constraint::Length(HEADER_ROWS),
+        Constraint::Length(1),
         Constraint::Min(4),
+        Constraint::Length(1),
         Constraint::Length(1),
     ])
     .split(f.area());
-    let header = Line::from(vec![Span::raw(format!(
-        " CPU {:>5}   RAM {} / {}   VRAM {} / {}   nproc {} ",
-        fmt_pct(app.tree.cpu_pct),
-        fmt_bytes(Some(app.tree.mem_used_bytes)),
-        fmt_bytes(Some(app.tree.mem_total_bytes)),
-        fmt_bytes(app.tree.vram_used_bytes),
-        fmt_bytes(app.tree.vram_total_bytes),
-        app.tree.nproc
-    ))]);
-    f.render_widget(
-        Paragraph::new(header).block(Block::default().borders(Borders::ALL).title("heft")),
-        chunks[0],
-    );
+    draw_header(f, chunks[0], app);
+    render_rule(f, chunks[1]);
 
     let headers = [
         "NAME", "N", "%CORE", "%MACH", "PSS", "RSS", "DISK R", "DISK W", "VRAM", "GTT", "GFX",
@@ -596,15 +590,13 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &App, rows: &[Flat]) {
     } else {
         shown.iter().map(|_| Constraint::Length(8)).collect()
     };
-    let table = Table::new(table_rows, widths)
-        .header(
-            Row::new(shown.iter().map(|s| (*s).to_string()))
-                .style(Style::default().add_modifier(Modifier::BOLD)),
-        )
-        .block(Block::default().borders(Borders::ALL));
-    f.render_widget(table, chunks[1]);
+    let table = Table::new(table_rows, widths).header(
+        Row::new(shown.iter().map(|s| (*s).to_string()))
+            .style(Style::default().add_modifier(Modifier::BOLD)),
+    );
+    f.render_widget(table, chunks[2]);
     if app.help {
-        draw_help(f, chunks[1]);
+        draw_help(f, chunks[2]);
     }
 
     let filter = if app.filter_edit {
@@ -618,7 +610,166 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &App, rows: &[Flat]) {
         " q quit  / filter  c sort ({})  s save  [ ] scroll  ? help  {}  {}",
         app.view.sort, filter, app.status
     );
-    f.render_widget(Paragraph::new(footer), chunks[2]);
+    render_rule(f, chunks[3]);
+    f.render_widget(Paragraph::new(footer), chunks[4]);
+}
+
+fn render_rule(f: &mut ratatui::Frame<'_>, area: Rect) {
+    f.render_widget(Paragraph::new("─".repeat(area.width as usize)), area);
+}
+
+fn draw_header(f: &mut ratatui::Frame<'_>, area: Rect, app: &App) {
+    let width = area.width as usize;
+    f.render_widget(
+        Paragraph::new(vec![
+            cpu_header_line(&app.tree, width),
+            mem_header_line(&app.tree, width),
+        ]),
+        area,
+    );
+}
+
+fn pct_weight(p: f64) -> u64 {
+    (p.clamp(0.0, 100.0) * 100.0).round() as u64
+}
+
+fn cpu_header_line(tree: &HostTree, width: usize) -> Line<'static> {
+    let prefix = " CPU [";
+    let mid = format!("] {:>5}%  ", fmt_pct(tree.cpu_pct));
+    let disk = disk_suffix(tree);
+    let legend_len = "usr/sys/wait".len();
+    let show_disk =
+        !disk.is_empty() && width >= prefix.len() + 8 + mid.len() + legend_len + disk.len();
+    let extra = if show_disk { disk.len() } else { 0 };
+    let bar_w = width.saturating_sub(prefix.len() + mid.len() + legend_len + extra);
+    let parts = [
+        (pct_weight(tree.cpu_user_pct), Color::Cyan),
+        (pct_weight(tree.cpu_system_pct), Color::Magenta),
+        (pct_weight(tree.cpu_wait_pct), Color::Yellow),
+    ];
+    let mut spans = vec![Span::raw(prefix)];
+    spans.extend(stacked_bar(bar_w, &parts, 10_000));
+    spans.push(Span::raw(mid));
+    spans.push(Span::styled("usr", Style::default().fg(Color::Cyan)));
+    spans.push(Span::raw("/"));
+    spans.push(Span::styled("sys", Style::default().fg(Color::Magenta)));
+    spans.push(Span::raw("/"));
+    spans.push(Span::styled("wait", Style::default().fg(Color::Yellow)));
+    if show_disk {
+        spans.push(Span::raw(disk));
+    }
+    Line::from(spans)
+}
+
+fn mem_header_line(tree: &HostTree, width: usize) -> Line<'static> {
+    let host = host_m(tree);
+    let (vram, gtt) = if tree.unified_memory {
+        (host.vram_bytes.unwrap_or(0), host.gtt_bytes.unwrap_or(0))
+    } else {
+        (0, 0)
+    };
+    let seg = mem::clip_used(MemParts {
+        used: tree.mem_used_bytes,
+        total: tree.mem_total_bytes,
+        vram,
+        gtt,
+        cache: tree.mem_cached_bytes,
+        buffers: tree.mem_buffers_bytes,
+    });
+    let prefix = " MEM [";
+    let mid = format!(
+        "] {}/{}  ",
+        fmt_bytes(Some(tree.mem_used_bytes)),
+        fmt_bytes(Some(tree.mem_total_bytes))
+    );
+    let legend_len = "vram/gtt/cache/buf".len();
+    let bar_w = width.saturating_sub(prefix.len() + mid.len() + legend_len);
+    let cap = tree.mem_total_bytes.max(1);
+    let parts = [
+        (seg.vram, Color::LightRed),
+        (seg.gtt, Color::LightCyan),
+        (seg.cache, Color::Blue),
+        (seg.buffers, Color::Green),
+        (seg.anon, Color::Gray),
+    ];
+    let mut spans = vec![Span::raw(prefix)];
+    spans.extend(stacked_bar(bar_w, &parts, cap));
+    spans.push(Span::raw(mid));
+    spans.push(Span::styled("vram", Style::default().fg(Color::LightRed)));
+    spans.push(Span::raw("/"));
+    spans.push(Span::styled("gtt", Style::default().fg(Color::LightCyan)));
+    spans.push(Span::raw("/"));
+    spans.push(Span::styled("cache", Style::default().fg(Color::Blue)));
+    spans.push(Span::raw("/"));
+    spans.push(Span::styled("buf", Style::default().fg(Color::Green)));
+    Line::from(spans)
+}
+
+fn disk_suffix(tree: &HostTree) -> String {
+    let m = host_m(tree);
+    if m.disk_r_bps.is_none() && m.disk_w_bps.is_none() {
+        return String::new();
+    }
+    format!(
+        "  {} R  {} W",
+        fmt_rate(m.disk_r_bps),
+        fmt_rate(m.disk_w_bps)
+    )
+}
+
+fn stacked_bar(width: usize, parts: &[(u64, Color)], capacity: u64) -> Vec<Span<'static>> {
+    if width == 0 {
+        return Vec::new();
+    }
+    let weights: Vec<u64> = parts.iter().map(|(w, _)| *w).collect();
+    let cells = share_cells(&weights, capacity, width);
+    let filled: usize = cells.iter().sum();
+    let mut out = Vec::new();
+    for (n, (_, color)) in cells.into_iter().zip(parts.iter()) {
+        if n > 0 {
+            out.push(Span::styled("█".repeat(n), Style::default().fg(*color)));
+        }
+    }
+    let rest = width.saturating_sub(filled);
+    if rest > 0 {
+        out.push(Span::styled(
+            "░".repeat(rest),
+            Style::default().fg(Color::DarkGray),
+        ));
+    }
+    out
+}
+
+/// Largest-remainder allocation so segment cells sum to `floor(sum(parts)/capacity * width)`.
+fn share_cells(parts: &[u64], capacity: u64, width: usize) -> Vec<usize> {
+    let n = parts.len();
+    if n == 0 || width == 0 || capacity == 0 {
+        return vec![0; n];
+    }
+    let mut cells: Vec<usize> = parts
+        .iter()
+        .map(|w| ((*w as u128 * width as u128) / capacity as u128) as usize)
+        .collect();
+    let assigned: usize = cells.iter().sum();
+    let target =
+        ((parts.iter().copied().sum::<u64>() as u128 * width as u128) / capacity as u128) as usize;
+    let mut extra = target
+        .saturating_sub(assigned)
+        .min(width.saturating_sub(assigned));
+    let mut order: Vec<(u128, usize)> = parts
+        .iter()
+        .enumerate()
+        .map(|(i, w)| (*w as u128 * width as u128 % capacity as u128, i))
+        .collect();
+    order.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+    for (_, i) in order {
+        if extra == 0 {
+            break;
+        }
+        cells[i] += 1;
+        extra -= 1;
+    }
+    cells
 }
 
 fn help_text() -> String {
@@ -659,10 +810,10 @@ fn draw_help(f: &mut ratatui::Frame<'_>, area: Rect) {
     );
 }
 
-/// Body rows that fit in the table pane: term minus header(3), footer(1),
-/// table border(2), and the column header(1).
+/// Body rows that fit in the table pane: term minus header(2), two rules,
+/// column header(1), and footer(1).
 fn table_body_rows(term_h: u16) -> usize {
-    term_h.saturating_sub(7) as usize
+    term_h.saturating_sub(6) as usize
 }
 
 /// First visible index so `selected` stays in `[offset, offset+visible)`.
@@ -751,5 +902,25 @@ mod tests {
             assert_eq!(chars[16], ' ');
         }
         assert!(!text.contains("Observe only"));
+    }
+
+    #[test]
+    fn table_body_rows_two_header_no_box() {
+        assert_eq!(table_body_rows(24), 18);
+        assert_eq!(table_body_rows(6), 0);
+        assert_eq!(table_body_rows(7), 1);
+    }
+
+    #[test]
+    fn share_cells_sums_to_fill() {
+        let cells = share_cells(&[25, 25, 50], 100, 10);
+        assert_eq!(cells.iter().sum::<usize>(), 10);
+        assert_eq!(cells, vec![3, 2, 5]);
+    }
+
+    #[test]
+    fn share_cells_leaves_remainder_for_idle() {
+        let cells = share_cells(&[18, 10, 5], 100, 20);
+        assert_eq!(cells.iter().sum::<usize>(), 6);
     }
 }

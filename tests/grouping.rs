@@ -75,11 +75,7 @@ fn load(path: &str) -> (HashMap<u32, Process>, ContainerIndex, HostHeader) {
         nproc: fix.nproc,
         clk_tck: fix.clk_tck,
         page_size: fix.page_size,
-        cpu_pct: 0.0,
-        mem_used_bytes: 0,
-        mem_total_bytes: 0,
-        vram_used_bytes: None,
-        vram_total_bytes: None,
+        ..HostHeader::default()
     };
     (curr, idx, header)
 }

@@ -45,9 +45,10 @@ Other users, User Services, Host-level Containers, and System start collapsed.
 
 ## What the tree means
 
-- **Host** is the machine. The header CPU / RAM / VRAM numbers come from
-  world-readable `/proc/stat`, `/proc/meminfo`, and `/sys/class/drm`. Host row
-  sums only the PIDs heft can see, so it can sit below the header.
+- **Host** is the machine. The header is two unbordered rows: stacked CPU
+  (usr/sys/wait from `/proc/stat`) and one MEMORY bar whose width is MemTotal.
+  On this APU, VRAM and GTT are slices of that same pool (not a second tank).
+  The Host row sums only the PIDs heft can see, so it can sit below the header.
 - **User** is a unix uid. Terminals, shells, and the compositor live under that
   user — not as Host.
 - **Applications** vs **User Services**: a user-instance `*.service` whose name

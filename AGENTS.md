@@ -13,8 +13,8 @@ src/main.rs          clap: TUI default, --once, --json, --interval
 src/lib.rs           modules
 src/types.rs         Process, Metrics, HostTree, JSON shape
 src/proc.rs          every visible PID; blank metrics on EACCES
-src/cpu.rs           /proc/stat + per-pid utime/stime rates
-src/mem.rs           meminfo, statm RSS, host VRAM
+src/cpu.rs           /proc/stat split (usr/sys/wait) + per-pid utime/stime rates
+src/mem.rs           meminfo used/Buffers/Cached, unified APU clip, host VRAM
 src/io.rs            /proc/pid/io rates and smaps_rollup PSS
 src/gpu.rs           amdgpu fdinfo; drm-client-id dedupe
 src/classify.rs      launcher / worker / shell / terminal / compositor tables
@@ -102,6 +102,12 @@ CPU `%core` = `100 * Δ(utime+stime) / (CLK_TCK * dt)` (can exceed 100).
 `%machine` = `%core / nproc`. PSS from `smaps_rollup`; RSS from `statm`.
 Disk from `read_bytes`/`write_bytes`. GPU: prefer `drm-resident-vram` /
 `drm-resident-gtt` over `drm-total-*`; engine ns deltas → gfx% / compute%.
+Header CPU is `/proc/stat` Δ user+nice / system+irq+softirq / iowait (idle+steal
+unfilled). Header MEM is one MemTotal bar when the APU VRAM carve-out is unified;
+VRAM/GTT resident paint first inside used, then Cached/Buffers, then anon, clipped
+so the stack never exceeds `used.min(MemTotal)`. Discrete VRAM as a second tank
+is out of scope. TUI header is 2 unbordered rows; the only persistent rules are
+header↔tree and tree↔footer.
 
 TUI sampling runs on a background thread; the ratatui loop only swaps in the
 last complete tree and never blocks on `/proc` I/O. `--once` / `--json` take

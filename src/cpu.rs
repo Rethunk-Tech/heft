@@ -5,8 +5,22 @@ use crate::types::{HostHeader, Metrics, Process};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct HostCpu {
+    /// user + nice (guest already sits inside these kernel counters)
+    pub user: u64,
+    /// system + irq + softirq
+    pub system: u64,
+    pub wait: u64,
+    /// idle + steal — unfilled remainder of the header bar
     pub idle: u64,
     pub total: u64,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct HostSplit {
+    pub user: f64,
+    pub system: f64,
+    pub wait: f64,
+    pub busy: f64,
 }
 
 pub fn nproc() -> u32 {
@@ -56,13 +70,46 @@ pub fn parse_host_cpu(line: &str) -> Option<HostCpu> {
     if parts.next()? != "cpu" {
         return None;
     }
-    let mut vals = [0u64; 10];
-    for (i, p) in parts.take(10).enumerate() {
+    let mut vals = [0u64; 8];
+    let mut n = 0;
+    for (i, p) in parts.take(8).enumerate() {
         vals[i] = p.parse().ok()?;
+        n = i + 1;
     }
-    let total: u64 = vals.iter().sum();
-    let idle = vals.get(3).copied().unwrap_or(0) + vals.get(4).copied().unwrap_or(0);
-    Some(HostCpu { idle, total })
+    if n < 4 {
+        return None;
+    }
+    let user = vals[0].saturating_add(vals[1]);
+    let system = vals[2].saturating_add(vals[5]).saturating_add(vals[6]);
+    let idle = vals[3].saturating_add(vals[7]);
+    let wait = vals[4];
+    Some(HostCpu {
+        user,
+        system,
+        wait,
+        idle,
+        total: user
+            .saturating_add(system)
+            .saturating_add(wait)
+            .saturating_add(idle),
+    })
+}
+
+pub fn host_split(a: &HostCpu, b: &HostCpu) -> HostSplit {
+    let dt = b.total.saturating_sub(a.total) as f64;
+    if dt <= 0.0 {
+        return HostSplit::default();
+    }
+    let pct = |lo: u64, hi: u64| (hi.saturating_sub(lo) as f64 / dt * 100.0).clamp(0.0, 100.0);
+    let user = pct(a.user, b.user);
+    let system = pct(a.system, b.system);
+    let wait = pct(a.wait, b.wait);
+    HostSplit {
+        user,
+        system,
+        wait,
+        busy: host_pct(a, b),
+    }
 }
 
 pub fn host_pct(a: &HostCpu, b: &HostCpu) -> f64 {
@@ -128,17 +175,24 @@ fn engine_pct(prev: Option<u64>, cur: Option<u64>, secs: f64) -> Option<f64> {
 }
 
 pub fn header_from(nproc: u32, clk: u64, page: u64, a: &HostCpu, b: &HostCpu) -> HostHeader {
-    let (mem_used_bytes, mem_total_bytes) = crate::mem::read_ram();
-    let (vram_used_bytes, vram_total_bytes) = crate::mem::read_vram();
+    let ram = crate::mem::read_ram();
+    let gpu = crate::mem::read_gpu();
+    let split = host_split(a, b);
     HostHeader {
         nproc,
         clk_tck: clk,
         page_size: page,
-        cpu_pct: host_pct(a, b),
-        mem_used_bytes,
-        mem_total_bytes,
-        vram_used_bytes,
-        vram_total_bytes,
+        cpu_pct: split.busy,
+        cpu_user_pct: split.user,
+        cpu_system_pct: split.system,
+        cpu_wait_pct: split.wait,
+        mem_used_bytes: ram.used_bytes,
+        mem_total_bytes: ram.total_bytes,
+        mem_buffers_bytes: ram.buffers_bytes,
+        mem_cached_bytes: ram.cached_bytes,
+        vram_used_bytes: gpu.vram_used,
+        vram_total_bytes: gpu.vram_total,
+        unified_memory: crate::mem::is_unified(ram.total_bytes, &gpu),
     }
 }
 
@@ -151,5 +205,24 @@ mod tests {
         let a = parse_host_cpu("cpu  10 0 10 80 0 0 0 0 0 0").unwrap();
         let b = parse_host_cpu("cpu  20 0 20 80 0 0 0 0 0 0").unwrap();
         assert!((host_pct(&a, &b) - 100.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn host_cpu_split_user_sys_wait() {
+        let a = parse_host_cpu("cpu  100 10 50 800 40 5 5 0").unwrap();
+        let b = parse_host_cpu("cpu  200 20 100 850 90 10 10 0").unwrap();
+        let s = host_split(&a, &b);
+        let dt = 270.0;
+        assert!((s.user - 110.0 / dt * 100.0).abs() < 0.01);
+        assert!((s.system - 60.0 / dt * 100.0).abs() < 0.01);
+        assert!((s.wait - 50.0 / dt * 100.0).abs() < 0.01);
+        assert!((s.busy - (s.user + s.system + s.wait)).abs() < 0.01);
+    }
+
+    #[test]
+    fn guest_fields_do_not_inflate_total() {
+        let cpu = parse_host_cpu("cpu  10 0 10 80 0 0 0 0 50 25").unwrap();
+        assert_eq!(cpu.user, 10);
+        assert_eq!(cpu.total, 100);
     }
 }

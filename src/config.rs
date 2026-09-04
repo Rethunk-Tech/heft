@@ -1,4 +1,6 @@
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
@@ -55,7 +57,21 @@ pub fn load_view() -> View {
 }
 
 pub fn save_view(view: &View) -> Result<(), Error> {
-    fs::create_dir_all(config_dir())?;
-    fs::write(view_path(), serde_json::to_string_pretty(view)?)?;
+    let dir = config_dir();
+    fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(&dir)?;
+    fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))?;
+    let path = view_path();
+    let data = serde_json::to_string_pretty(view)?;
+    let mut f = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(&path)?;
+    f.write_all(data.as_bytes())?;
+    f.set_permissions(fs::Permissions::from_mode(0o600))?;
     Ok(())
 }

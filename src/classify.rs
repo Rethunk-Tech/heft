@@ -171,6 +171,9 @@ pub fn is_session_plumbing(p: &Process) -> bool {
 }
 
 /// User Services identity for session helpers. PPID is usually user systemd.
+///
+/// A logical group is a documented unit/package/D-Bus/architecture family,
+/// not a comm prefix. Prefix-only lookalikes with a different product stay out.
 pub fn session_helper_ident(p: &Process) -> Option<(String, String)> {
     if is_session_bus(p) {
         return Some(ident("dbus-broker"));
@@ -178,9 +181,7 @@ pub fn session_helper_ident(p: &Process) -> Option<(String, String)> {
     if gnome_shell_helper(p) {
         return Some(ident("gnome-shell"));
     }
-    let named = name_of(p);
-    let l = norm(&named);
-    if l == "ibus-portal" || norm(&p.comm) == "ibus-portal" {
+    if ibus_family(p) {
         return Some(ident("ibus-daemon"));
     }
     if is_atspi_registry(p) {
@@ -189,13 +190,34 @@ pub fn session_helper_ident(p: &Process) -> Option<(String, String)> {
     if is_goa_helper(p) {
         return Some(ident("goa-daemon"));
     }
-    if l.starts_with("p11-kit") || norm(&p.comm).starts_with("p11-kit") {
+    if names_match(p, |n| n.starts_with("p11-kit")) {
         return Some(ident("p11-kit"));
     }
-    if l.starts_with("gsd-") || norm(&p.comm).starts_with("gsd-") {
-        return Some((named.clone(), named));
+    if is_gsd_disk_utility_notify(p) {
+        return Some(ident("gsd-disk-utility-notify"));
     }
-    if l == "abrt-applet" || norm(&p.comm) == "abrt-applet" {
+    if is_gsd_plugin(p) {
+        return Some(ident("gnome-settings-daemon"));
+    }
+    if is_gvfs_stack(p) {
+        return Some(ident("gvfs"));
+    }
+    if is_flatpak_session_infra(p) {
+        return Some(ident("flatpak"));
+    }
+    if is_xdg_desktop_portal_family(p) {
+        return Some(ident("xdg-desktop-portal"));
+    }
+    if is_evolution_data_server(p) {
+        return Some(ident("evolution-data-server"));
+    }
+    if is_pipewire(p) {
+        return Some(ident("pipewire"));
+    }
+    if is_gcr_ssh_agent(p) {
+        return Some(ident("gcr-ssh-agent"));
+    }
+    if names_match(p, |n| n == "abrt-applet") {
         return Some(ident("abrt-applet"));
     }
     None
@@ -217,6 +239,7 @@ fn gnome_shell_helper(p: &Process) -> bool {
             || n.starts_with("gnome-shell-")
             || n == "gnome-calendar"
             || n == "gnome-clocks"
+            || n == "xwayland"
         {
             return true;
         }
@@ -230,12 +253,97 @@ fn gnome_shell_helper(p: &Process) -> bool {
     false
 }
 
+fn names_match(p: &Process, pred: impl Fn(&str) -> bool) -> bool {
+    names_of(p).iter().any(|n| pred(n))
+}
+
+fn ibus_family(p: &Process) -> bool {
+    names_match(p, |n| {
+        n == "ibus-daemon"
+            || n == "ibus-portal"
+            || n == "ibus-dconf"
+            || n == "ibus-x11"
+            || n.starts_with("ibus-engine")
+            || n.starts_with("ibus-extension")
+            || n.starts_with("ibus-ui-")
+    })
+}
+
 fn is_atspi_registry(p: &Process) -> bool {
-    names_of(p).iter().any(|n| n.starts_with("at-spi2-registr"))
+    names_match(p, |n| n.starts_with("at-spi2-registr"))
 }
 
 fn is_goa_helper(p: &Process) -> bool {
-    names_of(p).iter().any(|n| n.starts_with("goa-"))
+    // gvfs-goa-volume-monitor is GVFS, not GOA.
+    names_match(p, |n| n.starts_with("goa-"))
+}
+
+fn is_gsd_disk_utility_notify(p: &Process) -> bool {
+    names_match(p, |n| n.starts_with("gsd-disk-utilit"))
+        || p.exe
+            .as_deref()
+            .is_some_and(|e| e.contains("gsd-disk-utility-notify"))
+        || p.cgroup.contains("DiskUtilityNotify")
+}
+
+fn is_gsd_plugin(p: &Process) -> bool {
+    names_match(p, |n| n.starts_with("gsd-"))
+}
+
+fn is_gvfs_stack(p: &Process) -> bool {
+    if names_match(p, |n| {
+        n == "gvfsd" || n.starts_with("gvfsd-") || n.starts_with("gvfs-")
+    }) {
+        return true;
+    }
+    // wsdd is a separate RPM; fold only when the gvfs daemon unit spawned it.
+    names_match(p, |n| n == "wsdd") && p.cgroup.contains("gvfs-")
+}
+
+fn is_flatpak_session_infra(p: &Process) -> bool {
+    if names_match(p, |n| {
+        n.starts_with("flatpak-session") || n == "flatpak-portal"
+    }) {
+        return true;
+    }
+    // App-bound proxy already bills to that Flatpak app via launcher folding.
+    names_match(p, |n| n == "xdg-dbus-proxy") && !p.cgroup.contains("app-flatpak-")
+}
+
+fn is_xdg_desktop_portal_family(p: &Process) -> bool {
+    if names_match(p, |n| {
+        n == "xdg-desktop-portal"
+            || n.starts_with("xdg-desktop-portal-")
+            || n == "xdg-document-portal"
+            || n == "xdg-permission-store"
+    }) {
+        return true;
+    }
+    names_match(p, |n| n.starts_with("fusermount")) && p.cgroup.contains("xdg-document-portal")
+}
+
+fn is_evolution_data_server(p: &Process) -> bool {
+    names_match(p, |n| {
+        n.starts_with("evolution-addressbook")
+            || n.starts_with("evolution-calendar")
+            || n.starts_with("evolution-source")
+            || n.starts_with("evolution-alarm")
+            || n == "evolution-data-server"
+    }) || p
+        .exe
+        .as_deref()
+        .is_some_and(|e| e.contains("/evolution-data-server/"))
+}
+
+fn is_pipewire(p: &Process) -> bool {
+    names_match(p, |n| n == "pipewire" || n == "pipewire-pulse")
+}
+
+fn is_gcr_ssh_agent(p: &Process) -> bool {
+    if names_match(p, |n| n.starts_with("gcr-ssh-agent")) {
+        return true;
+    }
+    names_match(p, |n| n == "ssh-agent") && p.cgroup.contains("gcr-ssh-agent")
 }
 
 /// Firefox/Chromium crash helper whose parent is often user systemd.
@@ -534,6 +642,155 @@ mod tests {
             .as_ref()
             .map(|(k, _)| k.as_str()),
             Some("gsd-disk-utility-notify")
+        );
+        assert_eq!(
+            session_helper_ident(&p("gsd-color", &["/usr/libexec/gsd-color"]))
+                .as_ref()
+                .map(|(k, _)| k.as_str()),
+            Some("gnome-settings-daemon")
+        );
+        assert_eq!(
+            session_helper_ident(&p("gvfsd", &["/usr/libexec/gvfsd"]))
+                .as_ref()
+                .map(|(k, _)| k.as_str()),
+            Some("gvfs")
+        );
+        assert_eq!(
+            session_helper_ident(&p(
+                "gvfs-goa-volume-monitor",
+                &["/usr/libexec/gvfs-goa-volume-monitor"]
+            ))
+            .as_ref()
+            .map(|(k, _)| k.as_str()),
+            Some("gvfs"),
+            "gvfs GOA volume monitor is GVFS, not goa-daemon"
+        );
+        assert_eq!(
+            session_helper_ident(&Process {
+                comm: "wsdd".into(),
+                exe: Some("/usr/bin/wsdd".into()),
+                cmdline: vec!["/usr/bin/python3".into(), "/usr/bin/wsdd".into()],
+                cgroup: "0::/user.slice/user-1000.slice/user@1000.service/session.slice/gvfs-daemon.service".into(),
+                ..Process::default()
+            })
+            .as_ref()
+            .map(|(k, _)| k.as_str()),
+            Some("gvfs")
+        );
+        assert!(
+            session_helper_ident(&p("wsdd", &["/usr/bin/wsdd"])).is_none(),
+            "independent wsdd is not gvfs"
+        );
+        assert_eq!(
+            session_helper_ident(&p(
+                "flatpak-session-helper",
+                &["/usr/libexec/flatpak-session-helper"]
+            ))
+            .as_ref()
+            .map(|(k, _)| k.as_str()),
+            Some("flatpak")
+        );
+        assert_eq!(
+            session_helper_ident(&p("flatpak-portal", &["/usr/libexec/flatpak-portal"]))
+                .as_ref()
+                .map(|(k, _)| k.as_str()),
+            Some("flatpak")
+        );
+        assert_eq!(
+            session_helper_ident(&Process {
+                comm: "xdg-dbus-proxy".into(),
+                exe: Some("/usr/bin/xdg-dbus-proxy".into()),
+                cmdline: vec!["/usr/bin/xdg-dbus-proxy".into()],
+                cgroup: "0::/user.slice/user-1000.slice/user@1000.service/session.slice/xdg-desktop-portal.service".into(),
+                ..Process::default()
+            })
+            .as_ref()
+            .map(|(k, _)| k.as_str()),
+            Some("flatpak"),
+            "unbound xdg-dbus-proxy is Flatpak portal plumbing"
+        );
+        assert!(
+            session_helper_ident(&Process {
+                comm: "xdg-dbus-proxy".into(),
+                exe: Some("/usr/bin/xdg-dbus-proxy".into()),
+                cgroup: "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-flatpak-dev.vencord.Vesktop-1.scope".into(),
+                ..Process::default()
+            })
+            .is_none(),
+            "app-bound xdg-dbus-proxy must not become the flatpak service"
+        );
+        assert_eq!(
+            session_helper_ident(&p(
+                "xdg-desktop-portal-gnome",
+                &["/usr/libexec/xdg-desktop-portal-gnome"]
+            ))
+            .as_ref()
+            .map(|(k, _)| k.as_str()),
+            Some("xdg-desktop-portal")
+        );
+        assert_eq!(
+            session_helper_ident(&p(
+                "evolution-addressbook-factory",
+                &["/usr/libexec/evolution-addressbook-factory"]
+            ))
+            .as_ref()
+            .map(|(k, _)| k.as_str()),
+            Some("evolution-data-server")
+        );
+        assert!(
+            session_helper_ident(&p("evolution", &["/usr/bin/evolution"])).is_none(),
+            "Evolution GUI is not evolution-data-server"
+        );
+        assert_eq!(
+            session_helper_ident(&p("pipewire-pulse", &["/usr/bin/pipewire-pulse"]))
+                .as_ref()
+                .map(|(k, _)| k.as_str()),
+            Some("pipewire")
+        );
+        assert!(
+            session_helper_ident(&p("wireplumber", &["/usr/bin/wireplumber"])).is_none(),
+            "wireplumber is a different package than pipewire"
+        );
+        assert_eq!(
+            session_helper_ident(&p("ibus-x11", &["/usr/libexec/ibus-x11"]))
+                .as_ref()
+                .map(|(k, _)| k.as_str()),
+            Some("ibus-daemon")
+        );
+        assert_eq!(
+            session_helper_ident(&p("ibus-dconf", &["/usr/libexec/ibus-dconf"]))
+                .as_ref()
+                .map(|(k, _)| k.as_str()),
+            Some("ibus-daemon")
+        );
+        assert_eq!(
+            session_helper_ident(&Process {
+                comm: "Xwayland".into(),
+                exe: Some("/usr/bin/Xwayland".into()),
+                ..Process::default()
+            })
+            .as_ref()
+            .map(|(k, _)| k.as_str()),
+            Some("gnome-shell")
+        );
+        assert_eq!(
+            session_helper_ident(&Process {
+                comm: "ssh-agent".into(),
+                exe: Some("/usr/bin/ssh-agent".into()),
+                cgroup: "0::/user.slice/user-1000.slice/user@1000.service/app.slice/gcr-ssh-agent.service".into(),
+                ..Process::default()
+            })
+            .as_ref()
+            .map(|(k, _)| k.as_str()),
+            Some("gcr-ssh-agent")
+        );
+        assert!(
+            session_helper_ident(&p("ssh-agent", &["/usr/bin/ssh-agent"])).is_none(),
+            "ssh-agent outside gcr-ssh-agent is not that service"
+        );
+        assert!(
+            session_helper_ident(&p("majordomo", &["majordomo", "lead", "get"])).is_none(),
+            "majordomo CLI is not a user service"
         );
         assert_eq!(
             session_helper_ident(&p(

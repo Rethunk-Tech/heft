@@ -686,6 +686,363 @@
       "stime": 1
     },
     {
+      "pid": 342,
+      "ppid": 300,
+      "pgrp": 342,
+      "sid": 342,
+      "uid": 1000,
+      "comm": "gsd-color",
+      "exe": "/usr/libexec/gsd-color",
+      "cmdline": [
+        "/usr/libexec/gsd-color"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/session.slice/org.gnome.SettingsDaemon.Color.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 343,
+      "ppid": 300,
+      "pgrp": 343,
+      "sid": 343,
+      "uid": 1000,
+      "comm": "gsd-power",
+      "exe": "/usr/libexec/gsd-power",
+      "cmdline": [
+        "/usr/libexec/gsd-power"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/session.slice/org.gnome.SettingsDaemon.Power.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 344,
+      "ppid": 300,
+      "pgrp": 344,
+      "sid": 344,
+      "uid": 1000,
+      "comm": "gvfsd",
+      "exe": "/usr/libexec/gvfsd",
+      "cmdline": [
+        "/usr/libexec/gvfsd"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/session.slice/gvfs-daemon.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 345,
+      "ppid": 344,
+      "pgrp": 344,
+      "sid": 344,
+      "uid": 1000,
+      "comm": "gvfsd-trash",
+      "exe": "/usr/libexec/gvfsd-trash",
+      "cmdline": [
+        "/usr/libexec/gvfsd-trash",
+        "--spawner",
+        ":1.7"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/session.slice/gvfs-daemon.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 346,
+      "ppid": 300,
+      "pgrp": 346,
+      "sid": 346,
+      "uid": 1000,
+      "comm": "gvfs-goa-volume",
+      "exe": "/usr/libexec/gvfs-goa-volume-monitor",
+      "cmdline": [
+        "/usr/libexec/gvfs-goa-volume-monitor"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/session.slice/gvfs-goa-volume-monitor.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 347,
+      "ppid": 300,
+      "pgrp": 347,
+      "sid": 347,
+      "uid": 1000,
+      "comm": "wsdd",
+      "exe": "/usr/bin/python3",
+      "cmdline": [
+        "/usr/bin/python3",
+        "/usr/bin/wsdd",
+        "--no-host"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/session.slice/gvfs-daemon.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 348,
+      "ppid": 300,
+      "pgrp": 348,
+      "sid": 348,
+      "uid": 1000,
+      "comm": "flatpak-session",
+      "exe": "/usr/libexec/flatpak-session-helper",
+      "cmdline": [
+        "/usr/libexec/flatpak-session-helper"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/flatpak-session-helper.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 349,
+      "ppid": 300,
+      "pgrp": 349,
+      "sid": 349,
+      "uid": 1000,
+      "comm": "flatpak-portal",
+      "exe": "/usr/libexec/flatpak-portal",
+      "cmdline": [
+        "/usr/libexec/flatpak-portal"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/flatpak-portal.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 350,
+      "ppid": 300,
+      "pgrp": 350,
+      "sid": 350,
+      "uid": 1000,
+      "comm": "xdg-dbus-proxy",
+      "exe": "/usr/bin/xdg-dbus-proxy",
+      "cmdline": [
+        "/usr/bin/xdg-dbus-proxy"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/session.slice/xdg-desktop-portal.service",
+      "utime": 1,
+      "stime": 0
+    },
+    {
+      "pid": 351,
+      "ppid": 300,
+      "pgrp": 351,
+      "sid": 351,
+      "uid": 1000,
+      "comm": "xdg-desktop-por",
+      "exe": "/usr/libexec/xdg-desktop-portal",
+      "cmdline": [
+        "/usr/libexec/xdg-desktop-portal"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/session.slice/xdg-desktop-portal.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 352,
+      "ppid": 300,
+      "pgrp": 352,
+      "sid": 352,
+      "uid": 1000,
+      "comm": "xdg-desktop-por",
+      "exe": "/usr/libexec/xdg-desktop-portal-gnome",
+      "cmdline": [
+        "/usr/libexec/xdg-desktop-portal-gnome"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/xdg-desktop-portal-gnome.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 353,
+      "ppid": 300,
+      "pgrp": 353,
+      "sid": 353,
+      "uid": 1000,
+      "comm": "xdg-document-po",
+      "exe": "/usr/libexec/xdg-document-portal",
+      "cmdline": [
+        "/usr/libexec/xdg-document-portal"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/session.slice/xdg-document-portal.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 354,
+      "ppid": 353,
+      "pgrp": 353,
+      "sid": 353,
+      "uid": 1000,
+      "comm": "fusermount3",
+      "exe": "/usr/bin/fusermount3",
+      "cmdline": [
+        "fusermount3",
+        "-o",
+        "rw,nosuid,nodev,fsname=portal",
+        "--",
+        "/run/user/1000/doc"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/session.slice/xdg-document-portal.service",
+      "utime": 1,
+      "stime": 0
+    },
+    {
+      "pid": 355,
+      "ppid": 300,
+      "pgrp": 355,
+      "sid": 355,
+      "uid": 1000,
+      "comm": "evolution-addre",
+      "exe": "/usr/libexec/evolution-addressbook-factory",
+      "cmdline": [
+        "/usr/libexec/evolution-addressbook-factory"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/evolution-addressbook-factory.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 356,
+      "ppid": 300,
+      "pgrp": 356,
+      "sid": 356,
+      "uid": 1000,
+      "comm": "evolution-calen",
+      "exe": "/usr/libexec/evolution-calendar-factory",
+      "cmdline": [
+        "/usr/libexec/evolution-calendar-factory"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/evolution-calendar-factory.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 357,
+      "ppid": 300,
+      "pgrp": 357,
+      "sid": 357,
+      "uid": 1000,
+      "comm": "pipewire",
+      "exe": "/usr/bin/pipewire",
+      "cmdline": [
+        "/usr/bin/pipewire"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/session.slice/pipewire.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 358,
+      "ppid": 300,
+      "pgrp": 358,
+      "sid": 358,
+      "uid": 1000,
+      "comm": "pipewire-pulse",
+      "exe": "/usr/bin/pipewire",
+      "cmdline": [
+        "/usr/bin/pipewire-pulse"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/session.slice/pipewire-pulse.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 359,
+      "ppid": 300,
+      "pgrp": 359,
+      "sid": 359,
+      "uid": 1000,
+      "comm": "wireplumber",
+      "exe": "/usr/bin/wireplumber",
+      "cmdline": [
+        "/usr/bin/wireplumber"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/session.slice/wireplumber.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 360,
+      "ppid": 332,
+      "pgrp": 332,
+      "sid": 332,
+      "uid": 1000,
+      "comm": "ibus-dconf",
+      "exe": "/usr/libexec/ibus-dconf",
+      "cmdline": [
+        "/usr/libexec/ibus-dconf"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/session.slice/org.freedesktop.IBus.session.GNOME.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 361,
+      "ppid": 300,
+      "pgrp": 361,
+      "sid": 361,
+      "uid": 1000,
+      "comm": "ibus-x11",
+      "exe": "/usr/libexec/ibus-x11",
+      "cmdline": [
+        "/usr/libexec/ibus-x11"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/session.slice/org.gnome.SettingsDaemon.XSettings.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 362,
+      "ppid": 301,
+      "pgrp": 362,
+      "sid": 362,
+      "uid": 1000,
+      "comm": "Xwayland",
+      "exe": "/usr/bin/Xwayland",
+      "cmdline": [
+        "/usr/bin/Xwayland",
+        ":0"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/session.slice/org.gnome.Shell@user.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 363,
+      "ppid": 300,
+      "pgrp": 363,
+      "sid": 363,
+      "uid": 1000,
+      "comm": "gcr-ssh-agent",
+      "exe": "/usr/libexec/gcr-ssh-agent",
+      "cmdline": [
+        "/usr/libexec/gcr-ssh-agent",
+        "--base-dir",
+        "/run/user/1000/gcr"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/gcr-ssh-agent.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 364,
+      "ppid": 363,
+      "pgrp": 363,
+      "sid": 363,
+      "uid": 1000,
+      "comm": "ssh-agent",
+      "exe": "/usr/bin/ssh-agent",
+      "cmdline": [
+        "/usr/bin/ssh-agent",
+        "-D"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/gcr-ssh-agent.service",
+      "utime": 1,
+      "stime": 0
+    },
+    {
       "pid": 400,
       "ppid": 1,
       "pgrp": 400,
@@ -712,6 +1069,29 @@
         "-bash"
       ],
       "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-ghostty-surface-transient-1.scope",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 408,
+      "ppid": 300,
+      "pgrp": 408,
+      "sid": 408,
+      "uid": 1000,
+      "comm": "bwrap",
+      "exe": "/usr/bin/bwrap",
+      "cmdline": [
+        "/usr/bin/bwrap",
+        "--die-with-parent",
+        "--unshare-pid",
+        "--",
+        "/tmp/majordomo-turns/turn/majordomo",
+        "lead",
+        "get",
+        "--lead-id",
+        "c7031d70-21cf-4bf9-bc87-53498f35fa9d"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-ghostty-surface-transient-184518.scope",
       "utime": 10,
       "stime": 1
     },
@@ -1074,6 +1454,22 @@
       "exe": "/usr/bin/cat",
       "cmdline": [
         "cat"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-flatpak-dev.vencord.Vesktop-1.scope",
+      "utime": 1,
+      "stime": 0
+    },
+    {
+      "pid": 737,
+      "ppid": 730,
+      "pgrp": 737,
+      "sid": 737,
+      "uid": 1000,
+      "comm": "xdg-dbus-proxy",
+      "exe": "/usr/bin/xdg-dbus-proxy",
+      "cmdline": [
+        "/usr/bin/xdg-dbus-proxy",
+        "--args=76"
       ],
       "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-flatpak-dev.vencord.Vesktop-1.scope",
       "utime": 1,

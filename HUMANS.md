@@ -53,7 +53,9 @@ Other users, User Services, Host-level Containers, and System start collapsed.
 - **Applications** vs **User Services**: a user-instance `*.service` whose name
   does not start with `app-` is a user service (`earshotd.service`,
   `engined.service`, `org.gnome.Shell@user.service`). Session helpers
-  (`ibus-portal`, AT-SPI registry, GOA, p11-kit, `gsd-*`, `abrt-applet`,
+  (`ibus-portal`, AT-SPI registry, GOA, p11-kit, GNOME Settings Daemon plugins
+  as `gnome-settings-daemon`, `gsd-disk-utility-notify`, GVFS, Flatpak session
+  helpers, xdg-desktop-portal, evolution-data-server, `abrt-applet`,
   gnome-shell GJS backends) sit in User Services even when D-Bus used an
   `app-` or `dbus:` unit. Everything else under the user is an application.
 - **Containers** under a user are workloads heft can attribute (workdir owner,

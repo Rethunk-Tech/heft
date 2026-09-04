@@ -57,18 +57,32 @@ Never read `/proc/pid/mem`. Never ptrace.
   `crashhelper` matches exe/cmdline (`/usr/lib64/firefox/crashhelper`) even
   when PPID is user systemd.
 - GNOME session plumbing (`gdm-*`, `gnome-session*`, `gnome-keyring*`,
-  `gnome-shell-*`, `gnome-calendar`, `gnome-clocks`, and `gjs` running
-  gnome-shell Notifications/ScreenSaver) is User Services folded into
+  `gnome-shell-*`, `gnome-calendar`, `gnome-clocks`, `Xwayland`, and `gjs`
+  running gnome-shell Notifications/ScreenSaver) is User Services folded into
   `gnome-shell`. User-session `dbus-broker` / `dbus-broker-launch` are
   User Services, never Applications. `lying_unit` matches `dbus:` activation
   scopes, not `dbus-broker.service`. Session helpers stay User Services even
-  when reparented to user systemd: `ibus-portal` → `ibus-daemon`,
-  `at-spi2-registryd` → `at-spi-bus-launcher`, `goa-identity-service` →
-  `goa-daemon`, `p11-kit-server`/`p11-kit-remote` → `p11-kit` (never
-  `flatpak-session-helper`; Cursor shares that cgroup). `gsd-*` and
-  `abrt-applet` keep their own User Services rows (do not collapse `gsd-*`
-  into gnome-shell). Independent apps (vivaldi, cursor, claude, vesktop) never
-  fold into gnome-shell.
+  when reparented to user systemd: `ibus-portal` / `ibus-dconf` / `ibus-x11` /
+  `ibus-engine-*` → `ibus-daemon`, `at-spi2-registryd` → `at-spi-bus-launcher`,
+  `goa-identity-service` → `goa-daemon`, `p11-kit-server`/`p11-kit-remote` →
+  `p11-kit` (never `flatpak-session-helper`; Cursor shares that cgroup).
+  A User Services logical group is one identity for processes that share a
+  systemd unit family, RPM/package family, D-Bus well-known name family, or
+  documented process architecture — not a comm prefix. Merge `gsd-*` plugins
+  (`org.gnome.SettingsDaemon.*`, package `gnome-settings-daemon`) into
+  `gnome-settings-daemon`; keep `gsd-disk-utility-notify` (`gnome-disk-utility`)
+  as its own row. Merge GVFS (`gvfsd*`, volume monitors, `gvfs-*.service`,
+  including `gvfs-goa-volume-monitor` and unit-bound `wsdd`) into `gvfs`, never
+  into `goa-daemon`. `flatpak-session-helper` and `flatpak-portal` are `flatpak`
+  session infrastructure; `xdg-dbus-proxy` with no app-flatpak cgroup folds
+  there, app-bound proxy bills to that app. `xdg-desktop-portal` + backends +
+  document/permission portals are `xdg-desktop-portal`. EDS factories/alarm
+  notify are `evolution-data-server`. `pipewire` + `pipewire-pulse` are
+  `pipewire`; `wireplumber` stays separate (different package). `gcr-ssh-agent`
+  absorbs `ssh-agent` only in that unit. `abrt-applet` stays its own row.
+  Independent apps (vivaldi, cursor, claude, vesktop, firefox, ghostty) never
+  fold into gnome-shell or these service identities. A CLI such as `majordomo`
+  (`lead get` under a ghostty transient bwrap) is Applications, not a service.
 - Split when the child's resolved identity differs and the child is a real app.
   Idle interactive shells stay their own Applications row.
 - Generic interpreters (`bun`, `python`, `java`, `node`, `MainThread`) fall back

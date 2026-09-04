@@ -194,9 +194,27 @@ fn gui_and_docker_fixture() {
         "p11-kit-remote",
         "p11-kit",
         "gsd-disk-utility-notify",
+        "gsd-color",
+        "gsd-power",
+        "gvfsd",
+        "gvfsd-trash",
+        "gvfs-goa-volume-monitor",
+        "wsdd",
         "abrt-applet",
         "crashhelper",
         "flatpak-session-helper",
+        "flatpak-portal",
+        "xdg-desktop-portal",
+        "xdg-desktop-portal-gnome",
+        "xdg-document-portal",
+        "evolution-addressbook-factory",
+        "pipewire",
+        "wireplumber",
+        "ibus-dconf",
+        "ibus-x11",
+        "Xwayland",
+        "gcr-ssh-agent",
+        "ssh-agent",
     ] {
         assert!(
             !has(&user.applications, name),
@@ -227,7 +245,27 @@ fn gui_and_docker_fixture() {
     assert!(has(&user.user_services, "goa-daemon"));
     assert!(has(&user.user_services, "p11-kit"));
     assert!(has(&user.user_services, "gsd-disk-utility-notify"));
+    assert!(has(&user.user_services, "gnome-settings-daemon"));
+    assert!(has(&user.user_services, "gvfs"));
+    assert!(has(&user.user_services, "flatpak"));
+    assert!(has(&user.user_services, "xdg-desktop-portal"));
+    assert!(has(&user.user_services, "evolution-data-server"));
+    assert!(has(&user.user_services, "pipewire"));
+    assert!(has(&user.user_services, "wireplumber"));
+    assert!(has(&user.user_services, "gcr-ssh-agent"));
     assert!(has(&user.user_services, "abrt-applet"));
+    assert!(!has(&user.user_services, "gsd-color"));
+    assert!(!has(&user.user_services, "gsd-power"));
+    assert!(!has(&user.user_services, "gvfsd"));
+    assert!(!has(&user.user_services, "gvfs-goa-volume-monitor"));
+    assert!(!has(&user.user_services, "flatpak-session-helper"));
+    assert!(!has(&user.user_services, "flatpak-portal"));
+    assert!(!has(&user.user_services, "xdg-desktop-portal-gnome"));
+    assert!(!has(&user.user_services, "evolution-addressbook-factory"));
+    assert!(!has(&user.user_services, "pipewire-pulse"));
+    assert!(!has(&user.user_services, "ibus-dconf"));
+    assert!(!has(&user.user_services, "ibus-x11"));
+    assert!(!has(&user.user_services, "ssh-agent"));
     assert!(!has(&user.user_services, "gnome-calendar"));
     assert!(!has(&user.user_services, "gnome-clocks"));
     assert!(!has(&user.user_services, "ghostty"));
@@ -266,16 +304,22 @@ fn gui_and_docker_fixture() {
         gnome_procs.iter().any(|n| n == "gjs-console" || n == "gjs"),
         "gjs-console gnome-shell backends must remain visible under gnome-shell: {gnome_procs:?}"
     );
+    assert!(
+        gnome_procs.iter().any(|n| n == "Xwayland"),
+        "Xwayland must remain visible under gnome-shell: {gnome_procs:?}"
+    );
 
     let ibus = user
         .user_services
         .iter()
         .find(|n| n.id == "ibus-daemon")
         .expect("ibus-daemon");
+    let ibus_procs = proc_names(ibus);
     assert!(
-        proc_names(ibus).iter().any(|n| n == "ibus-portal"),
-        "ibus-portal must remain visible under ibus-daemon: {:?}",
-        proc_names(ibus)
+        ibus_procs.iter().any(|n| n == "ibus-portal")
+            && ibus_procs.iter().any(|n| n == "ibus-dconf")
+            && ibus_procs.iter().any(|n| n == "ibus-x11"),
+        "ibus helpers including ibus-x11 (lying GSD unit) fold into ibus-daemon: {ibus_procs:?}"
     );
 
     let atspi = user
@@ -299,6 +343,10 @@ fn gui_and_docker_fixture() {
         goa_procs.iter().any(|n| n == "goa-identity-service"),
         "goa-identity-service must remain visible under goa-daemon: {goa_procs:?}"
     );
+    assert!(
+        !goa_procs.iter().any(|n| n.contains("gvfs")),
+        "gvfs-goa-volume-monitor must not bill to goa-daemon: {goa_procs:?}"
+    );
 
     let p11 = user
         .user_services
@@ -310,6 +358,98 @@ fn gui_and_docker_fixture() {
         p11_procs.iter().any(|n| n == "p11-kit-server")
             && p11_procs.iter().any(|n| n == "p11-kit-remote"),
         "p11-kit server and remote must share one identity: {p11_procs:?}"
+    );
+    let gsd = user
+        .user_services
+        .iter()
+        .find(|n| n.id == "gnome-settings-daemon")
+        .expect("gnome-settings-daemon");
+    let gsd_procs = proc_names(gsd);
+    assert!(
+        gsd_procs.iter().any(|n| n == "gsd-color") && gsd_procs.iter().any(|n| n == "gsd-power"),
+        "gsd plugins must remain visible under gnome-settings-daemon: {gsd_procs:?}"
+    );
+    assert!(
+        !gsd_procs.iter().any(|n| n.contains("disk-utility")),
+        "disk-utility-notify is not gnome-settings-daemon: {gsd_procs:?}"
+    );
+    let gvfs = user
+        .user_services
+        .iter()
+        .find(|n| n.id == "gvfs")
+        .expect("gvfs");
+    let gvfs_procs = proc_names(gvfs);
+    assert!(
+        gvfs_procs.iter().any(|n| n == "gvfsd")
+            && gvfs_procs.iter().any(|n| n == "gvfsd-trash")
+            && gvfs_procs.iter().any(|n| n == "gvfs-goa-volume-monitor")
+            && gvfs_procs.iter().any(|n| n == "wsdd" || n == "python3"),
+        "gvfs stack must remain visible under gvfs: {gvfs_procs:?}"
+    );
+    let flatpak = user
+        .user_services
+        .iter()
+        .find(|n| n.id == "flatpak")
+        .expect("flatpak");
+    let flatpak_procs = proc_names(flatpak);
+    assert!(
+        flatpak_procs.iter().any(|n| n == "flatpak-session-helper")
+            && flatpak_procs.iter().any(|n| n == "flatpak-portal")
+            && flatpak_procs.iter().any(|n| n == "xdg-dbus-proxy"),
+        "Flatpak session infra must remain visible under flatpak: {flatpak_procs:?}"
+    );
+    assert!(
+        !flatpak_procs
+            .iter()
+            .any(|n| n == "cursor" || n.starts_with("p11-kit")),
+        "Cursor/p11-kit must not bill to flatpak: {flatpak_procs:?}"
+    );
+    let portal = user
+        .user_services
+        .iter()
+        .find(|n| n.id == "xdg-desktop-portal")
+        .expect("xdg-desktop-portal");
+    let portal_procs = proc_names(portal);
+    assert!(
+        portal_procs.iter().any(|n| n == "xdg-desktop-portal")
+            && portal_procs.iter().any(|n| n == "xdg-desktop-portal-gnome")
+            && portal_procs.iter().any(|n| n == "xdg-document-portal"),
+        "portal backends must remain visible under xdg-desktop-portal: {portal_procs:?}"
+    );
+    let eds = user
+        .user_services
+        .iter()
+        .find(|n| n.id == "evolution-data-server")
+        .expect("evolution-data-server");
+    let eds_procs = proc_names(eds);
+    assert!(
+        eds_procs
+            .iter()
+            .any(|n| n == "evolution-addressbook-factory")
+            && eds_procs.iter().any(|n| n == "evolution-calendar-factory"),
+        "EDS factories must remain visible: {eds_procs:?}"
+    );
+    let pw = user
+        .user_services
+        .iter()
+        .find(|n| n.id == "pipewire")
+        .expect("pipewire");
+    assert!(
+        proc_names(pw).iter().any(|n| n == "pipewire"),
+        "pipewire-pulse bills to pipewire (exe basename): {:?}",
+        proc_names(pw)
+    );
+    assert!(has(&user.applications, "majordomo"));
+    assert!(!has(&user.user_services, "majordomo"));
+    let vesktop = user
+        .applications
+        .iter()
+        .find(|n| n.id == "vesktop.bin" || n.title == "vesktop.bin")
+        .expect("vesktop.bin");
+    assert!(
+        proc_names(vesktop).iter().any(|n| n == "xdg-dbus-proxy"),
+        "app-bound xdg-dbus-proxy bills to vesktop: {:?}",
+        proc_names(vesktop)
     );
     let cursor = user
         .applications

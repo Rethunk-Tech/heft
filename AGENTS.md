@@ -9,7 +9,7 @@ Read-only Linux process monitor. Binary name `heft`.
 ## Layout
 
 ```
-src/main.rs          clap: TUI default, --once, --json, --interval
+src/main.rs          clap: TUI default, --once, --json, --interval, --pss-interval
 src/lib.rs           modules
 src/types.rs         Process, Metrics, HostTree, JSON shape
 src/proc.rs          every visible PID; blank metrics on EACCES
@@ -99,8 +99,11 @@ Never read `/proc/pid/mem`. Never ptrace.
 ## Sampler
 
 CPU `%core` = `100 * Δ(utime+stime) / (CLK_TCK * dt)` (can exceed 100).
-`%machine` = `%core / nproc`. PSS from `smaps_rollup`; RSS from `statm`.
-Disk from `read_bytes`/`write_bytes`. GPU: prefer `drm-resident-vram` /
+`%machine` = `%core / nproc`. RSS from `statm`. TUI PSS from `smaps_rollup` on
+`--pss-interval` (default 5s, ≥ `--interval`); last per-PID PSS is reused
+between passes (vanished PIDs drop; new PIDs blank until the next rollup).
+`--once` / `--json` always read PSS on the published snapshot. Disk from
+`read_bytes`/`write_bytes`. GPU: prefer `drm-resident-vram` /
 `drm-resident-gtt` over `drm-total-*`; engine ns deltas → gfx% / compute%.
 Header CPU is `/proc/stat` Δ user+nice / system+irq+softirq / iowait (idle+steal
 unfilled). Header MEM is one MemTotal bar when the APU VRAM carve-out is unified;
@@ -111,7 +114,8 @@ header↔tree and tree↔footer. Disk R/W rates are table columns only — not o
 header (the formatted rates change width every tick).
 
 TUI sampling runs on a background thread; the ratatui loop only swaps in the
-last complete tree and never blocks on `/proc` I/O. `--once` / `--json` take
+last complete tree and never blocks on `/proc` I/O. Sleep uses `--interval`
+(`saturating_sub`); a PSS pass may stretch that tick. `--once` / `--json` take
 two snapshots `interval` seconds apart.
 
 JSON shape: `host.users[].applications|user_services|containers`,

@@ -14,14 +14,21 @@ the Docker or Podman API over a unix socket. It never uses `sudo`.
 ## Run
 
 ```sh
-heft                 # fullscreen TUI, 1 s refresh
-heft --once          # one table on stdout
-heft --json          # one JSON tree on stdout
-heft --interval 0.5  # sample period in seconds (TUI tick and --once/--json gap)
+heft                      # fullscreen TUI, 1 s catch-all / 5 s PSS
+heft --once               # one table on stdout
+heft --json               # one JSON tree on stdout
+heft --interval 0.5       # catch-all period (TUI tick and --once/--json gap)
+heft --pss-interval 5     # TUI only: how often to read smaps_rollup (default 5s)
 ```
 
-`--json` implies a single sample (two `/proc` walks separated by `--interval`
-so CPU, disk, and GPU engine rates exist). `--once` does the same as a table.
+`--interval` is the catch-all (default 1s, floor 0.05s): `/proc` walk, RSS,
+io, GPU, grouping, and CPU/disk/GPU rates. `--pss-interval` (default 5s, at
+least `--interval`) is TUI-only; between those reads heft reuses last per-PID
+PSS so rates stay honest. New PIDs show a blank PSS until the next rollup.
+
+`--json` / `--once` take two `/proc` walks separated by `--interval` so rates
+exist, and always read PSS on the published sample (`--pss-interval` is
+ignored).
 
 ## TUI keys
 

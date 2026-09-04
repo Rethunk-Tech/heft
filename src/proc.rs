@@ -45,12 +45,9 @@ fn read_pid(pid: u32, want_pss: bool, prev: Option<&Process>) -> Option<Process>
         .trim()
         .to_string();
     let rss_pages = read_rss_pages(&format!("{base}/statm"));
-    // PSS is a level, not a rate. Prime skips it; kernel threads have no rollup.
-    let pss_kb = if want_pss && !parsed.kthread {
-        pio::read_pss_kb(pid)
-    } else {
-        None
-    };
+    // PSS is a level, not a rate. Kernel threads have no rollup. Prime and
+    // TUI ticks between `--pss-interval` reuse last (new PIDs stay blank).
+    let pss_kb = pss_kb_for(want_pss, parsed.kthread, prev.and_then(|p| p.pss_kb), pid);
     let (read_bytes, write_bytes) = pio::read_io(pid);
     let gpu = gpu::read_pid(pid, prev.map(|p| &p.gpu));
     Some(Process {
@@ -71,6 +68,27 @@ fn read_pid(pid: u32, want_pss: bool, prev: Option<&Process>) -> Option<Process>
         write_bytes,
         gpu,
     })
+}
+
+fn pss_kb_for(want_pss: bool, kthread: bool, prev: Option<u64>, pid: u32) -> Option<u64> {
+    if kthread {
+        None
+    } else if want_pss {
+        pio::read_pss_kb(pid)
+    } else {
+        prev
+    }
+}
+
+/// Floor 0.05s; PSS cadence is at least the catch-all interval.
+pub fn clamp_intervals(interval_s: f64, pss_s: f64) -> (Duration, Duration) {
+    let interval = Duration::from_secs_f64(interval_s.max(0.05));
+    let pss = Duration::from_secs_f64(pss_s.max(0.05)).max(interval);
+    (interval, pss)
+}
+
+fn pss_due(last: Option<Instant>, now: Instant, interval: Duration) -> bool {
+    last.is_none_or(|t| now.saturating_duration_since(t) >= interval)
 }
 
 struct StatFields {
@@ -191,13 +209,15 @@ struct Sampler {
     prev: HashMap<u32, Process>,
     cpu0: cpu::HostCpu,
     t0: Instant,
+    last_pss: Option<Instant>,
+    pss_interval: Duration,
     nproc: u32,
     clk: u64,
     page: u64,
 }
 
 impl Sampler {
-    fn prime() -> Self {
+    fn prime(pss_interval: Duration) -> Self {
         let t0 = Instant::now();
         Self {
             nproc: cpu::nproc(),
@@ -206,10 +226,12 @@ impl Sampler {
             cpu0: cpu::read_host(),
             prev: collect(false, None),
             t0,
+            last_pss: None,
+            pss_interval,
         }
     }
 
-    fn tick(&mut self) -> HostTree {
+    fn tick(&mut self, force_pss: bool) -> HostTree {
         let mut containers = ContainerIndex::load();
         let engined = self.prev.values().find_map(|p| {
             if identity::user_unit(&p.cgroup).as_deref() == Some("engined.service") {
@@ -221,7 +243,11 @@ impl Sampler {
         containers.apply_engined_uid(engined);
         let t1 = Instant::now();
         let cpu1 = cpu::read_host();
-        let curr = collect(true, Some(&self.prev));
+        let want_pss = force_pss || pss_due(self.last_pss, t1, self.pss_interval);
+        let curr = collect(want_pss, Some(&self.prev));
+        if want_pss {
+            self.last_pss = Some(t1);
+        }
         let elapsed = t1.duration_since(self.t0);
         let header = cpu::header_from(self.nproc, self.clk, self.page, &self.cpu0, &cpu1);
         let tree = group::build_tree(&self.prev, &curr, elapsed, &header, &containers);
@@ -233,23 +259,24 @@ impl Sampler {
 }
 
 pub fn sample_world(interval: Duration) -> HostTree {
-    let mut sampler = Sampler::prime();
+    let mut sampler = Sampler::prime(interval);
     thread::sleep(interval);
-    sampler.tick()
+    sampler.tick(true)
 }
 
 /// Latest complete tree. The UI takes; the sampler only publishes.
 pub fn spawn_sampler(
     interval: Duration,
+    pss_interval: Duration,
     slot: Arc<Mutex<Option<HostTree>>>,
 ) -> io::Result<thread::JoinHandle<()>> {
     thread::Builder::new()
         .name("heft-sample".into())
         .spawn(move || {
-            let mut sampler = Sampler::prime();
+            let mut sampler = Sampler::prime(pss_interval);
             loop {
                 let start = Instant::now();
-                let tree = sampler.tick();
+                let tree = sampler.tick(false);
                 *slot.lock().unwrap_or_else(|p| p.into_inner()) = Some(tree);
                 thread::sleep(interval.saturating_sub(start.elapsed()));
             }
@@ -284,5 +311,35 @@ mod tests {
         let p = parse_stat(&tail).unwrap();
         assert!(p.kthread);
         assert_eq!(p.ppid, 2);
+    }
+
+    #[test]
+    fn clamp_floors_and_pss_at_least_interval() {
+        let (i, p) = clamp_intervals(1.0, 5.0);
+        assert_eq!(i, Duration::from_secs(1));
+        assert_eq!(p, Duration::from_secs(5));
+        let (i, p) = clamp_intervals(0.01, 0.01);
+        assert_eq!(i, Duration::from_millis(50));
+        assert_eq!(p, Duration::from_millis(50));
+        let (i, p) = clamp_intervals(10.0, 5.0);
+        assert_eq!(i, Duration::from_secs(10));
+        assert_eq!(p, Duration::from_secs(10));
+    }
+
+    #[test]
+    fn pss_due_first_then_interval() {
+        let start = Instant::now();
+        let five = Duration::from_secs(5);
+        assert!(pss_due(None, start, five));
+        assert!(!pss_due(Some(start), start, five));
+        assert!(!pss_due(Some(start), start + Duration::from_secs(4), five));
+        assert!(pss_due(Some(start), start + five, five));
+    }
+
+    #[test]
+    fn carried_pss_skips_kthread_and_new_pids() {
+        assert_eq!(pss_kb_for(false, true, Some(12), 1), None);
+        assert_eq!(pss_kb_for(false, false, Some(12), 1), Some(12));
+        assert_eq!(pss_kb_for(false, false, None, 1), None);
     }
 }

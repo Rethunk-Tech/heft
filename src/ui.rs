@@ -103,13 +103,13 @@ struct App {
     help: bool,
 }
 
-pub fn run(interval: Duration) -> Result<(), Error> {
+pub fn run(interval: Duration, pss_interval: Duration) -> Result<(), Error> {
     enable_raw_mode()?;
     let mut out = stdout();
     execute!(out, EnterAlternateScreen, Hide)?;
     let backend = CrosstermBackend::new(out);
     let mut terminal = Terminal::new(backend)?;
-    let result = run_loop(&mut terminal, interval);
+    let result = run_loop(&mut terminal, interval, pss_interval);
     disable_raw_mode()?;
     execute!(io::stdout(), LeaveAlternateScreen, Show)?;
     result
@@ -118,10 +118,11 @@ pub fn run(interval: Duration) -> Result<(), Error> {
 fn run_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     interval: Duration,
+    pss_interval: Duration,
 ) -> Result<(), Error> {
     let view = config::load_view();
     let slot = Arc::new(Mutex::new(None));
-    let _sampler = proc::spawn_sampler(interval, slot.clone())?;
+    let _sampler = proc::spawn_sampler(interval, pss_interval, slot.clone())?;
     let tree = proc::placeholder_tree();
     let mut app = App {
         expand: default_expand(&tree),

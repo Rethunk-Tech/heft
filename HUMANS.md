@@ -80,11 +80,11 @@ container title is `docker-<12hex>`. Stopped containers (no PID) do not appear.
 | tree | path | what |
 | --- | --- | --- |
 | config | `$XDG_CONFIG_HOME/heft/view.json` (default `~/.config/heft/view.json`) | saved sort + filter, only after `s` |
-| state | `$XDG_STATE_HOME/heft/` | reserved; unused in v1 |
-| cache | `$XDG_CACHE_HOME/heft/` | reserved; unused in v1 |
 
-Heft may write those directories and the TTY alternate screen. It does not
-write `/proc`, sysfs, or cgroup files.
+Config is created only when you save a view. v1 does not create
+`$XDG_STATE_HOME/heft` or `$XDG_CACHE_HOME/heft`. Heft may write that config
+directory and the TTY alternate screen. It does not write `/proc`, sysfs, or
+cgroup files.
 
 ## Verify
 
@@ -106,5 +106,5 @@ billing `dockerd`.
 
 ```sh
 rm -f ~/.local/bin/heft
-rm -rf ~/.config/heft ~/.local/state/heft ~/.cache/heft
+rm -rf ~/.config/heft
 ```

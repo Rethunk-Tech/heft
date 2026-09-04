@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Changed
+
+- TUI start no longer creates `$XDG_STATE_HOME/heft` or `$XDG_CACHE_HOME/heft`.
+  Only `$XDG_CONFIG_HOME/heft` is created, and only when saving a view.
+
 ### Added
 
 - Initial `heft` TUI and `--once` / `--json` sample: Host → User

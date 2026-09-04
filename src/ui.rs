@@ -104,7 +104,6 @@ struct App {
 }
 
 pub fn run(interval: Duration) -> Result<(), Error> {
-    config::ensure_dirs();
     enable_raw_mode()?;
     let mut out = stdout();
     execute!(out, EnterAlternateScreen, Hide)?;

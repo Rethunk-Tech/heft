@@ -27,14 +27,6 @@ pub fn config_dir() -> PathBuf {
     xdg_dir("XDG_CONFIG_HOME", ".config").join("heft")
 }
 
-pub fn state_dir() -> PathBuf {
-    xdg_dir("XDG_STATE_HOME", ".local/state").join("heft")
-}
-
-pub fn cache_dir() -> PathBuf {
-    xdg_dir("XDG_CACHE_HOME", ".cache").join("heft")
-}
-
 fn xdg_dir(var: &str, fallback: &str) -> PathBuf {
     if let Ok(v) = std::env::var(var)
         && !v.is_empty()
@@ -66,10 +58,4 @@ pub fn save_view(view: &View) -> Result<(), Error> {
     fs::create_dir_all(config_dir())?;
     fs::write(view_path(), serde_json::to_string_pretty(view)?)?;
     Ok(())
-}
-
-pub fn ensure_dirs() {
-    let _ = fs::create_dir_all(config_dir());
-    let _ = fs::create_dir_all(state_dir());
-    let _ = fs::create_dir_all(cache_dir());
 }

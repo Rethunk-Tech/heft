@@ -6,9 +6,8 @@ The latest tagged release. There are no long-lived release branches.
 
 ## Reporting a vulnerability
 
-Use GitHub's **private vulnerability reporting** on this repository
-(Security → Report a vulnerability). Do not open a public issue for a
-suspected vulnerability first.
+GitHub private vulnerability reporting is not available on this private
+repository. Email <security@rethunk.tech> instead of opening an issue.
 
 ## What is in scope
 

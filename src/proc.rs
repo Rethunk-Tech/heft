@@ -9,7 +9,7 @@ use crate::containers::{ContainerIndex, InspectCache};
 use crate::cpu;
 use crate::group;
 use crate::identity;
-use crate::types::{HostTree, Process};
+use crate::types::{GpuCounters, HostTree, Process};
 use crate::{gpu, io as pio};
 
 pub fn enumerate() -> HashMap<u32, Process> {
@@ -48,8 +48,13 @@ fn read_pid(pid: u32, want_pss: bool, prev: Option<&Process>) -> Option<Process>
     // PSS is a level, not a rate. Kernel threads have no rollup. Prime and
     // TUI ticks between `--pss-interval` reuse last (new PIDs stay blank).
     let pss_kb = pss_kb_for(want_pss, parsed.kthread, prev.and_then(|p| p.pss_kb), pid);
-    let (read_bytes, write_bytes) = pio::read_io(pid);
-    let gpu = gpu::read_pid(pid, prev.map(|p| &p.gpu));
+    // PF_KTHREAD has no userspace /proc/pid/io or drm fdinfo.
+    let (read_bytes, write_bytes, gpu) = if parsed.kthread {
+        (None, None, GpuCounters::default())
+    } else {
+        let (r, w) = pio::read_io(pid);
+        (r, w, gpu::read_pid(pid, prev.map(|p| &p.gpu)))
+    };
     Some(Process {
         pid,
         ppid: parsed.ppid,
@@ -114,7 +119,7 @@ fn parse_stat(stat: &str) -> Option<StatFields> {
     let ppid = fields.get(1)?.parse().ok()?;
     let pgrp = fields.get(2)?.parse().ok()?;
     let sid = fields.get(3)?.parse().ok()?;
-    // PF_KTHREAD in include/linux/sched.h — no userspace smaps_rollup.
+    // PF_KTHREAD in include/linux/sched.h — no userspace smaps/io/fdinfo.
     let flags: u32 = fields.get(6).and_then(|s| s.parse().ok()).unwrap_or(0);
     let utime = fields.get(11)?.parse().ok()?;
     let stime = fields.get(12)?.parse().ok()?;
@@ -130,6 +135,8 @@ fn parse_stat(stat: &str) -> Option<StatFields> {
 }
 
 fn read_uid(status_path: &str) -> Option<u32> {
+    // /proc/<pid> inode uid is euid; grouping uses ruid (Uid: field 1). They
+    // diverge on setuid (e.g. fusermount3).
     let text = fs::read_to_string(status_path).ok()?;
     for line in text.lines() {
         if let Some(rest) = line.strip_prefix("Uid:") {

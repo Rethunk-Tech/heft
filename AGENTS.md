@@ -16,7 +16,7 @@ src/proc.rs          every visible PID; blank metrics on EACCES
 src/cpu.rs           /proc/stat split (usr/sys/wait) + per-pid utime/stime rates
 src/mem.rs           meminfo used/Buffers/Cached, unified APU clip, host VRAM
 src/io.rs            /proc/pid/io rates and smaps_rollup PSS
-src/gpu.rs           amdgpu fdinfo; drm-client-id dedupe
+src/gpu.rs           amdgpu fdinfo; dri/drm prefilter; full walk on PSS/--once; drm-client-id dedupe
 src/classify.rs      launcher / worker / shell / terminal / compositor tables
 src/identity.rs      cgroup parse, merge key + display name
 src/containers.rs    GET-only docker/podman; project vs per-container

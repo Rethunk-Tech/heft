@@ -97,9 +97,6 @@ cgroup files.
 ## Verify
 
 ```sh
-cargo test --locked
-cargo clippy --locked --all-targets -- -D warnings
-cargo fmt --check
 heft --once
 ```
 
@@ -109,6 +106,8 @@ heft --once
 `earshotd` / `engined` / the compositor when those units exist; Containers
 should split `engined-*` and sum a Supabase/compose project rather than
 billing `dockerd`.
+
+Contributor gates live in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Uninstall
 

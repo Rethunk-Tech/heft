@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::containers::ContainerIndex;
+use crate::containers::{ContainerIndex, InspectCache};
 use crate::cpu;
 use crate::group;
 use crate::identity;
@@ -214,6 +214,7 @@ struct Sampler {
     nproc: u32,
     clk: u64,
     page: u64,
+    inspect_cache: InspectCache,
 }
 
 impl Sampler {
@@ -228,11 +229,12 @@ impl Sampler {
             t0,
             last_pss: None,
             pss_interval,
+            inspect_cache: InspectCache::default(),
         }
     }
 
     fn tick(&mut self, force_pss: bool) -> HostTree {
-        let mut containers = ContainerIndex::load();
+        let mut containers = ContainerIndex::load(&mut self.inspect_cache);
         let engined = self.prev.values().find_map(|p| {
             if identity::user_unit(&p.cgroup).as_deref() == Some("engined.service") {
                 Some(p.uid)

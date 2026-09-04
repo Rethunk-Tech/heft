@@ -22,6 +22,21 @@ fn hex12(s: &str) -> Option<&str> {
     hex_id(s).and_then(|id| id.get(..12))
 }
 
+fn live_hex_ids(list: &[ListItem]) -> Vec<String> {
+    let mut ids: Vec<String> = list
+        .iter()
+        .filter(|item| !list_skip(item))
+        .filter_map(|item| hex_id(&item.id).map(str::to_ascii_lowercase))
+        .collect();
+    ids.sort();
+    ids.dedup();
+    ids
+}
+
+fn list_skip(item: &ListItem) -> bool {
+    matches!(item.state.as_deref(), Some("exited" | "dead"))
+}
+
 fn path_owner(path: &Path) -> Option<u32> {
     std::fs::symlink_metadata(path).ok().map(|m| m.uid())
 }
@@ -38,6 +53,27 @@ pub struct ContainerInfo {
     pub running: bool,
 }
 
+#[derive(Default)]
+pub struct InspectCache {
+    ids: Vec<String>,
+    inspects: HashMap<String, Inspect>,
+}
+
+impl InspectCache {
+    fn refresh(&mut self, ids: Vec<String>, mut fetch: impl FnMut(&str) -> Option<Inspect>) {
+        if self.ids == ids {
+            return;
+        }
+        self.inspects.clear();
+        for id in &ids {
+            if let Some(insp) = fetch(id) {
+                self.inspects.insert(id.clone(), insp);
+            }
+        }
+        self.ids = ids;
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct ContainerIndex {
     by_id: HashMap<String, ContainerInfo>,
@@ -46,16 +82,10 @@ pub struct ContainerIndex {
 }
 
 impl ContainerIndex {
-    pub fn load() -> Self {
-        Self::load_with_engined(None)
-    }
-
-    pub fn load_with_engined(engined_uid: Option<u32>) -> Self {
-        let mut idx = Self {
-            engined_uid,
-            ..Self::default()
-        };
+    pub fn load(cache: &mut InspectCache) -> Self {
+        let mut idx = Self::default();
         let Some(sock) = docker_sock() else {
+            cache.refresh(Vec::new(), |_| None);
             return idx;
         };
         let Ok(body) = unix_get(&sock, "/containers/json") else {
@@ -64,14 +94,20 @@ impl ContainerIndex {
         let Ok(list) = serde_json::from_slice::<Vec<ListItem>>(&body) else {
             return idx;
         };
-        for item in list {
-            if item.state.as_deref() == Some("exited") || item.state.as_deref() == Some("dead") {
+        // Inspect is IPs/running; names/labels come from the list GET. Replace
+        // the map when the id set changes so vanished ids cannot linger.
+        cache.refresh(live_hex_ids(&list), |id| {
+            unix_get(&sock, &format!("/containers/{id}/json"))
+                .ok()
+                .and_then(|b| serde_json::from_slice(&b).ok())
+        });
+        for item in &list {
+            if list_skip(item) {
                 continue;
             }
-            let inspect = hex_id(&item.id)
-                .and_then(|id| unix_get(&sock, &format!("/containers/{id}/json")).ok())
-                .and_then(|b| serde_json::from_slice::<Inspect>(&b).ok());
-            idx.insert_item(&item, inspect.as_ref());
+            let inspect =
+                hex_id(&item.id).and_then(|id| cache.inspects.get(&id.to_ascii_lowercase()));
+            idx.insert_item(item, inspect);
         }
         idx
     }
@@ -87,7 +123,7 @@ impl ContainerIndex {
             ..Self::default()
         };
         for item in items {
-            if item.state.as_deref() == Some("exited") || item.state.as_deref() == Some("dead") {
+            if list_skip(item) {
                 continue;
             }
             let inspect = inspects.get(&item.id).or_else(|| {
@@ -456,5 +492,53 @@ mod tests {
         assert!(!docker_get_path(&format!("/containers/{mid}/json")));
         assert!(docker_get_path("/containers/json"));
         assert!(docker_get_path("/containers/0123456789ab/json"));
+    }
+
+    fn item(id: &str, state: Option<&str>) -> ListItem {
+        ListItem {
+            id: id.into(),
+            names: vec![],
+            labels: None,
+            state: state.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn live_ids_skip_exited_sort_and_lower() {
+        let items = vec![
+            item("BBBBBBBBBBBB", Some("running")),
+            item("AAAAAAAAAAAA", Some("exited")),
+            item("cccccccccccccccc", Some("dead")),
+            item("aaaaaaaaaaaa", None),
+        ];
+        assert_eq!(
+            live_hex_ids(&items),
+            vec!["aaaaaaaaaaaa".to_string(), "bbbbbbbbbbbb".to_string()]
+        );
+    }
+
+    #[test]
+    fn inspect_cache_reuses_until_id_set_changes() {
+        let mut cache = InspectCache::default();
+        let mut fetches = 0;
+        let a = "0123456789ab".to_string();
+        let b = "0123456789cd".to_string();
+        cache.refresh(vec![a.clone(), b.clone()], |_| {
+            fetches += 1;
+            Some(Inspect::default())
+        });
+        assert_eq!(fetches, 2);
+        cache.refresh(vec![a.clone(), b.clone()], |_| {
+            fetches += 1;
+            Some(Inspect::default())
+        });
+        assert_eq!(fetches, 2);
+        cache.refresh(vec![b.clone()], |_| {
+            fetches += 1;
+            Some(Inspect::default())
+        });
+        assert_eq!(fetches, 3);
+        assert!(!cache.inspects.contains_key(&a));
+        assert!(cache.inspects.contains_key(&b));
     }
 }

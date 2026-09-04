@@ -94,6 +94,20 @@ fn has(nodes: &[heft::IdentNode], name: &str) -> bool {
     nodes.iter().any(|n| n.id == name || n.title == name)
 }
 
+fn proc_names(n: &heft::IdentNode) -> Vec<String> {
+    fn walk(procs: &[heft::ProcNode], out: &mut Vec<String>) {
+        for p in procs {
+            out.push(p.name.clone());
+            walk(&p.children, out);
+        }
+    }
+    let mut v = Vec::new();
+    for inst in &n.instances {
+        walk(&inst.processes, &mut v);
+    }
+    v
+}
+
 #[test]
 fn gui_and_docker_fixture() {
     let (curr, idx, header) = load("tests/fixtures/gui/world.json");
@@ -146,10 +160,57 @@ fn gui_and_docker_fixture() {
         "minecraft must not become nautilus"
     );
     assert!(!has(&user.applications, "cursor.appimage"));
+    assert!(
+        !has(&user.applications, "context7-mcp"),
+        "MCP servers fold into the launching agent: {:?}",
+        titles(&user.applications)
+    );
+    assert!(
+        !has(&user.applications, "npm"),
+        "npm exec under claude must not be an Applications row: {:?}",
+        titles(&user.applications)
+    );
+    assert!(
+        !has(&user.applications, "shadcn"),
+        "node MCP under cursor folds into cursor: {:?}",
+        titles(&user.applications)
+    );
+    for name in [
+        "gdm-wayland-session",
+        "gnome-session-init-worker",
+        "gnome-shell-calendar-server",
+        "gnome-keyring-daemon",
+        "gnome-calendar",
+        "gnome-clocks",
+        "dbus-broker",
+        "dbus-broker-launch",
+    ] {
+        assert!(
+            !has(&user.applications, name),
+            "{name} must not be Applications: {:?}",
+            titles(&user.applications)
+        );
+    }
+
+    let claude = user
+        .applications
+        .iter()
+        .find(|n| n.id == "claude" || n.title == "claude")
+        .expect("claude");
+    let claude_procs = proc_names(claude);
+    assert!(
+        claude_procs
+            .iter()
+            .any(|n| n == "node-24" || n == "MainThread" || n == "node"),
+        "context7-mcp process must remain visible under claude: {claude_procs:?}"
+    );
 
     assert!(has(&user.user_services, "earshotd"));
     assert!(has(&user.user_services, "engined"));
     assert!(has(&user.user_services, "gnome-shell"));
+    assert!(has(&user.user_services, "dbus-broker"));
+    assert!(!has(&user.user_services, "gnome-calendar"));
+    assert!(!has(&user.user_services, "gnome-clocks"));
     assert!(!has(&user.user_services, "ghostty"));
     assert!(
         !has(&user.user_services, "cursor"),

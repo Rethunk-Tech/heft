@@ -27,6 +27,7 @@ const GENERICS: &[&str] = &[
     "java",
     "node",
     "nodejs",
+    "npm",
     "MainThread",
     "perl",
     "ruby",
@@ -126,7 +127,7 @@ pub fn is_generic(p: &Process) -> bool {
         if GENERICS.iter().any(|x| norm(x) == l) {
             return true;
         }
-        if l.starts_with("python") || l.starts_with("node-") {
+        if l.starts_with("python") || l.starts_with("node-") || l.starts_with("npm ") {
             return true;
         }
     }
@@ -158,6 +159,32 @@ pub fn is_compositor(p: &Process) -> bool {
         let l = norm(n);
         COMPOSITORS.iter().any(|t| norm(t) == l)
     })
+}
+
+pub fn is_session_bus(p: &Process) -> bool {
+    session_name(p).is_some_and(|n| n.starts_with("dbus-broker"))
+}
+
+/// GNOME session / D-Bus user-bus plumbing — never an Applications row.
+pub fn is_session_plumbing(p: &Process) -> bool {
+    session_name(p).is_some()
+}
+
+fn session_name(p: &Process) -> Option<String> {
+    for n in [p.comm.as_str(), name_of(p).as_str()] {
+        let l = norm(n);
+        if l.starts_with("gdm-")
+            || l.starts_with("gnome-session")
+            || l.starts_with("gnome-keyring")
+            || l.starts_with("gnome-shell-")
+            || l == "gnome-calendar"
+            || l == "gnome-clocks"
+            || l.starts_with("dbus-broker")
+        {
+            return Some(l);
+        }
+    }
+    None
 }
 
 /// Interpreters fold into Electron/browser parents, never into a shell or systemd.
@@ -309,6 +336,31 @@ mod tests {
             "bash",
             &["bash", "/app/bin/startvesktop"]
         )));
+        assert!(is_generic(&p(
+            "npm",
+            &["npm", "exec", "@upstash/context7-mcp"]
+        )));
+        assert!(is_generic(&Process {
+            comm: "npm exec @upsta".into(),
+            exe: Some("/usr/bin/node-24".into()),
+            cmdline: vec!["npm".into(), "exec".into(), "@upstash/context7-mcp".into()],
+            ..Process::default()
+        }));
+        assert!(is_session_plumbing(&p(
+            "gnome-shell-calendar-server",
+            &["/usr/libexec/gnome-shell-calendar-server"]
+        )));
+        assert!(is_session_plumbing(&Process {
+            comm: "gdm-wayland-ses".into(),
+            exe: Some("/usr/libexec/gdm-wayland-session".into()),
+            ..Process::default()
+        }));
+        assert!(is_session_bus(&p(
+            "dbus-broker-launch",
+            &["dbus-broker-launch", "--scope", "user"]
+        )));
+        assert!(!is_session_plumbing(&p("vivaldi-bin", &["vivaldi-bin"])));
+        assert!(!is_session_plumbing(&p("claude", &["claude"])));
         let zypak = p(
             "bwrap",
             &[

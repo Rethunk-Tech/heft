@@ -71,8 +71,8 @@ pub fn lying_unit(unit: &str) -> bool {
     let u = unit.to_ascii_lowercase();
     u.contains("-transient-")
         || u.contains("org.chromium.chromium")
-        || u.starts_with("dbus-")
         || u.starts_with("dbus:")
+        || u.starts_with("dbus-:")
         || u.starts_with("run-u")
         || u.starts_with("flatpak-session-helper")
 }
@@ -156,6 +156,8 @@ mod tests {
         assert!(lying_unit("app-ghostty-surface-transient-1.scope"));
         assert!(lying_unit("app-org.chromium.Chromium-1743723.scope"));
         assert!(lying_unit("flatpak-session-helper.service"));
+        assert!(lying_unit("dbus-:1.2-org.gnome.Nautilus@250.service"));
+        assert!(!lying_unit("dbus-broker.service"));
         assert!(is_user_service_unit("earshotd.service"));
         assert!(!is_user_service_unit("app-com.mitchellh.ghostty.service"));
         assert!(is_user_service_unit("org.gnome.Shell@user.service"));

@@ -102,6 +102,10 @@ fn compute_place(
         return system_place(p);
     }
 
+    if let Some(place) = session_plumbing_place(p) {
+        return place;
+    }
+
     if classify::is_worker(p)
         && let Some(parent) = resolve_one(p.ppid, curr, containers, memo, walking)
         && parent.folder != Folder::System
@@ -151,12 +155,11 @@ fn compute_place(
     }
 
     if classify::is_generic(p)
-        && let Some(parent) = resolve_one(p.ppid, curr, containers, memo, walking)
-        && is_owning_app(&parent, curr.get(&p.ppid).unwrap_or(p))
+        && let Some(owner) = owning_app_ancestor(p.ppid, curr, containers, memo, walking)
     {
         return Place {
             instance: identity::instance_key(p, None),
-            ..parent
+            ..owner
         };
     }
 
@@ -239,22 +242,66 @@ fn user_place(p: &Process) -> Place {
     }
 }
 
+fn session_plumbing_place(p: &Process) -> Option<Place> {
+    if !classify::is_session_plumbing(p) {
+        return None;
+    }
+    let (key, title) = if classify::is_session_bus(p) {
+        ("dbus-broker".to_string(), "dbus-broker".to_string())
+    } else {
+        ("gnome-shell".to_string(), "gnome-shell".to_string())
+    };
+    Some(Place {
+        folder: Folder::UserServices,
+        uid: Some(p.uid),
+        key,
+        title,
+        instance: identity::instance_key(p, None),
+        member: None,
+    })
+}
+
 fn raw_place(p: &Process, containers: &ContainerIndex) -> Place {
     container_place(p, containers).unwrap_or_else(|| {
         if identity::is_kernel(p)
             || (identity::in_system_slice(&p.cgroup) && !identity::in_user_slice(&p.cgroup))
         {
             system_place(p)
+        } else if let Some(place) = session_plumbing_place(p) {
+            place
         } else {
             user_place(p)
         }
     })
 }
 
-fn is_owning_app(parent: &Place, parent_proc: &Process) -> bool {
-    parent.folder != Folder::System
-        && parent.folder != Folder::Containers
-        && classify::absorbs_generic(parent_proc)
+fn owning_app_ancestor(
+    mut pid: u32,
+    curr: &HashMap<u32, Process>,
+    containers: &ContainerIndex,
+    memo: &mut HashMap<u32, Place>,
+    walking: &mut HashSet<u32>,
+) -> Option<Place> {
+    for _ in 0..32 {
+        let proc = curr.get(&pid)?;
+        if classify::is_launcher(proc)
+            || classify::is_generic(proc)
+            || classify::is_foldable_helper(proc)
+            || classify::is_session_noise(proc)
+        {
+            pid = proc.ppid;
+            continue;
+        }
+        if !classify::absorbs_generic(proc) {
+            return None;
+        }
+        let place = resolve_one(pid, curr, containers, memo, walking)?;
+        if place.folder == Folder::System || place.folder == Folder::Containers {
+            return None;
+        }
+        return Some(place);
+    }
+    None
 }
 
 fn unique_descendant_ident(

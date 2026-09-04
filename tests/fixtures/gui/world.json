@@ -365,6 +365,136 @@
       "stime": 1
     },
     {
+      "pid": 320,
+      "ppid": 300,
+      "pgrp": 320,
+      "sid": 320,
+      "uid": 1000,
+      "comm": "gnome-shell-cal",
+      "exe": "/usr/libexec/gnome-shell-calendar-server",
+      "cmdline": [
+        "/usr/libexec/gnome-shell-calendar-server"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/dbus-:1.2-org.gnome.Shell.CalendarServer@0.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 321,
+      "ppid": 1,
+      "pgrp": 321,
+      "sid": 321,
+      "uid": 1000,
+      "comm": "gdm-wayland-ses",
+      "exe": "/usr/libexec/gdm-wayland-session",
+      "cmdline": [
+        "/usr/libexec/gdm-wayland-session",
+        "/usr/bin/gnome-session"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/session-2.scope",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 322,
+      "ppid": 321,
+      "pgrp": 322,
+      "sid": 322,
+      "uid": 1000,
+      "comm": "gnome-session-i",
+      "exe": "/usr/libexec/gnome-session-init-worker",
+      "cmdline": [
+        "/usr/libexec/gnome-session-init-worker",
+        "gnome"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/session-2.scope",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 323,
+      "ppid": 1,
+      "pgrp": 323,
+      "sid": 323,
+      "uid": 1000,
+      "comm": "gnome-keyring-d",
+      "exe": "/usr/bin/gnome-keyring-daemon",
+      "cmdline": [
+        "/usr/bin/gnome-keyring-daemon",
+        "--daemonize",
+        "--login"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/session-2.scope",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 324,
+      "ppid": 300,
+      "pgrp": 324,
+      "sid": 324,
+      "uid": 1000,
+      "comm": "gnome-calendar",
+      "exe": "/usr/bin/gnome-calendar",
+      "cmdline": [
+        "/usr/bin/gnome-calendar",
+        "--gapplication-service"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/dbus-:1.2-org.gnome.Calendar@0.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 325,
+      "ppid": 300,
+      "pgrp": 325,
+      "sid": 325,
+      "uid": 1000,
+      "comm": "gnome-clocks",
+      "exe": "/usr/bin/gnome-clocks",
+      "cmdline": [
+        "/usr/bin/gnome-clocks",
+        "--gapplication-service"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/dbus-:1.2-org.gnome.clocks@52.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 326,
+      "ppid": 300,
+      "pgrp": 326,
+      "sid": 326,
+      "uid": 1000,
+      "comm": "dbus-broker-lau",
+      "exe": "/usr/bin/dbus-broker-launch",
+      "cmdline": [
+        "/usr/bin/dbus-broker-launch",
+        "--scope",
+        "user"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/session.slice/dbus-broker.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 327,
+      "ppid": 326,
+      "pgrp": 327,
+      "sid": 327,
+      "uid": 1000,
+      "comm": "dbus-broker",
+      "exe": "/usr/bin/dbus-broker",
+      "cmdline": [
+        "dbus-broker",
+        "--log",
+        "11"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/session.slice/dbus-broker.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
       "pid": 400,
       "ppid": 1,
       "pgrp": 400,
@@ -437,6 +567,39 @@
         "/tmp/bunx/claude",
         "--permission-mode",
         "auto"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-ghostty-surface-transient-1.scope",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 405,
+      "ppid": 403,
+      "pgrp": 405,
+      "sid": 405,
+      "uid": 1000,
+      "comm": "npm exec @upsta",
+      "exe": "/usr/bin/node-24",
+      "cmdline": [
+        "npm",
+        "exec",
+        "@upstash/context7-mcp"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-ghostty-surface-transient-1.scope",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 406,
+      "ppid": 405,
+      "pgrp": 406,
+      "sid": 406,
+      "uid": 1000,
+      "comm": "MainThread",
+      "exe": "/usr/bin/node-24",
+      "cmdline": [
+        "node",
+        "/home/u/.npm/_npx/eea2bd7412d4593b/node_modules/.bin/context7-mcp"
       ],
       "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-ghostty-surface-transient-1.scope",
       "utime": 10,

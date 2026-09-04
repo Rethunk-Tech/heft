@@ -50,8 +50,16 @@ Never read `/proc/pid/mem`. Never ptrace.
   launcher or app bills to that parent; it does not break unique-payload
   folding and does not become its own row.
 - Workers (`--type=*`, `chrome_crashpad_handler`, Electron `MainThread`,
-  `npm`/`node`/`python` under a real app that is not a shell/terminal/compositor/systemd)
-  fold into that app.
+  `npm`/`npx`/`node`/`python` under a real app that is not a shell/terminal/compositor/systemd)
+  fold into that app. Walk ancestors skipping launchers and other generics;
+  do not invent a script-basename identity (`context7-mcp`) when a launching
+  agent (`claude`, `cursor`) is above. Processes stay visible on expand.
+- GNOME session plumbing (`gdm-*`, `gnome-session*`, `gnome-keyring*`,
+  `gnome-shell-*`, `gnome-calendar`, `gnome-clocks`) is User Services folded
+  into `gnome-shell`. User-session `dbus-broker` / `dbus-broker-launch` are
+  User Services, never Applications. `lying_unit` matches `dbus:` activation
+  scopes, not `dbus-broker.service`. Independent apps (vivaldi, cursor, claude,
+  vesktop) never fold into gnome-shell.
 - Split when the child's resolved identity differs and the child is a real app.
   Idle interactive shells stay their own Applications row.
 - Generic interpreters (`bun`, `python`, `java`, `node`, `MainThread`) fall back

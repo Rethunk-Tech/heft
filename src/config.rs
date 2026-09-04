@@ -16,7 +16,7 @@ pub struct View {
 impl Default for View {
     fn default() -> Self {
         Self {
-            sort: "machine".into(),
+            sort: "pss".into(),
             desc: true,
             filter: String::new(),
         }

@@ -77,7 +77,7 @@ impl Sort {
         Self::all()
             .into_iter()
             .find(|x| x.label() == s)
-            .unwrap_or(Sort::Machine)
+            .unwrap_or(Sort::Pss)
     }
 
     fn next(self) -> Self {
@@ -90,6 +90,8 @@ impl Sort {
 struct App {
     tree: HostTree,
     cursor: usize,
+    row_off: usize,
+    row_vis: usize,
     expand: HashSet<String>,
     view: View,
     filter_edit: bool,
@@ -123,6 +125,8 @@ fn run_loop(
         expand: default_expand(&tree),
         tree,
         cursor: 0,
+        row_off: 0,
+        row_vis: 1,
         view,
         filter_edit: false,
         col_off: 0,
@@ -134,6 +138,8 @@ fn run_loop(
         if app.cursor >= rows.len() {
             app.cursor = rows.len().saturating_sub(1);
         }
+        app.row_vis = table_body_rows(terminal.size()?.height);
+        app.row_off = follow_viewport(app.cursor, app.row_off, app.row_vis, rows.len());
         terminal.draw(|f| draw(f, &app, &rows))?;
         if event::poll(Duration::from_millis(50))? {
             match event::read()? {
@@ -492,8 +498,10 @@ fn handle_key(
                 app.expand.remove(&r.id);
             }
         }
-        KeyCode::PageUp => app.cursor = app.cursor.saturating_sub(20),
-        KeyCode::PageDown => app.cursor = (app.cursor + 20).min(rows.len().saturating_sub(1)),
+        KeyCode::PageUp => app.cursor = app.cursor.saturating_sub(app.row_vis.max(1)),
+        KeyCode::PageDown => {
+            app.cursor = (app.cursor + app.row_vis.max(1)).min(rows.len().saturating_sub(1));
+        }
         KeyCode::Home => app.cursor = 0,
         KeyCode::End => app.cursor = rows.len().saturating_sub(1),
         KeyCode::Char('[') | KeyCode::Char('<') => app.col_off = app.col_off.saturating_sub(1),
@@ -534,8 +542,10 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &App, rows: &[Flat]) {
         .copied()
         .skip(skip.min(headers.len().saturating_sub(1)))
         .collect();
+    let start = app.row_off.min(rows.len());
+    let end = start.saturating_add(app.row_vis.max(1)).min(rows.len());
     let mut table_rows = Vec::new();
-    for (i, r) in rows.iter().enumerate() {
+    for (i, r) in rows[start..end].iter().enumerate() {
         let mark = if r.expandable {
             if app.expand.contains(&r.id) {
                 "▼ "
@@ -562,7 +572,7 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &App, rows: &[Flat]) {
         ];
         let shown_cells: Vec<String> = cells.into_iter().skip(skip.min(11)).collect();
         let row = Row::new(shown_cells);
-        table_rows.push(if i == app.cursor {
+        table_rows.push(if start + i == app.cursor {
             row.style(Style::default().add_modifier(Modifier::REVERSED))
         } else {
             row
@@ -611,21 +621,31 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &App, rows: &[Flat]) {
     f.render_widget(Paragraph::new(footer), chunks[2]);
 }
 
-fn draw_help(f: &mut ratatui::Frame<'_>, area: Rect) {
-    let text = "\
- q / Esc              quit
- ↑ ↓  j k             move
- ← →  h l  Enter  Space  expand / collapse
- /                    filter (Enter apply, Esc cancel)
- c                    cycle sort column
- d                    reverse sort
- s                    save view
- [ ]                  scroll columns
- ? / F1               toggle this help
+fn help_text() -> String {
+    const ROWS: &[(&str, &str)] = &[
+        ("q  Esc", "quit"),
+        ("↑ ↓  j k", "move"),
+        ("← →  h l", "expand / collapse"),
+        ("Enter  Space", "expand / collapse"),
+        ("/", "filter (Enter apply, Esc cancel)"),
+        ("c", "cycle sort column"),
+        ("d", "reverse sort"),
+        ("s", "save view"),
+        ("[ ]", "scroll columns"),
+        ("?  F1", "toggle this help"),
+    ];
+    ROWS.iter()
+        .map(|(k, d)| format!("{k:<16} {d}"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
 
- Observe only — no kill, nice, or signals.";
-    let width = 56.min(area.width.saturating_sub(2));
-    let height = 16.min(area.height.saturating_sub(1)).max(3);
+fn draw_help(f: &mut ratatui::Frame<'_>, area: Rect) {
+    let text = help_text();
+    let cols = text.lines().map(|l| l.chars().count()).max().unwrap_or(0) as u16;
+    let rows = text.lines().count() as u16;
+    let width = (cols + 2).min(area.width.saturating_sub(2)).max(3);
+    let height = (rows + 2).min(area.height.saturating_sub(1)).max(3);
     let popup = Rect {
         x: area.x + (area.width.saturating_sub(width)) / 2,
         y: area.y + (area.height.saturating_sub(height)) / 2,
@@ -637,6 +657,30 @@ fn draw_help(f: &mut ratatui::Frame<'_>, area: Rect) {
         Paragraph::new(text).block(Block::default().borders(Borders::ALL).title("keys")),
         popup,
     );
+}
+
+/// Body rows that fit in the table pane: term minus header(3), footer(1),
+/// table border(2), and the column header(1).
+fn table_body_rows(term_h: u16) -> usize {
+    term_h.saturating_sub(7) as usize
+}
+
+/// First visible index so `selected` stays in `[offset, offset+visible)`.
+fn follow_viewport(selected: usize, offset: usize, visible: usize, n: usize) -> usize {
+    if visible == 0 || n == 0 {
+        return 0;
+    }
+    let max_off = n.saturating_sub(visible);
+    if selected < offset {
+        selected.min(max_off)
+    } else if selected >= offset.saturating_add(visible) {
+        selected
+            .saturating_add(1)
+            .saturating_sub(visible)
+            .min(max_off)
+    } else {
+        offset.min(max_off)
+    }
 }
 
 fn folder_n(idents: &[IdentNode]) -> u32 {
@@ -669,4 +713,43 @@ fn host_m(tree: &HostTree) -> Metrics {
         ]));
     }
     m
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn follow_viewport_keeps_selection_visible() {
+        assert_eq!(follow_viewport(10, 0, 5, 20), 6);
+        assert_eq!(follow_viewport(2, 5, 5, 20), 2);
+        assert_eq!(follow_viewport(6, 5, 5, 20), 5);
+        assert_eq!(follow_viewport(4, 0, 5, 20), 0);
+        assert_eq!(follow_viewport(1, 8, 5, 3), 0);
+        assert_eq!(follow_viewport(0, 0, 5, 0), 0);
+        assert_eq!(follow_viewport(3, 0, 0, 10), 0);
+    }
+
+    #[test]
+    fn default_sort_is_pss_desc() {
+        let v = View::default();
+        assert_eq!(v.sort, "pss");
+        assert!(v.desc);
+        assert_eq!(Sort::from_label(""), Sort::Pss);
+        assert_eq!(Sort::from_label("machine"), Sort::Machine);
+    }
+
+    #[test]
+    fn help_text_aligns_keys() {
+        let text = help_text();
+        let lines: Vec<&str> = text.lines().collect();
+        assert!(!lines.is_empty());
+        assert!(lines.iter().all(|l| !l.is_empty()));
+        for line in &lines {
+            let chars: Vec<char> = line.chars().collect();
+            assert!(chars.len() > 16);
+            assert_eq!(chars[16], ' ');
+        }
+        assert!(!text.contains("Observe only"));
+    }
 }

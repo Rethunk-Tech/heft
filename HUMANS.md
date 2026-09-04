@@ -32,7 +32,7 @@ so CPU, disk, and GPU engine rates exist). `--once` does the same as a table.
 | `←` `→` / `h` `l` / Enter / Space | collapse or expand |
 | `[` `]` | scroll columns when the terminal is narrower than the table |
 | `/` | filter by name (Enter applies, Esc cancels) |
-| `c` | cycle the sort column (default `%mach` descending) |
+| `c` | cycle the sort column (default PSS descending) |
 | `d` | reverse the sort direction |
 | `s` | save the current sort and filter to `$XDG_CONFIG_HOME/heft/view.json` |
 | `?` / `F1` | toggle the key help overlay |

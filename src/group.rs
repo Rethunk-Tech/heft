@@ -501,8 +501,9 @@ fn ident_node(
 fn sort_idents(v: &mut [IdentNode]) {
     v.sort_by(|a, b| {
         b.metrics
-            .cpu_machine_pct
-            .total_cmp(&a.metrics.cpu_machine_pct)
+            .pss_bytes
+            .unwrap_or(0)
+            .cmp(&a.metrics.pss_bytes.unwrap_or(0))
             .then(a.title.cmp(&b.title))
     });
 }

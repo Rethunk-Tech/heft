@@ -1,0 +1,59 @@
+{
+  "containers": [
+    {
+      "Id": "31c4735b8670a5b31ca1894f141c5cff4a2f5ed814214c9ccd4dc2a3ec0cc94c",
+      "Names": [
+        "/engined-whisper"
+      ],
+      "State": "running",
+      "Labels": {
+        "engined.spec": "w"
+      }
+    },
+    {
+      "Id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "Names": [
+        "/engined-llama"
+      ],
+      "State": "running",
+      "Labels": {
+        "engined.spec": "l"
+      }
+    },
+    {
+      "Id": "e0d5a2f8001315a5594211e149ca69da6d1e0ccc36487bfd87ade594f16f5deb",
+      "Names": [
+        "/engined-kokoro"
+      ],
+      "State": "running",
+      "Labels": {
+        "engined.spec": "k"
+      }
+    },
+    {
+      "Id": "e367d3e55b3fbd8a85744a0df137fbd149ebfb46346dae8861728d23b1acaad9",
+      "Names": [
+        "/supabase_db_caldera"
+      ],
+      "State": "running",
+      "Labels": {
+        "com.supabase.cli.project": "caldera",
+        "com.docker.compose.project": "caldera",
+        "com.supabase.cli.workdir": "/usr/local/src/com.github/PeleOs-LLC/caldera"
+      }
+    },
+    {
+      "Id": "5d1382bafd3cb4b46cd6a11040463164283cfd7eb61f8cac0f91cda558022d96",
+      "Names": [
+        "/supabase_kong_caldera"
+      ],
+      "State": "running",
+      "Labels": {
+        "com.supabase.cli.project": "caldera",
+        "com.docker.compose.project": "caldera",
+        "com.supabase.cli.workdir": "/usr/local/src/com.github/PeleOs-LLC/caldera"
+      }
+    }
+  ],
+  "note": "engined three-way split vs supabase caldera sum"
+}

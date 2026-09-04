@@ -1,0 +1,730 @@
+{
+  "nproc": 32,
+  "clk_tck": 100,
+  "page_size": 4096,
+  "engined_uid": 1000,
+  "workdir_uids": {
+    "/usr/local/src/com.github/PeleOs-LLC/caldera": 1000
+  },
+  "containers": [
+    {
+      "Id": "31c4735b8670a5b31ca1894f141c5cff4a2f5ed814214c9ccd4dc2a3ec0cc94c",
+      "Names": [
+        "/engined-whisper"
+      ],
+      "State": "running",
+      "Labels": {
+        "engined.spec": "w"
+      }
+    },
+    {
+      "Id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "Names": [
+        "/engined-llama"
+      ],
+      "State": "running",
+      "Labels": {
+        "engined.spec": "l"
+      }
+    },
+    {
+      "Id": "e0d5a2f8001315a5594211e149ca69da6d1e0ccc36487bfd87ade594f16f5deb",
+      "Names": [
+        "/engined-kokoro"
+      ],
+      "State": "running",
+      "Labels": {
+        "engined.spec": "k"
+      }
+    },
+    {
+      "Id": "e367d3e55b3fbd8a85744a0df137fbd149ebfb46346dae8861728d23b1acaad9",
+      "Names": [
+        "/supabase_db_caldera"
+      ],
+      "State": "running",
+      "Labels": {
+        "com.supabase.cli.project": "caldera",
+        "com.docker.compose.project": "caldera",
+        "com.supabase.cli.workdir": "/usr/local/src/com.github/PeleOs-LLC/caldera"
+      }
+    },
+    {
+      "Id": "5d1382bafd3cb4b46cd6a11040463164283cfd7eb61f8cac0f91cda558022d96",
+      "Names": [
+        "/supabase_kong_caldera"
+      ],
+      "State": "running",
+      "Labels": {
+        "com.supabase.cli.project": "caldera",
+        "com.docker.compose.project": "caldera",
+        "com.supabase.cli.workdir": "/usr/local/src/com.github/PeleOs-LLC/caldera"
+      }
+    }
+  ],
+  "inspects": {},
+  "processes": [
+    {
+      "pid": 1,
+      "ppid": 0,
+      "pgrp": 1,
+      "sid": 1,
+      "uid": 0,
+      "comm": "systemd",
+      "exe": "/usr/lib/systemd/systemd",
+      "cmdline": [
+        "/usr/lib/systemd/systemd"
+      ],
+      "cgroup": "0::/init.scope",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 2,
+      "ppid": 0,
+      "pgrp": 2,
+      "sid": 2,
+      "uid": 0,
+      "comm": "kthreadd",
+      "exe": null,
+      "cmdline": [],
+      "cgroup": "0::/",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 3,
+      "ppid": 2,
+      "pgrp": 3,
+      "sid": 3,
+      "uid": 0,
+      "comm": "kworker/0:0",
+      "exe": null,
+      "cmdline": [],
+      "cgroup": "0::/",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 100,
+      "ppid": 1,
+      "pgrp": 100,
+      "sid": 100,
+      "uid": 0,
+      "comm": "dockerd",
+      "exe": "/usr/bin/dockerd",
+      "cmdline": [
+        "/usr/bin/dockerd"
+      ],
+      "cgroup": "0::/system.slice/docker.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 101,
+      "ppid": 1,
+      "pgrp": 101,
+      "sid": 101,
+      "uid": 0,
+      "comm": "containerd",
+      "exe": "/usr/bin/containerd",
+      "cmdline": [
+        "/usr/bin/containerd"
+      ],
+      "cgroup": "0::/system.slice/containerd.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 110,
+      "ppid": 101,
+      "pgrp": 110,
+      "sid": 110,
+      "uid": 0,
+      "comm": "containerd-shim",
+      "exe": "/usr/bin/containerd-shim-runc-v2",
+      "cmdline": [
+        "/usr/bin/containerd-shim-runc-v2",
+        "-namespace",
+        "moby",
+        "-id",
+        "31c4735b8670a5b31ca1894f141c5cff4a2f5ed814214c9ccd4dc2a3ec0cc94c"
+      ],
+      "cgroup": "0::/system.slice/containerd.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 111,
+      "ppid": 101,
+      "pgrp": 111,
+      "sid": 111,
+      "uid": 0,
+      "comm": "containerd-shim",
+      "exe": "/usr/bin/containerd-shim-runc-v2",
+      "cmdline": [
+        "/usr/bin/containerd-shim-runc-v2",
+        "-id",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ],
+      "cgroup": "0::/system.slice/containerd.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 112,
+      "ppid": 101,
+      "pgrp": 112,
+      "sid": 112,
+      "uid": 0,
+      "comm": "containerd-shim",
+      "exe": "/usr/bin/containerd-shim-runc-v2",
+      "cmdline": [
+        "/usr/bin/containerd-shim-runc-v2",
+        "-id",
+        "e0d5a2f8001315a5594211e149ca69da6d1e0ccc36487bfd87ade594f16f5deb"
+      ],
+      "cgroup": "0::/system.slice/containerd.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 113,
+      "ppid": 101,
+      "pgrp": 113,
+      "sid": 113,
+      "uid": 0,
+      "comm": "containerd-shim",
+      "exe": "/usr/bin/containerd-shim-runc-v2",
+      "cmdline": [
+        "/usr/bin/containerd-shim-runc-v2",
+        "-id",
+        "e367d3e55b3fbd8a85744a0df137fbd149ebfb46346dae8861728d23b1acaad9"
+      ],
+      "cgroup": "0::/system.slice/containerd.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 114,
+      "ppid": 101,
+      "pgrp": 114,
+      "sid": 114,
+      "uid": 0,
+      "comm": "containerd-shim",
+      "exe": "/usr/bin/containerd-shim-runc-v2",
+      "cmdline": [
+        "/usr/bin/containerd-shim-runc-v2",
+        "-id",
+        "5d1382bafd3cb4b46cd6a11040463164283cfd7eb61f8cac0f91cda558022d96"
+      ],
+      "cgroup": "0::/system.slice/containerd.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 200,
+      "ppid": 110,
+      "pgrp": 200,
+      "sid": 200,
+      "uid": 0,
+      "comm": "python3",
+      "exe": null,
+      "cmdline": [
+        "python3",
+        "-u",
+        "/spec/whisper_app.py"
+      ],
+      "cgroup": "0::/system.slice/docker-31c4735b8670a5b31ca1894f141c5cff4a2f5ed814214c9ccd4dc2a3ec0cc94c.scope",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 201,
+      "ppid": 111,
+      "pgrp": 201,
+      "sid": 201,
+      "uid": 0,
+      "comm": "llama-server",
+      "exe": null,
+      "cmdline": [
+        "/app/llama-server"
+      ],
+      "cgroup": "0::/system.slice/docker-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.scope",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 202,
+      "ppid": 112,
+      "pgrp": 202,
+      "sid": 202,
+      "uid": 0,
+      "comm": "uvicorn",
+      "exe": null,
+      "cmdline": [
+        "uvicorn",
+        "app:app"
+      ],
+      "cgroup": "0::/system.slice/docker-e0d5a2f8001315a5594211e149ca69da6d1e0ccc36487bfd87ade594f16f5deb.scope",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 203,
+      "ppid": 113,
+      "pgrp": 203,
+      "sid": 203,
+      "uid": 100,
+      "comm": ".postgres-wrapp",
+      "exe": null,
+      "cmdline": [
+        "postgres"
+      ],
+      "cgroup": "0::/system.slice/docker-e367d3e55b3fbd8a85744a0df137fbd149ebfb46346dae8861728d23b1acaad9.scope",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 204,
+      "ppid": 114,
+      "pgrp": 204,
+      "sid": 204,
+      "uid": 100,
+      "comm": "nginx",
+      "exe": null,
+      "cmdline": [
+        "nginx"
+      ],
+      "cgroup": "0::/system.slice/docker-5d1382bafd3cb4b46cd6a11040463164283cfd7eb61f8cac0f91cda558022d96.scope",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 300,
+      "ppid": 1,
+      "pgrp": 300,
+      "sid": 300,
+      "uid": 1000,
+      "comm": "systemd",
+      "exe": "/usr/lib/systemd/systemd",
+      "cmdline": [
+        "/usr/lib/systemd/systemd",
+        "--user"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/init.scope",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 301,
+      "ppid": 300,
+      "pgrp": 301,
+      "sid": 301,
+      "uid": 1000,
+      "comm": "gnome-shell",
+      "exe": "/usr/bin/gnome-shell",
+      "cmdline": [
+        "/usr/bin/gnome-shell",
+        "--mode=user"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/session.slice/org.gnome.Shell@user.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 302,
+      "ppid": 300,
+      "pgrp": 302,
+      "sid": 302,
+      "uid": 1000,
+      "comm": "bun",
+      "exe": "/home/u/.bun/bin/bun",
+      "cmdline": [
+        "/home/u/.bun/bin/bun",
+        "/home/u/.local/share/earshot/main.js"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/earshotd.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 303,
+      "ppid": 300,
+      "pgrp": 303,
+      "sid": 303,
+      "uid": 1000,
+      "comm": "bun",
+      "exe": "/home/u/.bun/bin/bun",
+      "cmdline": [
+        "/home/u/.bun/bin/bun",
+        "/home/u/.local/share/engined/main.js"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/engined.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 400,
+      "ppid": 1,
+      "pgrp": 400,
+      "sid": 400,
+      "uid": 1000,
+      "comm": "ghostty",
+      "exe": "/usr/bin/ghostty",
+      "cmdline": [
+        "/usr/bin/ghostty"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-com.mitchellh.ghostty.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 401,
+      "ppid": 400,
+      "pgrp": 401,
+      "sid": 401,
+      "uid": 1000,
+      "comm": "bash",
+      "exe": "/usr/bin/bash",
+      "cmdline": [
+        "-bash"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-ghostty-surface-transient-1.scope",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 402,
+      "ppid": 401,
+      "pgrp": 402,
+      "sid": 402,
+      "uid": 1000,
+      "comm": "bunx",
+      "exe": "/home/u/.bun/bin/bun",
+      "cmdline": [
+        "bunx",
+        "@anthropic-ai/claude-code@latest"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-ghostty-surface-transient-1.scope",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 403,
+      "ppid": 402,
+      "pgrp": 403,
+      "sid": 403,
+      "uid": 1000,
+      "comm": "claude",
+      "exe": "/tmp/bunx/claude",
+      "cmdline": [
+        "/tmp/bunx/claude",
+        "--permission-mode",
+        "auto"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-ghostty-surface-transient-1.scope",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 500,
+      "ppid": 1,
+      "pgrp": 500,
+      "sid": 500,
+      "uid": 1000,
+      "comm": "cursor.appimage",
+      "exe": "/home/u/Apps/cursor.appimage",
+      "cmdline": [
+        "/home/u/Apps/cursor.appimage"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-org.chromium.Chromium-1.scope",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 501,
+      "ppid": 500,
+      "pgrp": 501,
+      "sid": 501,
+      "uid": 1000,
+      "comm": "cursor",
+      "exe": "/tmp/mount/cursor",
+      "cmdline": [
+        "cursor"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-org.chromium.Chromium-1.scope",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 502,
+      "ppid": 501,
+      "pgrp": 502,
+      "sid": 502,
+      "uid": 1000,
+      "comm": "cursor",
+      "exe": "/tmp/mount/cursor",
+      "cmdline": [
+        "/tmp/mount/cursor",
+        "--type=renderer"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-org.chromium.Chromium-1.scope",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 503,
+      "ppid": 501,
+      "pgrp": 503,
+      "sid": 503,
+      "uid": 1000,
+      "comm": "chrome_crashpad_handler",
+      "exe": "/tmp/mount/chrome_crashpad_handler",
+      "cmdline": [
+        "/tmp/mount/chrome_crashpad_handler"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-org.chromium.Chromium-1.scope",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 504,
+      "ppid": 501,
+      "pgrp": 504,
+      "sid": 504,
+      "uid": 1000,
+      "comm": "node",
+      "exe": "/usr/bin/node",
+      "cmdline": [
+        "node",
+        "/home/u/.npm/_npx/shadcn",
+        "mcp"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-org.chromium.Chromium-1.scope",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 600,
+      "ppid": 1,
+      "pgrp": 600,
+      "sid": 600,
+      "uid": 1000,
+      "comm": "minecraft-launc",
+      "exe": "/home/u/Apps/minecraft-launcher",
+      "cmdline": [
+        "/home/u/Apps/minecraft-launcher"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/dbus-:1.2-org.gnome.Nautilus@250.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 601,
+      "ppid": 600,
+      "pgrp": 601,
+      "sid": 601,
+      "uid": 1000,
+      "comm": "java",
+      "exe": "/home/u/.minecraft/runtime/java",
+      "cmdline": [
+        "/home/u/.minecraft/runtime/java",
+        "-jar",
+        "game.jar"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/dbus-:1.2-org.gnome.Nautilus@250.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 700,
+      "ppid": 701,
+      "pgrp": 700,
+      "sid": 700,
+      "uid": 1000,
+      "comm": "easyeffects",
+      "exe": "/app/bin/easyeffects",
+      "cmdline": [
+        "easyeffects"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-flatpak-com.github.wwmm.easyeffects-1.scope",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 701,
+      "ppid": 1,
+      "pgrp": 701,
+      "sid": 701,
+      "uid": 1000,
+      "comm": "bwrap",
+      "exe": "/usr/bin/bwrap",
+      "cmdline": [
+        "/usr/bin/bwrap",
+        "--",
+        "easyeffects"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-flatpak-com.github.wwmm.easyeffects-1.scope",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 710,
+      "ppid": 1,
+      "pgrp": 710,
+      "sid": 710,
+      "uid": 1000,
+      "comm": "signal-desktop",
+      "exe": "/snap/signal-desktop/opt/Signal/signal-desktop",
+      "cmdline": [
+        "/snap/signal-desktop/opt/Signal/signal-desktop"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/snap.signal-desktop.signal-desktop-x.scope",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 711,
+      "ppid": 710,
+      "pgrp": 711,
+      "sid": 711,
+      "uid": 1000,
+      "comm": "signal-desktop",
+      "exe": "/snap/signal-desktop/opt/Signal/signal-desktop",
+      "cmdline": [
+        "/snap/signal-desktop/opt/Signal/signal-desktop",
+        "--type=renderer"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/snap.signal-desktop.signal-desktop-x.scope",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 720,
+      "ppid": 1,
+      "pgrp": 720,
+      "sid": 720,
+      "uid": 1000,
+      "comm": "bwrap",
+      "exe": "/usr/bin/bwrap",
+      "cmdline": [
+        "/usr/bin/bwrap",
+        "--",
+        "/app/extra/share/spotify/spotify"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-flatpak-com.spotify.Client-1.scope",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 721,
+      "ppid": 720,
+      "pgrp": 721,
+      "sid": 721,
+      "uid": 1000,
+      "comm": "spotify",
+      "exe": "/app/extra/share/spotify/spotify",
+      "cmdline": [
+        "/app/extra/share/spotify/spotify"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-flatpak-com.spotify.Client-1.scope",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 730,
+      "ppid": 1,
+      "pgrp": 730,
+      "sid": 730,
+      "uid": 1000,
+      "comm": "bwrap",
+      "exe": "/usr/bin/bwrap",
+      "cmdline": [
+        "/usr/bin/bwrap",
+        "--",
+        "startvesktop"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-flatpak-dev.vencord.Vesktop-1.scope",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 731,
+      "ppid": 730,
+      "pgrp": 731,
+      "sid": 731,
+      "uid": 1000,
+      "comm": "bash",
+      "exe": "/usr/bin/bash",
+      "cmdline": [
+        "bash",
+        "/app/bin/startvesktop"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-flatpak-dev.vencord.Vesktop-1.scope",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 732,
+      "ppid": 731,
+      "pgrp": 732,
+      "sid": 732,
+      "uid": 1000,
+      "comm": "vesktop.bin",
+      "exe": "/app/bin/vesktop/vesktop.bin",
+      "cmdline": [
+        "/app/bin/vesktop/vesktop.bin"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-flatpak-dev.vencord.Vesktop-1.scope",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 740,
+      "ppid": 1,
+      "pgrp": 740,
+      "sid": 740,
+      "uid": 1000,
+      "comm": "vivaldi-bin",
+      "exe": "/opt/vivaldi/vivaldi-bin",
+      "cmdline": [
+        "/opt/vivaldi/vivaldi-bin"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-gnome-vivaldi\\x2dstable-1.scope",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 741,
+      "ppid": 740,
+      "pgrp": 741,
+      "sid": 741,
+      "uid": 1000,
+      "comm": "vivaldi-bin",
+      "exe": "/opt/vivaldi/vivaldi-bin",
+      "cmdline": [
+        "/opt/vivaldi/vivaldi-bin",
+        "--type=renderer"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-gnome-vivaldi\\x2dstable-1.scope",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 800,
+      "ppid": 1,
+      "pgrp": 800,
+      "sid": 800,
+      "uid": 42,
+      "comm": "sshd",
+      "exe": "/usr/sbin/sshd",
+      "cmdline": [
+        "/usr/sbin/sshd"
+      ],
+      "cgroup": "0::/user.slice/user-42.slice/user@42.service/app.slice/sshd.service",
+      "utime": 10,
+      "stime": 1
+    }
+  ]
+}

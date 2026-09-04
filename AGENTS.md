@@ -49,17 +49,26 @@ Never read `/proc/pid/mem`. Never ptrace.
   the expanded process list. Nested bwrap folds into the payload. `cat` under a
   launcher or app bills to that parent; it does not break unique-payload
   folding and does not become its own row.
-- Workers (`--type=*`, `chrome_crashpad_handler`, Electron `MainThread`,
+- Workers (`--type=*`, `chrome_crashpad_handler`, `crashhelper`, Electron `MainThread`,
   `npm`/`npx`/`node`/`python` under a real app that is not a shell/terminal/compositor/systemd)
   fold into that app. Walk ancestors skipping launchers and other generics;
   do not invent a script-basename identity (`context7-mcp`) when a launching
   agent (`claude`, `cursor`) is above. Processes stay visible on expand.
+  `crashhelper` matches exe/cmdline (`/usr/lib64/firefox/crashhelper`) even
+  when PPID is user systemd.
 - GNOME session plumbing (`gdm-*`, `gnome-session*`, `gnome-keyring*`,
-  `gnome-shell-*`, `gnome-calendar`, `gnome-clocks`) is User Services folded
-  into `gnome-shell`. User-session `dbus-broker` / `dbus-broker-launch` are
+  `gnome-shell-*`, `gnome-calendar`, `gnome-clocks`, and `gjs` running
+  gnome-shell Notifications/ScreenSaver) is User Services folded into
+  `gnome-shell`. User-session `dbus-broker` / `dbus-broker-launch` are
   User Services, never Applications. `lying_unit` matches `dbus:` activation
-  scopes, not `dbus-broker.service`. Independent apps (vivaldi, cursor, claude,
-  vesktop) never fold into gnome-shell.
+  scopes, not `dbus-broker.service`. Session helpers stay User Services even
+  when reparented to user systemd: `ibus-portal` → `ibus-daemon`,
+  `at-spi2-registryd` → `at-spi-bus-launcher`, `goa-identity-service` →
+  `goa-daemon`, `p11-kit-server`/`p11-kit-remote` → `p11-kit` (never
+  `flatpak-session-helper`; Cursor shares that cgroup). `gsd-*` and
+  `abrt-applet` keep their own User Services rows (do not collapse `gsd-*`
+  into gnome-shell). Independent apps (vivaldi, cursor, claude, vesktop) never
+  fold into gnome-shell.
 - Split when the child's resolved identity differs and the child is a real app.
   Idle interactive shells stay their own Applications row.
 - Generic interpreters (`bun`, `python`, `java`, `node`, `MainThread`) fall back

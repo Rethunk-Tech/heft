@@ -106,9 +106,14 @@ fn compute_place(
         return place;
     }
 
+    if let Some(place) = crash_helper_place(p) {
+        return place;
+    }
+
     if classify::is_worker(p)
         && let Some(parent) = resolve_one(p.ppid, curr, containers, memo, walking)
         && parent.folder != Folder::System
+        && parent.key != "systemd"
     {
         return Place {
             instance: identity::instance_key(p, None),
@@ -243,19 +248,24 @@ fn user_place(p: &Process) -> Place {
 }
 
 fn session_plumbing_place(p: &Process) -> Option<Place> {
-    if !classify::is_session_plumbing(p) {
-        return None;
-    }
-    let (key, title) = if classify::is_session_bus(p) {
-        ("dbus-broker".to_string(), "dbus-broker".to_string())
-    } else {
-        ("gnome-shell".to_string(), "gnome-shell".to_string())
-    };
+    let (key, title) = classify::session_helper_ident(p)?;
     Some(Place {
         folder: Folder::UserServices,
         uid: Some(p.uid),
         key,
         title,
+        instance: identity::instance_key(p, None),
+        member: None,
+    })
+}
+
+fn crash_helper_place(p: &Process) -> Option<Place> {
+    let owner = classify::crash_helper_app(p)?;
+    Some(Place {
+        folder: Folder::Applications,
+        uid: Some(p.uid),
+        key: owner.clone(),
+        title: owner,
         instance: identity::instance_key(p, None),
         member: None,
     })

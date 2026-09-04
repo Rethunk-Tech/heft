@@ -184,6 +184,19 @@ fn gui_and_docker_fixture() {
         "gnome-clocks",
         "dbus-broker",
         "dbus-broker-launch",
+        "gjs-console",
+        "gjs",
+        "ibus-portal",
+        "at-spi2-registryd",
+        "goa-identity-service",
+        "goa-daemon",
+        "p11-kit-server",
+        "p11-kit-remote",
+        "p11-kit",
+        "gsd-disk-utility-notify",
+        "abrt-applet",
+        "crashhelper",
+        "flatpak-session-helper",
     ] {
         assert!(
             !has(&user.applications, name),
@@ -209,13 +222,115 @@ fn gui_and_docker_fixture() {
     assert!(has(&user.user_services, "engined"));
     assert!(has(&user.user_services, "gnome-shell"));
     assert!(has(&user.user_services, "dbus-broker"));
+    assert!(has(&user.user_services, "ibus-daemon"));
+    assert!(has(&user.user_services, "at-spi-bus-launcher"));
+    assert!(has(&user.user_services, "goa-daemon"));
+    assert!(has(&user.user_services, "p11-kit"));
+    assert!(has(&user.user_services, "gsd-disk-utility-notify"));
+    assert!(has(&user.user_services, "abrt-applet"));
     assert!(!has(&user.user_services, "gnome-calendar"));
     assert!(!has(&user.user_services, "gnome-clocks"));
     assert!(!has(&user.user_services, "ghostty"));
+    assert!(!has(&user.user_services, "gnome-abrt"));
+    assert!(!has(&user.user_services, "ibus-portal"));
+    assert!(!has(&user.user_services, "at-spi2-registryd"));
+    assert!(!has(&user.user_services, "goa-identity-service"));
+    assert!(!has(&user.user_services, "p11-kit-server"));
+    assert!(!has(&user.user_services, "gjs-console"));
     assert!(
         !has(&user.user_services, "cursor"),
         "cursor in a helper service must stay Applications: {:?}",
         titles(&user.user_services)
+    );
+    assert!(
+        !has(&user.user_services, "firefox"),
+        "firefox must stay Applications: {:?}",
+        titles(&user.user_services)
+    );
+    assert!(has(&user.applications, "firefox"));
+    assert!(
+        !has(&user.user_services, "vivaldi-bin")
+            && !has(&user.user_services, "claude")
+            && !has(&user.user_services, "vesktop.bin"),
+        "independent apps must not fold into User Services: {:?}",
+        titles(&user.user_services)
+    );
+
+    let gnome = user
+        .user_services
+        .iter()
+        .find(|n| n.id == "gnome-shell" || n.title == "gnome-shell")
+        .expect("gnome-shell");
+    let gnome_procs = proc_names(gnome);
+    assert!(
+        gnome_procs.iter().any(|n| n == "gjs-console" || n == "gjs"),
+        "gjs-console gnome-shell backends must remain visible under gnome-shell: {gnome_procs:?}"
+    );
+
+    let ibus = user
+        .user_services
+        .iter()
+        .find(|n| n.id == "ibus-daemon")
+        .expect("ibus-daemon");
+    assert!(
+        proc_names(ibus).iter().any(|n| n == "ibus-portal"),
+        "ibus-portal must remain visible under ibus-daemon: {:?}",
+        proc_names(ibus)
+    );
+
+    let atspi = user
+        .user_services
+        .iter()
+        .find(|n| n.id == "at-spi-bus-launcher")
+        .expect("at-spi-bus-launcher");
+    assert!(
+        proc_names(atspi).iter().any(|n| n == "at-spi2-registryd"),
+        "at-spi2-registryd must remain visible under at-spi-bus-launcher: {:?}",
+        proc_names(atspi)
+    );
+
+    let goa = user
+        .user_services
+        .iter()
+        .find(|n| n.id == "goa-daemon")
+        .expect("goa-daemon");
+    let goa_procs = proc_names(goa);
+    assert!(
+        goa_procs.iter().any(|n| n == "goa-identity-service"),
+        "goa-identity-service must remain visible under goa-daemon: {goa_procs:?}"
+    );
+
+    let p11 = user
+        .user_services
+        .iter()
+        .find(|n| n.id == "p11-kit")
+        .expect("p11-kit");
+    let p11_procs = proc_names(p11);
+    assert!(
+        p11_procs.iter().any(|n| n == "p11-kit-server")
+            && p11_procs.iter().any(|n| n == "p11-kit-remote"),
+        "p11-kit server and remote must share one identity: {p11_procs:?}"
+    );
+    let cursor = user
+        .applications
+        .iter()
+        .find(|n| n.id == "cursor" || n.title == "cursor")
+        .expect("cursor");
+    assert!(
+        !proc_names(cursor).iter().any(|n| n.starts_with("p11-kit")),
+        "p11-kit must not bill to Cursor: {:?}",
+        proc_names(cursor)
+    );
+
+    let firefox = user
+        .applications
+        .iter()
+        .find(|n| n.id == "firefox" || n.title == "firefox")
+        .expect("firefox");
+    assert!(
+        proc_names(firefox).iter().any(|n| n == "crashhelper"),
+        "crashhelper must remain visible under firefox: {:?}",
+        proc_names(firefox)
     );
     assert!(
         !has(&user.user_services, "cat"),

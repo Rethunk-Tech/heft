@@ -495,6 +495,197 @@
       "stime": 1
     },
     {
+      "pid": 330,
+      "ppid": 300,
+      "pgrp": 330,
+      "sid": 330,
+      "uid": 1000,
+      "comm": "gjs",
+      "exe": "/usr/bin/gjs-console",
+      "cmdline": [
+        "/usr/bin/gjs",
+        "/usr/share/gnome-shell/org.gnome.Shell.Notifications"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/dbus-:1.2-org.gnome.Shell.Notifications@0.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 331,
+      "ppid": 300,
+      "pgrp": 331,
+      "sid": 331,
+      "uid": 1000,
+      "comm": "gjs",
+      "exe": "/usr/bin/gjs-console",
+      "cmdline": [
+        "/usr/bin/gjs",
+        "/usr/share/gnome-shell/org.gnome.ScreenSaver"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/dbus-:1.2-org.gnome.ScreenSaver@0.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 332,
+      "ppid": 300,
+      "pgrp": 332,
+      "sid": 332,
+      "uid": 1000,
+      "comm": "ibus-daemon",
+      "exe": "/usr/bin/ibus-daemon",
+      "cmdline": [
+        "/usr/bin/ibus-daemon",
+        "--xim",
+        "--panel",
+        "disable"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/org.freedesktop.IBus.session.GNOME.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 333,
+      "ppid": 300,
+      "pgrp": 333,
+      "sid": 333,
+      "uid": 1000,
+      "comm": "ibus-portal",
+      "exe": "/usr/libexec/ibus-portal",
+      "cmdline": [
+        "/usr/libexec/ibus-portal"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/dbus-:1.2-org.freedesktop.portal.IBus@0.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 334,
+      "ppid": 300,
+      "pgrp": 334,
+      "sid": 334,
+      "uid": 1000,
+      "comm": "at-spi-bus-laun",
+      "exe": "/usr/libexec/at-spi-bus-launcher",
+      "cmdline": [
+        "/usr/libexec/at-spi-bus-launcher"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/at-spi-dbus-bus.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 335,
+      "ppid": 300,
+      "pgrp": 335,
+      "sid": 335,
+      "uid": 1000,
+      "comm": "at-spi2-registr",
+      "exe": "/usr/libexec/at-spi2-registryd",
+      "cmdline": [
+        "/usr/libexec/at-spi2-registryd",
+        "--use-gnome-session"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/dbus-:1.17-org.a11y.atspi.Registry@0.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 336,
+      "ppid": 300,
+      "pgrp": 336,
+      "sid": 336,
+      "uid": 1000,
+      "comm": "goa-daemon",
+      "exe": "/usr/libexec/goa-daemon",
+      "cmdline": [
+        "/usr/libexec/goa-daemon"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/dbus-:1.2-org.gnome.OnlineAccounts@1.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 337,
+      "ppid": 300,
+      "pgrp": 337,
+      "sid": 337,
+      "uid": 1000,
+      "comm": "goa-identity-se",
+      "exe": "/usr/libexec/goa-identity-service",
+      "cmdline": [
+        "/usr/libexec/goa-identity-service"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/dbus-:1.2-org.gnome.Identity@1.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 338,
+      "ppid": 300,
+      "pgrp": 338,
+      "sid": 338,
+      "uid": 1000,
+      "comm": "gsd-disk-utilit",
+      "exe": "/usr/libexec/gsd-disk-utility-notify",
+      "cmdline": [
+        "/usr/libexec/gsd-disk-utility-notify"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-gnome-org.gnome.SettingsDaemon.DiskUtilityNotify-7226.scope",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 339,
+      "ppid": 300,
+      "pgrp": 339,
+      "sid": 339,
+      "uid": 1000,
+      "comm": "abrt-applet",
+      "exe": "/usr/bin/abrt-applet",
+      "cmdline": [
+        "/usr/bin/abrt-applet",
+        "--gapplication-service"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/dbus-:1.2-org.freedesktop.problems.applet@0.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 340,
+      "ppid": 300,
+      "pgrp": 340,
+      "sid": 340,
+      "uid": 1000,
+      "comm": "p11-kit-server",
+      "exe": "/usr/libexec/p11-kit/p11-kit-server",
+      "cmdline": [
+        "server",
+        "--sh",
+        "-n",
+        "/run/user/1000/.flatpak-helper/pkcs11-flatpak-3933322"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/flatpak-session-helper.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 341,
+      "ppid": 340,
+      "pgrp": 340,
+      "sid": 340,
+      "uid": 1000,
+      "comm": "p11-kit-remote",
+      "exe": "/usr/libexec/p11-kit/p11-kit-remote",
+      "cmdline": [
+        "/usr/libexec/p11-kit/p11-kit-remote",
+        "/usr/lib64/pkcs11/p11-kit-trust.so"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/flatpak-session-helper.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
       "pid": 400,
       "ppid": 1,
       "pgrp": 400,
@@ -972,6 +1163,40 @@
       "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/session.slice/org.gnome.Shell@user.service",
       "utime": 1,
       "stime": 0
+    },
+    {
+      "pid": 750,
+      "ppid": 300,
+      "pgrp": 750,
+      "sid": 750,
+      "uid": 1000,
+      "comm": "firefox",
+      "exe": "/usr/lib64/firefox/firefox",
+      "cmdline": [
+        "/usr/lib64/firefox/firefox"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/dbus-:1.2-org.mozilla.firefox.SearchProvider@0.service",
+      "utime": 10,
+      "stime": 1
+    },
+    {
+      "pid": 751,
+      "ppid": 300,
+      "pgrp": 751,
+      "sid": 751,
+      "uid": 1000,
+      "comm": "crashhelper",
+      "exe": "/usr/lib64/firefox/crashhelper",
+      "cmdline": [
+        "crashhelper",
+        "750",
+        "9",
+        "/tmp/",
+        "11"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/dbus-:1.2-org.mozilla.firefox.SearchProvider@0.service",
+      "utime": 10,
+      "stime": 1
     },
     {
       "pid": 800,

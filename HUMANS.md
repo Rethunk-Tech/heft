@@ -52,8 +52,10 @@ Other users, User Services, Host-level Containers, and System start collapsed.
   user — not as Host.
 - **Applications** vs **User Services**: a user-instance `*.service` whose name
   does not start with `app-` is a user service (`earshotd.service`,
-  `engined.service`, `org.gnome.Shell@user.service`). Everything else under the
-  user is an application.
+  `engined.service`, `org.gnome.Shell@user.service`). Session helpers
+  (`ibus-portal`, AT-SPI registry, GOA, p11-kit, `gsd-*`, `abrt-applet`,
+  gnome-shell GJS backends) sit in User Services even when D-Bus used an
+  `app-` or `dbus:` unit. Everything else under the user is an application.
 - **Containers** under a user are workloads heft can attribute (workdir owner,
   or `engined-*` / `engined.spec` using the `engined.service` uid). Unattributed
   running containers sit on Host → Containers.

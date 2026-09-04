@@ -73,7 +73,7 @@ const COMPOSITORS: &[&str] = &[
     "cosmic-comp",
 ];
 
-const WORKER_COMMS: &[&str] = &["chrome_crashpad_handler", "chrome_crashpad"];
+const WORKER_COMMS: &[&str] = &["chrome_crashpad_handler", "chrome_crashpad", "crashhelper"];
 
 pub fn basename(path: &str) -> String {
     path.rsplit('/').next().unwrap_or(path).to_string()
@@ -162,29 +162,116 @@ pub fn is_compositor(p: &Process) -> bool {
 }
 
 pub fn is_session_bus(p: &Process) -> bool {
-    session_name(p).is_some_and(|n| n.starts_with("dbus-broker"))
+    names_of(p).iter().any(|n| n.starts_with("dbus-broker"))
 }
 
 /// GNOME session / D-Bus user-bus plumbing — never an Applications row.
 pub fn is_session_plumbing(p: &Process) -> bool {
-    session_name(p).is_some()
+    session_helper_ident(p).is_some()
 }
 
-fn session_name(p: &Process) -> Option<String> {
-    for n in [p.comm.as_str(), name_of(p).as_str()] {
-        let l = norm(n);
-        if l.starts_with("gdm-")
-            || l.starts_with("gnome-session")
-            || l.starts_with("gnome-keyring")
-            || l.starts_with("gnome-shell-")
-            || l == "gnome-calendar"
-            || l == "gnome-clocks"
-            || l.starts_with("dbus-broker")
+/// User Services identity for session helpers. PPID is usually user systemd.
+pub fn session_helper_ident(p: &Process) -> Option<(String, String)> {
+    if is_session_bus(p) {
+        return Some(ident("dbus-broker"));
+    }
+    if gnome_shell_helper(p) {
+        return Some(ident("gnome-shell"));
+    }
+    let named = name_of(p);
+    let l = norm(&named);
+    if l == "ibus-portal" || norm(&p.comm) == "ibus-portal" {
+        return Some(ident("ibus-daemon"));
+    }
+    if is_atspi_registry(p) {
+        return Some(ident("at-spi-bus-launcher"));
+    }
+    if is_goa_helper(p) {
+        return Some(ident("goa-daemon"));
+    }
+    if l.starts_with("p11-kit") || norm(&p.comm).starts_with("p11-kit") {
+        return Some(ident("p11-kit"));
+    }
+    if l.starts_with("gsd-") || norm(&p.comm).starts_with("gsd-") {
+        return Some((named.clone(), named));
+    }
+    if l == "abrt-applet" || norm(&p.comm) == "abrt-applet" {
+        return Some(ident("abrt-applet"));
+    }
+    None
+}
+
+fn ident(name: &str) -> (String, String) {
+    (name.to_string(), name.to_string())
+}
+
+fn names_of(p: &Process) -> [String; 2] {
+    [norm(&p.comm), norm(&name_of(p))]
+}
+
+fn gnome_shell_helper(p: &Process) -> bool {
+    for n in names_of(p) {
+        if n.starts_with("gdm-")
+            || n.starts_with("gnome-session")
+            || n.starts_with("gnome-keyring")
+            || n.starts_with("gnome-shell-")
+            || n == "gnome-calendar"
+            || n == "gnome-clocks"
         {
-            return Some(l);
+            return true;
+        }
+    }
+    if names_of(p).iter().any(|n| n == "gjs" || n == "gjs-console") {
+        return p.cmdline.iter().any(|a| {
+            let al = a.to_ascii_lowercase();
+            al.contains("gnome-shell") || al.contains("org.gnome.shell")
+        });
+    }
+    false
+}
+
+fn is_atspi_registry(p: &Process) -> bool {
+    names_of(p).iter().any(|n| n.starts_with("at-spi2-registr"))
+}
+
+fn is_goa_helper(p: &Process) -> bool {
+    names_of(p).iter().any(|n| n.starts_with("goa-"))
+}
+
+/// Firefox/Chromium crash helper whose parent is often user systemd.
+pub fn crash_helper_app(p: &Process) -> Option<String> {
+    if !names_of(p).iter().any(|n| is_crash_helper_name(n)) {
+        return None;
+    }
+    for s in p.exe.iter().chain(p.cmdline.iter()) {
+        if let Some(app) = app_from_crash_helper_path(s) {
+            return Some(app);
         }
     }
     None
+}
+
+fn is_crash_helper_name(n: &str) -> bool {
+    matches!(
+        n,
+        "crashhelper" | "chrome_crashpad_handler" | "chrome_crashpad"
+    )
+}
+
+fn app_from_crash_helper_path(s: &str) -> Option<String> {
+    let lower = s.to_ascii_lowercase();
+    if lower.contains("/firefox/") || lower.ends_with("/firefox") {
+        return Some("firefox".to_string());
+    }
+    if !is_crash_helper_name(&basename(s)) {
+        return None;
+    }
+    let dir = s.rsplit_once('/')?.0;
+    let owner = basename(dir);
+    if owner.is_empty() || matches!(owner.as_str(), "bin" | "libexec" | "lib" | "lib64") {
+        return None;
+    }
+    Some(owner)
 }
 
 /// Interpreters fold into Electron/browser parents, never into a shell or systemd.
@@ -361,6 +448,131 @@ mod tests {
         )));
         assert!(!is_session_plumbing(&p("vivaldi-bin", &["vivaldi-bin"])));
         assert!(!is_session_plumbing(&p("claude", &["claude"])));
+        assert!(!is_session_plumbing(&p("cursor", &["cursor"])));
+        assert!(!is_session_plumbing(&p("vesktop.bin", &["vesktop.bin"])));
+        assert_eq!(
+            session_helper_ident(&Process {
+                comm: "gjs".into(),
+                exe: Some("/usr/bin/gjs-console".into()),
+                cmdline: vec![
+                    "/usr/bin/gjs".into(),
+                    "/usr/share/gnome-shell/org.gnome.Shell.Notifications".into(),
+                ],
+                ..Process::default()
+            })
+            .as_ref()
+            .map(|(k, _)| k.as_str()),
+            Some("gnome-shell")
+        );
+        assert!(
+            session_helper_ident(&p("gjs-console", &["gjs", "/home/u/my-app.js"])).is_none(),
+            "unrelated gjs is not gnome-shell"
+        );
+        assert_eq!(
+            session_helper_ident(&p("ibus-portal", &["/usr/libexec/ibus-portal"]))
+                .as_ref()
+                .map(|(k, _)| k.as_str()),
+            Some("ibus-daemon")
+        );
+        assert_eq!(
+            session_helper_ident(&p(
+                "at-spi2-registryd",
+                &["/usr/libexec/at-spi2-registryd", "--use-gnome-session"]
+            ))
+            .as_ref()
+            .map(|(k, _)| k.as_str()),
+            Some("at-spi-bus-launcher")
+        );
+        assert_eq!(
+            session_helper_ident(&p(
+                "goa-identity-service",
+                &["/usr/libexec/goa-identity-service"]
+            ))
+            .as_ref()
+            .map(|(k, _)| k.as_str()),
+            Some("goa-daemon")
+        );
+        assert_eq!(
+            session_helper_ident(&p("goa-daemon", &["/usr/libexec/goa-daemon"]))
+                .as_ref()
+                .map(|(k, _)| k.as_str()),
+            Some("goa-daemon")
+        );
+        assert_eq!(
+            session_helper_ident(&p(
+                "p11-kit-server",
+                &["/usr/libexec/p11-kit/p11-kit-server"]
+            ))
+            .as_ref()
+            .map(|(k, _)| k.as_str()),
+            Some("p11-kit")
+        );
+        assert_eq!(
+            session_helper_ident(&p(
+                "p11-kit-remote",
+                &["/usr/libexec/p11-kit/p11-kit-remote"]
+            ))
+            .as_ref()
+            .map(|(k, _)| k.as_str()),
+            Some("p11-kit")
+        );
+        assert!(
+            session_helper_ident(&Process {
+                comm: "cursor".into(),
+                exe: Some("/tmp/.mount_cursor/usr/share/cursor/cursor".into()),
+                cgroup: "0::/user.slice/user-1000.slice/user@1000.service/app.slice/flatpak-session-helper.service".into(),
+                ..Process::default()
+            })
+            .is_none(),
+            "Cursor in the lying flatpak-session-helper unit is not p11-kit"
+        );
+        assert_eq!(
+            session_helper_ident(&p(
+                "gsd-disk-utility-notify",
+                &["/usr/libexec/gsd-disk-utility-notify"]
+            ))
+            .as_ref()
+            .map(|(k, _)| k.as_str()),
+            Some("gsd-disk-utility-notify")
+        );
+        assert_eq!(
+            session_helper_ident(&p(
+                "abrt-applet",
+                &["/usr/bin/abrt-applet", "--gapplication-service"]
+            ))
+            .as_ref()
+            .map(|(k, _)| k.as_str()),
+            Some("abrt-applet")
+        );
+        assert!(!is_session_plumbing(&p("gnome-abrt", &["gnome-abrt"])));
+        assert!(is_worker(&Process {
+            comm: "crashhelper".into(),
+            exe: Some("/usr/lib64/firefox/crashhelper".into()),
+            cmdline: vec![
+                "crashhelper".into(),
+                "12766".into(),
+                "9".into(),
+                "/tmp/".into()
+            ],
+            ..Process::default()
+        }));
+        assert_eq!(
+            crash_helper_app(&Process {
+                comm: "crashhelper".into(),
+                exe: Some("/usr/lib64/firefox/crashhelper".into()),
+                cmdline: vec![
+                    "crashhelper".into(),
+                    "12766".into(),
+                    "9".into(),
+                    "/tmp/".into(),
+                    "11".into(),
+                ],
+                ppid: 6475,
+                ..Process::default()
+            })
+            .as_deref(),
+            Some("firefox")
+        );
         let zypak = p(
             "bwrap",
             &[

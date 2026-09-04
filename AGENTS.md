@@ -94,6 +94,8 @@ JSON shape: `host.users[].applications|user_services|containers`,
 cargo fmt
 cargo clippy --all-targets -- -D warnings
 cargo test
+cargo deny --locked check
+cargo machete
 ```
 
 Suite stays under 30s. No live GPU in CI. Docker sock is optional in CI;

@@ -10,10 +10,12 @@ edition 2024).
 
 ```sh
 lefthook install     # per clone; hooks are not committed by git
+cargo binstall cargo-deny cargo-machete   # pre-push; do not sudo
 ```
 
 Pre-commit runs `cargo fmt --check` and `cargo clippy --all-targets -- -D warnings`
-when Rust or Cargo.toml is staged. Pre-push runs `cargo test`.
+when Rust or Cargo.toml is staged. Pre-push runs `cargo test`, `cargo deny --locked check`,
+and `cargo machete`.
 
 ## Gates
 
@@ -23,6 +25,8 @@ Run before a commit that touches code:
 cargo fmt
 cargo clippy --all-targets -- -D warnings
 cargo test
+cargo deny --locked check
+cargo machete
 ```
 
 The suite must stay under 30 seconds. Do not add live-GPU or live-docker

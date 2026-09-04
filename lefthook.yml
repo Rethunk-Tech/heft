@@ -1,7 +1,8 @@
 # Git hooks, managed by lefthook.
 #
 # Pre-commit is fmt + clippy (the cheap local gates). Pre-push is the test
-# suite, matching CI's last step. cargo fmt --check does not rewrite the tree.
+# suite plus cargo deny and cargo machete, matching CI. cargo fmt --check
+# does not rewrite the tree.
 #
 # Enable with `lefthook install`. Hooks are not committed by git, so this file
 # is the decision; running that command is what applies it.
@@ -17,6 +18,11 @@ pre-commit:
       run: cargo clippy --all-targets -- -D warnings
 
 pre-push:
+  parallel: true
   jobs:
     - name: test
       run: cargo test
+    - name: deny
+      run: cargo deny --locked check
+    - name: machete
+      run: cargo machete

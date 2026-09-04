@@ -72,7 +72,9 @@ CPU `%core` = `100 * Δ(utime+stime) / (CLK_TCK * dt)` (can exceed 100).
 Disk from `read_bytes`/`write_bytes`. GPU: prefer `drm-resident-vram` /
 `drm-resident-gtt` over `drm-total-*`; engine ns deltas → gfx% / compute%.
 
-`--once` / `--json` take two snapshots `interval` seconds apart.
+TUI sampling runs on a background thread; the ratatui loop only swaps in the
+last complete tree and never blocks on `/proc` I/O. `--once` / `--json` take
+two snapshots `interval` seconds apart.
 
 JSON shape: `host.users[].applications|user_services|containers`,
 `host.containers`, `host.system`. Project identities include

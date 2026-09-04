@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::io::{self, stdout};
-use std::time::{Duration, Instant};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use crossterm::cursor::{Hide, Show};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
@@ -88,8 +89,6 @@ impl Sort {
 
 struct App {
     tree: HostTree,
-    interval: Duration,
-    last: Instant,
     cursor: usize,
     expand: HashSet<String>,
     view: View,
@@ -116,12 +115,12 @@ fn run_loop(
     interval: Duration,
 ) -> Result<(), Error> {
     let view = config::load_view();
-    let tree = proc::sample_world(interval);
+    let slot = Arc::new(Mutex::new(None));
+    let _sampler = proc::spawn_sampler(interval, slot.clone())?;
+    let tree = proc::placeholder_tree();
     let mut app = App {
         expand: default_expand(&tree),
         tree,
-        interval,
-        last: Instant::now(),
         cursor: 0,
         view,
         filter_edit: false,
@@ -134,8 +133,7 @@ fn run_loop(
             app.cursor = rows.len().saturating_sub(1);
         }
         terminal.draw(|f| draw(f, &app, &rows))?;
-        let timeout = app.interval.saturating_sub(app.last.elapsed());
-        if event::poll(timeout.max(Duration::from_millis(20)))? {
+        if event::poll(Duration::from_millis(50))? {
             match event::read()? {
                 Event::Key(k) if k.kind == KeyEventKind::Press => {
                     if handle_key(&mut app, k.code, k.modifiers, &rows)? {
@@ -146,9 +144,8 @@ fn run_loop(
                 _ => {}
             }
         }
-        if app.last.elapsed() >= app.interval {
-            app.tree = proc::sample_world(app.interval);
-            app.last = Instant::now();
+        if let Some(tree) = slot.lock().unwrap_or_else(|p| p.into_inner()).take() {
+            app.tree = tree;
         }
     }
     Ok(())

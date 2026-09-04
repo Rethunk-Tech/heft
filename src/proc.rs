@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::fs;
 use std::io;
+use std::sync::{Arc, Mutex};
+use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::containers::ContainerIndex;
@@ -148,28 +150,91 @@ pub fn username(uid: u32) -> String {
     uid.to_string()
 }
 
-pub fn sample_world(interval: Duration) -> HostTree {
-    let mut containers = ContainerIndex::load();
+/// Header totals from world-readable files only — no per-PID `/proc` walk.
+pub fn placeholder_tree() -> HostTree {
     let nproc = cpu::nproc();
-    let clk = cpu::clk_tck();
-    let page = cpu::page_size();
-    let t0 = Instant::now();
-    let cpu0 = cpu::read_host();
-    let prev = enumerate();
-    let engined = prev.values().find_map(|p| {
-        if identity::user_unit(&p.cgroup).as_deref() == Some("engined.service") {
-            Some(p.uid)
-        } else {
-            None
+    let cpu = cpu::HostCpu::default();
+    let header = cpu::header_from(nproc, cpu::clk_tck(), cpu::page_size(), &cpu, &cpu);
+    HostTree {
+        nproc: header.nproc,
+        cpu_pct: header.cpu_pct,
+        mem_used_bytes: header.mem_used_bytes,
+        mem_total_bytes: header.mem_total_bytes,
+        vram_used_bytes: header.vram_used_bytes,
+        vram_total_bytes: header.vram_total_bytes,
+        users: Vec::new(),
+        containers: Vec::new(),
+        system: Vec::new(),
+    }
+}
+
+struct Sampler {
+    prev: HashMap<u32, Process>,
+    cpu0: cpu::HostCpu,
+    t0: Instant,
+    nproc: u32,
+    clk: u64,
+    page: u64,
+}
+
+impl Sampler {
+    fn prime() -> Self {
+        let t0 = Instant::now();
+        Self {
+            nproc: cpu::nproc(),
+            clk: cpu::clk_tck(),
+            page: cpu::page_size(),
+            cpu0: cpu::read_host(),
+            prev: enumerate(),
+            t0,
         }
-    });
-    containers.apply_engined_uid(engined);
-    std::thread::sleep(interval);
-    let cpu1 = cpu::read_host();
-    let curr = enumerate();
-    let elapsed = t0.elapsed();
-    let header = cpu::header_from(nproc, clk, page, &cpu0, &cpu1);
-    group::build_tree(&prev, &curr, elapsed, &header, &containers)
+    }
+
+    fn tick(&mut self) -> HostTree {
+        let mut containers = ContainerIndex::load();
+        let engined = self.prev.values().find_map(|p| {
+            if identity::user_unit(&p.cgroup).as_deref() == Some("engined.service") {
+                Some(p.uid)
+            } else {
+                None
+            }
+        });
+        containers.apply_engined_uid(engined);
+        let t1 = Instant::now();
+        let cpu1 = cpu::read_host();
+        let curr = enumerate();
+        let elapsed = t1.duration_since(self.t0);
+        let header = cpu::header_from(self.nproc, self.clk, self.page, &self.cpu0, &cpu1);
+        let tree = group::build_tree(&self.prev, &curr, elapsed, &header, &containers);
+        self.prev = curr;
+        self.cpu0 = cpu1;
+        self.t0 = t1;
+        tree
+    }
+}
+
+pub fn sample_world(interval: Duration) -> HostTree {
+    let mut sampler = Sampler::prime();
+    thread::sleep(interval);
+    sampler.tick()
+}
+
+/// Latest complete tree. The UI takes; the sampler only publishes.
+pub fn spawn_sampler(
+    interval: Duration,
+    slot: Arc<Mutex<Option<HostTree>>>,
+) -> io::Result<thread::JoinHandle<()>> {
+    thread::Builder::new()
+        .name("heft-sample".into())
+        .spawn(move || {
+            let mut sampler = Sampler::prime();
+            loop {
+                let start = Instant::now();
+                let tree = sampler.tick();
+                *slot.lock().unwrap_or_else(|p| p.into_inner()) = Some(tree);
+                thread::sleep(interval.saturating_sub(start.elapsed()));
+            }
+        })
 }
 
 #[cfg(test)]

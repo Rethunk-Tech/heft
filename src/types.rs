@@ -99,7 +99,7 @@ pub enum Folder {
     System,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct HostTree {
     pub nproc: u32,
     pub cpu_pct: f64,

@@ -7,6 +7,130 @@ use crate::types::{
     user_nproc,
 };
 
+/// One table column. Adding a column here is the whole change: it reaches the
+/// `--once` table, the TUI table, and the sort cycle at once.
+pub(crate) struct Column {
+    /// Persisted in the saved view, so renaming one invalidates that sort.
+    pub(crate) label: &'static str,
+    pub(crate) header: &'static str,
+    pub(crate) width: u16,
+    pub(crate) fmt: fn(&str, u32, &Metrics) -> String,
+    /// `None` on the name column: it has no numeric key, and it inverts the
+    /// sort direction so the numeric default of high-to-low still reads A-Z.
+    pub(crate) key: Option<fn(&IdentNode) -> f64>,
+}
+
+pub(crate) const COLUMNS: &[Column] = &[
+    Column {
+        label: "name",
+        header: "NAME",
+        width: 28,
+        fmt: |name, _, _| name.to_string(),
+        key: None,
+    },
+    Column {
+        label: "nproc",
+        header: "N",
+        width: 4,
+        fmt: |_, n, _| n.to_string(),
+        key: Some(|i| f64::from(i.nproc)),
+    },
+    Column {
+        label: "core",
+        header: "%CORE",
+        width: 7,
+        fmt: |_, _, m| fmt_pct(m.cpu_core_pct),
+        key: Some(|i| i.metrics.cpu_core_pct),
+    },
+    Column {
+        label: "machine",
+        header: "%MACH",
+        width: 7,
+        fmt: |_, _, m| fmt_pct(m.cpu_machine_pct),
+        key: Some(|i| i.metrics.cpu_machine_pct),
+    },
+    Column {
+        label: "pss",
+        header: "PSS",
+        width: 8,
+        fmt: |_, _, m| fmt_bytes(m.pss_bytes),
+        key: Some(|i| opt_u(i.metrics.pss_bytes)),
+    },
+    Column {
+        label: "rss",
+        header: "RSS",
+        width: 8,
+        fmt: |_, _, m| fmt_bytes(m.rss_bytes),
+        key: Some(|i| opt_u(i.metrics.rss_bytes)),
+    },
+    Column {
+        label: "diskr",
+        header: "DISK R",
+        width: 8,
+        fmt: |_, _, m| fmt_rate(m.disk_r_bps),
+        key: Some(|i| i.metrics.disk_r_bps.unwrap_or(0.0)),
+    },
+    Column {
+        label: "diskw",
+        header: "DISK W",
+        width: 8,
+        fmt: |_, _, m| fmt_rate(m.disk_w_bps),
+        key: Some(|i| i.metrics.disk_w_bps.unwrap_or(0.0)),
+    },
+    Column {
+        label: "vram",
+        header: "VRAM",
+        width: 8,
+        fmt: |_, _, m| fmt_bytes(m.vram_bytes),
+        key: Some(|i| opt_u(i.metrics.vram_bytes)),
+    },
+    Column {
+        label: "gtt",
+        header: "GTT",
+        width: 8,
+        fmt: |_, _, m| fmt_bytes(m.gtt_bytes),
+        key: Some(|i| opt_u(i.metrics.gtt_bytes)),
+    },
+    Column {
+        label: "gfx",
+        header: "GFX",
+        width: 5,
+        fmt: |_, _, m| fmt_opt_pct(m.gfx_pct),
+        key: Some(|i| i.metrics.gfx_pct.unwrap_or(0.0)),
+    },
+    Column {
+        label: "compute",
+        header: "CMP",
+        width: 5,
+        fmt: |_, _, m| fmt_opt_pct(m.compute_pct),
+        key: Some(|i| i.metrics.compute_pct.unwrap_or(0.0)),
+    },
+];
+
+/// Byte counts stay exact in f64 out past 9 PB, so one key type covers the
+/// integer and rate columns alike.
+fn opt_u(v: Option<u64>) -> f64 {
+    v.unwrap_or(0) as f64
+}
+
+/// The fixed-width layout: name left-aligned, every other column right, one
+/// space between. Header and body share it so they cannot drift apart.
+fn layout(cells: impl IntoIterator<Item = String>) -> String {
+    let mut line = String::new();
+    for (i, (col, cell)) in COLUMNS.iter().zip(cells).enumerate() {
+        if i > 0 {
+            line.push(' ');
+        }
+        let w = usize::from(col.width);
+        line.push_str(&if i == 0 {
+            format!("{cell:<w$}")
+        } else {
+            format!("{cell:>w$}")
+        });
+    }
+    line
+}
+
 /// # Errors
 ///
 /// Returns an error if writing the table to stdout fails.
@@ -24,22 +148,7 @@ pub fn print_table(interval: Duration) -> Result<(), Error> {
         fmt_bytes(Some(tree.mem_total_bytes)),
         tree.nproc
     )?;
-    writeln!(
-        out,
-        "{:<28} {:>4} {:>7} {:>7} {:>8} {:>8} {:>8} {:>8} {:>8} {:>8} {:>5} {:>5}",
-        "NAME",
-        "N",
-        "%CORE",
-        "%MACH",
-        "PSS",
-        "RSS",
-        "DISK R",
-        "DISK W",
-        "VRAM",
-        "GTT",
-        "GFX",
-        "CMP"
-    )?;
+    write_header(&mut out)?;
     emit_row(
         &mut out,
         0,
@@ -74,6 +183,10 @@ pub fn print_json(interval: Duration) -> Result<(), Error> {
     Ok(())
 }
 
+fn write_header(out: &mut impl Write) -> io::Result<()> {
+    writeln!(out, "{}", layout(COLUMNS.iter().map(|c| c.header.into())))
+}
+
 fn write_folder(
     out: &mut impl Write,
     depth: usize,
@@ -101,22 +214,12 @@ fn emit_ident(out: &mut impl Write, depth: usize, ident: &IdentNode) -> io::Resu
 
 fn emit_row(out: &mut impl Write, depth: usize, name: &str, n: u32, m: &Metrics) -> io::Result<()> {
     let indent = "  ".repeat(depth);
-    let label = format!("{indent}{name}");
+    // The name column pads but never clips, so the label is cut to fit first.
+    let label = trunc(&format!("{indent}{name}"), usize::from(COLUMNS[0].width));
     writeln!(
         out,
-        "{:<28} {:>4} {:>7} {:>7} {:>8} {:>8} {:>8} {:>8} {:>8} {:>8} {:>5} {:>5}",
-        trunc(&label, 28),
-        n,
-        fmt_pct(m.cpu_core_pct),
-        fmt_pct(m.cpu_machine_pct),
-        fmt_bytes(m.pss_bytes),
-        fmt_bytes(m.rss_bytes),
-        fmt_rate(m.disk_r_bps),
-        fmt_rate(m.disk_w_bps),
-        fmt_bytes(m.vram_bytes),
-        fmt_bytes(m.gtt_bytes),
-        fmt_opt_pct(m.gfx_pct),
-        fmt_opt_pct(m.compute_pct),
+        "{}",
+        layout(COLUMNS.iter().map(|c| (c.fmt)(&label, n, m)))
     )
 }
 
@@ -169,6 +272,50 @@ pub(crate) fn fmt_opt_pct(v: Option<f64>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn sample_ident(disk_r_bps: f64) -> IdentNode {
+        IdentNode {
+            id: "a".into(),
+            title: "an-identity-name-long-enough-to-truncate".into(),
+            nproc: 7,
+            metrics: Metrics {
+                cpu_core_pct: 12.25,
+                cpu_machine_pct: 1.5,
+                rss_bytes: Some(2048),
+                pss_bytes: Some(1536),
+                disk_r_bps: Some(disk_r_bps),
+                disk_w_bps: None,
+                vram_bytes: Some(1024 * 1024),
+                gtt_bytes: None,
+                gfx_pct: Some(3.0),
+                compute_pct: None,
+            },
+            instances: Vec::new(),
+            containers: Vec::new(),
+        }
+    }
+
+    /// `--once` is a fixed-width table other tools slice by column, so the
+    /// exact byte layout is the contract, not just the values. The second case
+    /// is a cell wider than its column: it pushes the line out rather than
+    /// clipping, and downstream slicing has always had to cope with that.
+    #[test]
+    fn once_rows_keep_their_byte_layout() {
+        let mut out = Vec::new();
+        write_header(&mut out).unwrap();
+        write_folder(&mut out, 1, "Applications", &[sample_ident(1536.0)]).unwrap();
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            "NAME                            N   %CORE   %MACH      PSS      RSS   DISK R   DISK W     VRAM      GTT   GFX   CMP\n  Applications                  7    12.2     1.5     1.5K     2.0K   1.5K/s              1.0M            3.0      \n    an-identity-name-long-e\u{2026}    7    12.2     1.5     1.5K     2.0K   1.5K/s              1.0M            3.0      \n"
+        );
+
+        let mut out = Vec::new();
+        write_folder(&mut out, 1, "Applications", &[sample_ident(1_030_963.0)]).unwrap();
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            "  Applications                  7    12.2     1.5     1.5K     2.0K 1006.8K/s              1.0M            3.0      \n    an-identity-name-long-e\u{2026}    7    12.2     1.5     1.5K     2.0K 1006.8K/s              1.0M            3.0      \n"
+        );
+    }
 
     #[test]
     fn scaling_keeps_byte_counts_exact_and_rates_fractional() {

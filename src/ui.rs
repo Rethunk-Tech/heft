@@ -19,7 +19,7 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph, Row, Table};
 use crate::config::{self, View};
 use crate::cpu;
 use crate::mem::{self, MemParts};
-use crate::once::{fmt_bytes, fmt_opt_pct, fmt_pct, fmt_rate};
+use crate::once::{COLUMNS, fmt_bytes, fmt_pct};
 use crate::proc;
 use crate::types::{
     Error, HostTree, IdentNode, Metrics, ProcNode, folder_nproc, host_metrics, sum_idents,
@@ -28,68 +28,31 @@ use crate::types::{
 
 const HEADER_ROWS: u16 = 2;
 
+/// Index into `once::COLUMNS`; the saved view stores that column's label.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Sort {
-    Name,
-    Nproc,
-    Core,
-    Machine,
-    Pss,
-    Rss,
-    DiskR,
-    DiskW,
-    Vram,
-    Gtt,
-    Gfx,
-    Compute,
-}
+struct Sort(usize);
 
 impl Sort {
-    fn all() -> [Sort; 12] {
-        [
-            Sort::Name,
-            Sort::Nproc,
-            Sort::Core,
-            Sort::Machine,
-            Sort::Pss,
-            Sort::Rss,
-            Sort::DiskR,
-            Sort::DiskW,
-            Sort::Vram,
-            Sort::Gtt,
-            Sort::Gfx,
-            Sort::Compute,
-        ]
+    /// Only the tests enumerate the sorts; `next` and `from_label` index
+    /// `COLUMNS` directly.
+    #[cfg(test)]
+    fn all() -> Vec<Sort> {
+        (0..COLUMNS.len()).map(Sort).collect()
     }
 
     fn label(self) -> &'static str {
-        match self {
-            Sort::Name => "name",
-            Sort::Nproc => "nproc",
-            Sort::Core => "core",
-            Sort::Machine => "machine",
-            Sort::Pss => "pss",
-            Sort::Rss => "rss",
-            Sort::DiskR => "diskr",
-            Sort::DiskW => "diskw",
-            Sort::Vram => "vram",
-            Sort::Gtt => "gtt",
-            Sort::Gfx => "gfx",
-            Sort::Compute => "compute",
-        }
+        COLUMNS[self.0].label
     }
 
     fn from_label(s: &str) -> Self {
-        Self::all()
-            .into_iter()
-            .find(|x| x.label() == s)
-            .unwrap_or(Sort::Pss)
+        let find = |l: &str| COLUMNS.iter().position(|c| c.label == l);
+        // An unknown label means a saved view from another column set; PSS is
+        // the documented default.
+        Sort(find(s).or_else(|| find("pss")).unwrap_or(0))
     }
 
     fn next(self) -> Self {
-        let all = Self::all();
-        let i = all.iter().position(|x| *x == self).unwrap_or(0);
-        all[(i + 1) % all.len()]
+        Sort((self.0 + 1) % COLUMNS.len())
     }
 }
 
@@ -394,32 +357,12 @@ fn push_procs(
 }
 
 fn cmp_ident(a: &IdentNode, b: &IdentNode, sort: Sort, desc: bool) -> std::cmp::Ordering {
-    let ord = match sort {
-        Sort::Name => a.title.cmp(&b.title),
-        Sort::Nproc => a.nproc.cmp(&b.nproc),
-        Sort::Core => a.metrics.cpu_core_pct.total_cmp(&b.metrics.cpu_core_pct),
-        Sort::Machine => a
-            .metrics
-            .cpu_machine_pct
-            .total_cmp(&b.metrics.cpu_machine_pct),
-        Sort::Pss => opt_u(a.metrics.pss_bytes).cmp(&opt_u(b.metrics.pss_bytes)),
-        Sort::Rss => opt_u(a.metrics.rss_bytes).cmp(&opt_u(b.metrics.rss_bytes)),
-        Sort::DiskR => opt_f(a.metrics.disk_r_bps).total_cmp(&opt_f(b.metrics.disk_r_bps)),
-        Sort::DiskW => opt_f(a.metrics.disk_w_bps).total_cmp(&opt_f(b.metrics.disk_w_bps)),
-        Sort::Vram => opt_u(a.metrics.vram_bytes).cmp(&opt_u(b.metrics.vram_bytes)),
-        Sort::Gtt => opt_u(a.metrics.gtt_bytes).cmp(&opt_u(b.metrics.gtt_bytes)),
-        Sort::Gfx => opt_f(a.metrics.gfx_pct).total_cmp(&opt_f(b.metrics.gfx_pct)),
-        Sort::Compute => opt_f(a.metrics.compute_pct).total_cmp(&opt_f(b.metrics.compute_pct)),
+    let Some(key) = COLUMNS[sort.0].key else {
+        let ord = a.title.cmp(&b.title);
+        return if desc { ord } else { ord.reverse() };
     };
-    let reverse = if sort == Sort::Name { !desc } else { desc };
-    if reverse { ord.reverse() } else { ord }
-}
-
-fn opt_u(v: Option<u64>) -> u64 {
-    v.unwrap_or(0)
-}
-fn opt_f(v: Option<f64>) -> f64 {
-    v.unwrap_or(0.0)
+    let ord = key(a).total_cmp(&key(b));
+    if desc { ord.reverse() } else { ord }
 }
 
 fn handle_key(
@@ -509,16 +452,8 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &App, rows: &[Flat]) {
     draw_header(f, chunks[0], app);
     render_rule(f, chunks[1]);
 
-    let headers = [
-        "NAME", "N", "%CORE", "%MACH", "PSS", "RSS", "DISK R", "DISK W", "VRAM", "GTT", "GFX",
-        "CMP",
-    ];
-    let skip = app.col_off as usize;
-    let shown: Vec<&str> = headers
-        .iter()
-        .copied()
-        .skip(skip.min(headers.len().saturating_sub(1)))
-        .collect();
+    let skip = (app.col_off as usize).min(COLUMNS.len().saturating_sub(1));
+    let shown: Vec<&str> = COLUMNS.iter().map(|c| c.header).skip(skip).collect();
     let start = app.row_off.min(rows.len());
     let end = start.saturating_add(app.row_vis.max(1)).min(rows.len());
     let mut table_rows = Vec::new();
@@ -533,43 +468,32 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &App, rows: &[Flat]) {
             "  "
         };
         let name = format!("{}{}{}", "  ".repeat(r.depth as usize), mark, r.name);
-        let cells = [
-            name,
-            r.nproc.to_string(),
-            fmt_pct(r.metrics.cpu_core_pct),
-            fmt_pct(r.metrics.cpu_machine_pct),
-            fmt_bytes(r.metrics.pss_bytes),
-            fmt_bytes(r.metrics.rss_bytes),
-            fmt_rate(r.metrics.disk_r_bps),
-            fmt_rate(r.metrics.disk_w_bps),
-            fmt_bytes(r.metrics.vram_bytes),
-            fmt_bytes(r.metrics.gtt_bytes),
-            fmt_opt_pct(r.metrics.gfx_pct),
-            fmt_opt_pct(r.metrics.compute_pct),
-        ];
-        let shown_cells: Vec<String> = cells.into_iter().skip(skip.min(11)).collect();
-        let row = Row::new(shown_cells);
+        let cells: Vec<String> = COLUMNS
+            .iter()
+            .map(|c| (c.fmt)(&name, r.nproc, &r.metrics))
+            .skip(skip)
+            .collect();
+        let row = Row::new(cells);
         table_rows.push(if start + i == app.cursor {
             row.style(Style::default().add_modifier(Modifier::REVERSED))
         } else {
             row
         });
     }
+    // Only the unscrolled view keeps the declared widths; once the name column
+    // is off-screen every remaining column is numeric and shares one width.
     let widths: Vec<Constraint> = if skip == 0 {
-        vec![
-            Constraint::Min(28),
-            Constraint::Length(5),
-            Constraint::Length(7),
-            Constraint::Length(7),
-            Constraint::Length(8),
-            Constraint::Length(8),
-            Constraint::Length(8),
-            Constraint::Length(8),
-            Constraint::Length(8),
-            Constraint::Length(8),
-            Constraint::Length(5),
-            Constraint::Length(5),
-        ]
+        COLUMNS
+            .iter()
+            .enumerate()
+            .map(|(i, c)| {
+                if i == 0 {
+                    Constraint::Min(c.width)
+                } else {
+                    Constraint::Length(c.width)
+                }
+            })
+            .collect()
     } else {
         shown.iter().map(|_| Constraint::Length(8)).collect()
     };
@@ -819,8 +743,8 @@ mod tests {
         let v = View::default();
         assert_eq!(v.sort, "pss");
         assert!(v.desc);
-        assert_eq!(Sort::from_label(""), Sort::Pss);
-        assert_eq!(Sort::from_label("machine"), Sort::Machine);
+        assert_eq!(Sort::from_label("").label(), "pss");
+        assert_eq!(Sort::from_label("machine").label(), "machine");
     }
 
     #[test]

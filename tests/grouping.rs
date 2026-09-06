@@ -474,6 +474,18 @@ fn gui_and_docker_fixture() {
         "p11-kit must not bill to Cursor: {:?}",
         proc_names(cursor)
     );
+    assert!(
+        proc_names(cursor)
+            .iter()
+            .any(|n| n == "chrome_crashpad_handler"),
+        "the AppImage crash helper bills to Cursor: {:?}",
+        proc_names(cursor)
+    );
+    assert!(
+        !has(&user.applications, "mount"),
+        "a temp mount directory is never an app identity: {:?}",
+        titles(&user.applications)
+    );
 
     let firefox = user
         .applications

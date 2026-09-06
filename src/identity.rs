@@ -46,9 +46,15 @@ pub fn user_unit(cgroup: &str) -> Option<String> {
     Some(systemd_unescape(leaf))
 }
 
+/// Decodes into bytes and converts once at the end, never `byte as char`.
+/// systemd escapes a unit name one byte at a time, so a UTF-8 character
+/// arrives as several `\\xNN` escapes: casting each to a `char` reads them as
+/// Latin-1 and turns `\\xc3\\xa9` into `Ã©` instead of `é`. Lossy at the end
+/// rather than fallible, because a unit name heft cannot decode is still a row
+/// worth drawing.
 pub fn systemd_unescape(s: &str) -> String {
     let b = s.as_bytes();
-    let mut out = String::new();
+    let mut out: Vec<u8> = Vec::with_capacity(b.len());
     let mut i = 0;
     while i < b.len() {
         if b[i] == b'\\'
@@ -57,14 +63,14 @@ pub fn systemd_unescape(s: &str) -> String {
             && let Ok(hex) = std::str::from_utf8(&b[i + 2..i + 4])
             && let Ok(v) = u8::from_str_radix(hex, 16)
         {
-            out.push(v as char);
+            out.push(v);
             i += 4;
             continue;
         }
-        out.push(b[i] as char);
+        out.push(b[i]);
         i += 1;
     }
-    out
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 pub fn lying_unit(unit: &str) -> bool {
@@ -142,6 +148,25 @@ pub fn instance_key(p: &Process, container_id: Option<&str>) -> String {
 
 #[cfg(test)]
 mod tests {
+    /// systemd escapes a unit name byte by byte, so one non-ASCII character
+    /// arrives as several escapes and has to be reassembled before it becomes
+    /// text. Reading each escape as its own char produced Latin-1 mojibake in
+    /// every unit or scope name that was not pure ASCII.
+    #[test]
+    fn unescaping_reassembles_a_multibyte_character() {
+        use super::systemd_unescape;
+        assert_eq!(systemd_unescape(r"caf\xc3\xa9.service"), "café.service");
+        assert_eq!(
+            systemd_unescape(r"app-\xe6\x97\xa5\xe6\x9c\xac.scope"),
+            "app-日本.scope"
+        );
+        // ASCII escapes and untouched text still behave as they always did.
+        assert_eq!(systemd_unescape(r"dev\x2ddisk.mount"), "dev-disk.mount");
+        assert_eq!(systemd_unescape("plain.service"), "plain.service");
+        // A trailing partial escape is data, not a decode: it must not panic.
+        assert_eq!(systemd_unescape(r"trail\xc"), r"trail\xc");
+    }
+
     use super::*;
 
     #[test]

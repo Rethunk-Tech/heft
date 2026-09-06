@@ -177,68 +177,43 @@ fn flatten(tree: &HostTree, expand: &HashSet<String>, view: &View) -> Vec<Flat> 
                 expandable: true,
             });
             if expand.contains(&id) {
-                push_folder(
-                    &mut rows,
-                    &FolderPush {
-                        expand,
-                        sort,
-                        desc: view.desc,
-                        depth: 2,
-                        id: &format!("user:{uid}/apps"),
-                        title: "Applications",
-                        idents: &user.applications,
-                    },
-                );
-                push_folder(
-                    &mut rows,
-                    &FolderPush {
-                        expand,
-                        sort,
-                        desc: view.desc,
-                        depth: 2,
-                        id: &format!("user:{uid}/services"),
-                        title: "User Services",
-                        idents: &user.user_services,
-                    },
-                );
-                push_folder(
-                    &mut rows,
-                    &FolderPush {
-                        expand,
-                        sort,
-                        desc: view.desc,
-                        depth: 2,
-                        id: &format!("user:{uid}/containers"),
-                        title: "Containers",
-                        idents: &user.containers,
-                    },
-                );
+                for (slug, title, idents) in [
+                    ("apps", "Applications", &user.applications),
+                    ("services", "User Services", &user.user_services),
+                    ("containers", "Containers", &user.containers),
+                ] {
+                    push_folder(
+                        &mut rows,
+                        &FolderPush {
+                            expand,
+                            sort,
+                            desc: view.desc,
+                            depth: 2,
+                            id: &format!("user:{uid}/{slug}"),
+                            title,
+                            idents,
+                        },
+                    );
+                }
             }
         }
-        push_folder(
-            &mut rows,
-            &FolderPush {
-                expand,
-                sort,
-                desc: view.desc,
-                depth: 1,
-                id: "host/containers",
-                title: "Containers",
-                idents: &tree.containers,
-            },
-        );
-        push_folder(
-            &mut rows,
-            &FolderPush {
-                expand,
-                sort,
-                desc: view.desc,
-                depth: 1,
-                id: "host/system",
-                title: "System",
-                idents: &tree.system,
-            },
-        );
+        for (id, title, idents) in [
+            ("host/containers", "Containers", &tree.containers),
+            ("host/system", "System", &tree.system),
+        ] {
+            push_folder(
+                &mut rows,
+                &FolderPush {
+                    expand,
+                    sort,
+                    desc: view.desc,
+                    depth: 1,
+                    id,
+                    title,
+                    idents,
+                },
+            );
+        }
     }
     if !filter.is_empty() {
         keep_matches(&mut rows, &filter);
@@ -902,5 +877,54 @@ mod tests {
         let mut expect: Vec<Sort> = all[1..].to_vec();
         expect.push(all[0]);
         assert_eq!(seen, expect);
+    }
+
+    fn ident(id: &str) -> IdentNode {
+        IdentNode {
+            id: id.into(),
+            title: id.into(),
+            nproc: 1,
+            metrics: Metrics::default(),
+            instances: Vec::new(),
+            containers: Vec::new(),
+        }
+    }
+
+    /// Every folder row exists for every user and for the host, but only the
+    /// set HUMANS.md documents opens on a fresh start.
+    #[test]
+    fn default_expand_opens_only_the_documented_folders() {
+        use crate::types::UserNode;
+        let me = cpu::euid();
+        let user = |uid: u32, name: &str| UserNode {
+            uid,
+            name: name.into(),
+            applications: vec![ident("app")],
+            user_services: vec![ident("svc")],
+            containers: vec![ident("ctr")],
+        };
+        let tree = HostTree {
+            users: vec![user(me, "me"), user(me + 1, "other")],
+            containers: vec![ident("hostctr")],
+            system: vec![ident("kthread")],
+            ..HostTree::default()
+        };
+        let rows = flatten(&tree, &default_expand(), &View::default());
+        let got: Vec<String> = rows.iter().map(|r| r.id.clone()).collect();
+        assert_eq!(
+            got,
+            [
+                "host".to_string(),
+                format!("user:{me}"),
+                format!("user:{me}/apps"),
+                format!("user:{me}/apps/app"),
+                format!("user:{me}/services"),
+                format!("user:{me}/containers"),
+                format!("user:{me}/containers/ctr"),
+                format!("user:{}", me + 1),
+                "host/containers".to_string(),
+                "host/system".to_string(),
+            ]
+        );
     }
 }

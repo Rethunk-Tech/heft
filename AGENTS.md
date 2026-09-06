@@ -77,10 +77,12 @@ Never read `/proc/pid/mem`. Never ptrace.
 - Containers: never System, never `dockerd`/`containerd`/`engined` the user
   service. Project key is `com.supabase.cli.project` → `supabase:<name>`, else
   `supabase_<role>_<project>` names, else `com.docker.compose.project`. No
-  project → one row per container name. `engined.spec` is not a merge key.
-  `containerd-shim-runc-v2 -id`, `docker-proxy -container-ip`, `conmon`,
-  `runc`/`crun` bill to that container. Owner: workdir path uid, else
-  `engined.service` uid for `engined-*` / `engined.spec`, else Host → Containers.
+  project → one row per container name. A vendor label such as `engined.spec`
+  is not a merge key. `containerd-shim-runc-v2 -id`, `docker-proxy
+  -container-ip`, `conmon`, `runc`/`crun` bill to that container. Owner:
+  workdir path uid, else the first non-root uid owning an `Inspect.Mounts`
+  bind source (named volumes are root-owned and skipped), else Host →
+  Containers.
 
 ## Sampler
 

@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Container ownership comes from bind-mount sources: a container with no
+  workdir label now bills to the first non-root uid owning one of its
+  `Mounts` bind sources. Named volumes are skipped (root-owned under
+  `/var/lib/docker/volumes`), and a container that mounts only root-owned
+  paths still sits on Host → Containers. Replaces the `engined`-specific
+  fallback, so any tool laying out per-user bind mounts is now attributed.
+
 ## 0.1.0 - 2026-09-06
 
 First release.

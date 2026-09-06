@@ -12,7 +12,6 @@ struct Fixture {
     nproc: u32,
     clk_tck: u64,
     page_size: u64,
-    engined_uid: Option<u32>,
     #[serde(default)]
     workdir_uids: HashMap<PathBuf, u32>,
     #[serde(default)]
@@ -72,12 +71,7 @@ fn load(path: &str) -> (HashMap<u32, Process>, ContainerIndex, HostHeader) {
             },
         );
     }
-    let idx = ContainerIndex::from_list(
-        &fix.containers,
-        &fix.inspects,
-        &fix.workdir_uids,
-        fix.engined_uid,
-    );
+    let idx = ContainerIndex::from_list(&fix.containers, &fix.inspects, &fix.workdir_uids);
     let header = HostHeader {
         nproc: fix.nproc,
         clk_tck: fix.clk_tck,
@@ -493,7 +487,7 @@ fn gui_and_docker_fixture() {
     assert!(has(&user.containers, "engined-kokoro"));
     assert!(
         has(&user.containers, "spec-runner-7"),
-        "engined.spec without an engined- name prefix must bill to the engined uid: {:?}",
+        "a container named nothing like engined must bill to its bind-mount owner: {:?}",
         titles(&user.containers)
     );
     assert!(

@@ -67,9 +67,10 @@ Other users, User Services, Host-level Containers, and System start collapsed.
   session plumbing sit in User Services even when D-Bus used an `app-` or
   `dbus:` unit. Everything else under the user is an application. Merge
   identities: [AGENTS.md](AGENTS.md).
-- **Containers** under a user are workloads heft can attribute (workdir owner,
-  or `engined-*` / `engined.spec` using the `engined.service` uid). Unattributed
-  running containers sit on Host → Containers.
+- **Containers** under a user are workloads heft can attribute: the owner of
+  the container's workdir label, else the owner of the first bind mount it
+  has under a user's paths. Unattributed running containers sit on
+  Host → Containers.
 - **System** is kernel threads and leftover `system.slice` (including
   `dockerd` / `containerd`). Container scopes never go here.
 

@@ -47,10 +47,6 @@ pub(crate) struct ContainerInfo {
     pub(crate) ident_key: String,
     pub(crate) member_name: Option<String>,
     pub(crate) owner_uid: Option<u32>,
-    /// Named `engined-*` or carrying the `engined.spec` label. Labels are not
-    /// retained (the spec label is not a merge key), so the signal is captured
-    /// here: the engined uid is only known after the index is built.
-    engined: bool,
 }
 
 #[derive(Default)]
@@ -115,7 +111,6 @@ impl ContainerIndex {
         items: &[ListItem],
         inspects: &HashMap<String, Inspect>,
         workdir_uids: &HashMap<PathBuf, u32>,
-        engined_uid: Option<u32>,
     ) -> Self {
         let mut idx = Self::default();
         for item in items {
@@ -124,10 +119,6 @@ impl ContainerIndex {
             }
             idx.insert_resolved(item, inspects.get(&item.id), Some(workdir_uids));
         }
-        // Same order as the live sampler: the engined uid is only known after
-        // the walk that finds engined.service, so it lands on an index already
-        // built.
-        idx.apply_engined_uid(engined_uid);
         idx
     }
 
@@ -153,16 +144,23 @@ impl ContainerIndex {
                 .get("com.docker.compose.project.working_dir")
                 .cloned()
         });
-        let owner = workdir.as_ref().and_then(|p| {
-            if let Some(map) = workdir_uids {
-                map.get(&PathBuf::from(p)).copied()
-            } else {
-                path_owner(Path::new(p))
-            }
+        let owner_of = |p: &str| match workdir_uids {
+            Some(map) => map.get(Path::new(p)).copied(),
+            None => path_owner(Path::new(p)),
+        };
+        // A named volume lives under /var/lib/docker/volumes and is root-owned,
+        // so only a bind source carries ownership, and uid 0 is no information
+        // rather than an owner: Host -> Containers stays right for a container
+        // that mounts nothing of a user's.
+        let owner = workdir.as_deref().and_then(owner_of).or_else(|| {
+            inspect
+                .map(|i| i.mounts.as_slice())
+                .unwrap_or_default()
+                .iter()
+                .filter(|m| m.kind.as_deref() == Some("bind"))
+                .filter_map(|m| owner_of(m.source.as_deref()?))
+                .find(|&uid| uid != 0)
         });
-        let engined = name.starts_with("engined-")
-            || ident_key.starts_with("engined-")
-            || labels.contains_key("engined.spec");
         let ips = inspect.map(Inspect::ips).unwrap_or_default();
         let running = inspect
             .and_then(|i| i.state.as_ref())
@@ -176,7 +174,6 @@ impl ContainerIndex {
             ident_key,
             member_name,
             owner_uid: owner,
-            engined,
         };
         self.index_ids(&info);
         for ip in ips {
@@ -210,14 +207,6 @@ impl ContainerIndex {
             crate::classify::cmdline_flag_value(&p.cmdline, "-container-ip")
                 .and_then(|ip| self.by_ip(ip))
         })
-    }
-
-    pub(crate) fn apply_engined_uid(&mut self, uid: Option<u32>) {
-        for info in self.by_id.values_mut() {
-            if info.owner_uid.is_none() && info.engined {
-                info.owner_uid = uid;
-            }
-        }
     }
 }
 
@@ -339,6 +328,16 @@ pub struct Inspect {
     pub(crate) state: Option<InspectState>,
     #[serde(rename = "NetworkSettings")]
     pub(crate) network: Option<NetworkSettings>,
+    #[serde(rename = "Mounts", default)]
+    pub(crate) mounts: Vec<Mount>,
+}
+
+#[derive(Clone, Debug, Deserialize, Default)]
+pub(crate) struct Mount {
+    #[serde(rename = "Type")]
+    pub(crate) kind: Option<String>,
+    #[serde(rename = "Source")]
+    pub(crate) source: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Default)]
@@ -392,8 +391,8 @@ mod tests {
         let (k, m) = project_identity("supabase_db_caldera", &labels);
         assert_eq!(k, "supabase:caldera");
         assert_eq!(m.as_deref(), Some("supabase_db_caldera"));
-        let (k, m) = project_identity("engined-whisper", &HashMap::new());
-        assert_eq!(k, "engined-whisper");
+        let (k, m) = project_identity("spec-runner-7", &HashMap::new());
+        assert_eq!(k, "spec-runner-7");
         assert!(m.is_none());
     }
 
@@ -411,7 +410,6 @@ mod tests {
             ident_key: "x".into(),
             member_name: None,
             owner_uid: None,
-            engined: false,
         }
     }
 

@@ -8,7 +8,6 @@ use std::time::{Duration, Instant};
 use crate::containers::{ContainerIndex, InspectCache};
 use crate::cpu;
 use crate::group;
-use crate::identity;
 use crate::types::{GpuCounters, HostHeader, HostTree, Process};
 use crate::{gpu, io as pio};
 
@@ -224,15 +223,7 @@ impl Sampler {
     }
 
     fn tick(&mut self, force_pss: bool) -> HostTree {
-        let mut containers = ContainerIndex::load(&mut self.inspect_cache);
-        let engined = self.prev.values().find_map(|p| {
-            if identity::user_unit(&p.cgroup).as_deref() == Some("engined.service") {
-                Some(p.uid)
-            } else {
-                None
-            }
-        });
-        containers.apply_engined_uid(engined);
+        let containers = ContainerIndex::load(&mut self.inspect_cache);
         let t1 = Instant::now();
         let cpu1 = cpu::read_host();
         let want_pss = force_pss || pss_due(self.last_pss, t1, self.pss_interval);

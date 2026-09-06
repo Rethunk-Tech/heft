@@ -2,9 +2,16 @@
   "nproc": 32,
   "clk_tck": 100,
   "page_size": 4096,
-  "engined_uid": 1000,
   "workdir_uids": {
-    "/usr/local/src/com.github/PeleOs-LLC/caldera": 1000
+    "/usr/local/src/com.github/PeleOs-LLC/caldera": 1000,
+    "/etc/localtime": 0,
+    "/var/lib/docker/volumes/engined-cache/_data": 1001,
+    "/home/u/.local/share/engined-models/whisper": 1000,
+    "/home/u/.local/share/engined/engines/whisper": 1000,
+    "/home/u/.local/share/engined-models/llm": 1000,
+    "/home/u/.local/state/engined/llama/preset.ini": 1000,
+    "/home/u/.local/share/engined-models/kokoro": 1000,
+    "/home/u/.local/share/spec-runner/7": 1000
   },
   "containers": [
     {
@@ -72,7 +79,56 @@
       }
     }
   ],
-  "inspects": {},
+  "inspects": {
+    "31c4735b8670a5b31ca1894f141c5cff4a2f5ed814214c9ccd4dc2a3ec0cc94c": {
+      "Mounts": [
+        {
+          "Type": "volume",
+          "Source": "/var/lib/docker/volumes/engined-cache/_data"
+        },
+        {
+          "Type": "bind",
+          "Source": "/etc/localtime"
+        },
+        {
+          "Type": "bind",
+          "Source": "/home/u/.local/share/engined-models/whisper"
+        },
+        {
+          "Type": "bind",
+          "Source": "/home/u/.local/share/engined/engines/whisper"
+        }
+      ]
+    },
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
+      "Mounts": [
+        {
+          "Type": "bind",
+          "Source": "/home/u/.local/share/engined-models/llm"
+        },
+        {
+          "Type": "bind",
+          "Source": "/home/u/.local/state/engined/llama/preset.ini"
+        }
+      ]
+    },
+    "e0d5a2f8001315a5594211e149ca69da6d1e0ccc36487bfd87ade594f16f5deb": {
+      "Mounts": [
+        {
+          "Type": "bind",
+          "Source": "/home/u/.local/share/engined-models/kokoro"
+        }
+      ]
+    },
+    "b7c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1": {
+      "Mounts": [
+        {
+          "Type": "bind",
+          "Source": "/home/u/.local/share/spec-runner/7"
+        }
+      ]
+    }
+  },
   "processes": [
     {
       "pid": 1,

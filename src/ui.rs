@@ -545,9 +545,18 @@ fn mem_header_line(tree: &HostTree, width: usize) -> Line<'static> {
         cache: tree.mem_cached_bytes,
         buffers: tree.mem_buffers_bytes,
     });
+    // Swap is a device, not a slice of MemTotal, so painting it inside the MEM
+    // bar would be the same lie discrete VRAM was moved out for. A swapless
+    // host (`SwapTotal: 0`, the common case) gets no tank and no empty segment:
+    // the MEM bar keeps the whole row exactly as it did before swap existed.
+    let swap = (tree.swap_total_bytes > 0).then_some(tree.swap_total_bytes);
     // Rejected a third header row: AGENTS.md fixes the header at two unbordered
-    // rows with rules above and below, so the second tank splits this row.
-    let mem_width = if discrete.is_some() { width / 2 } else { width };
+    // rows with rules above and below, so extra tanks split this row.
+    let tanks = tank_widths(
+        width,
+        1 + usize::from(discrete.is_some()) + usize::from(swap.is_some()),
+    );
+    let mem_width = tanks[0];
     let mut labels: Vec<(&str, Color)> = Vec::new();
     if tree.unified_memory {
         labels.push(("vram", Color::LightRed));
@@ -570,19 +579,46 @@ fn mem_header_line(tree: &HostTree, width: usize) -> Line<'static> {
         tree.mem_total_bytes,
         &labels,
     );
+    let mut next = 1;
     if let Some(vram_total) = discrete {
         let vram_used = tree.vram_used_bytes.unwrap_or(0).min(vram_total);
         spans.extend(bar_group(
             "VRAM",
-            width - mem_width,
+            tanks[next],
             &[(vram_used, Color::LightRed)],
             vram_total,
             vram_used,
             vram_total,
             &[],
         ));
+        next += 1;
+    }
+    if let Some(swap_total) = swap {
+        let swap_used = tree.swap_used_bytes.min(swap_total);
+        spans.extend(bar_group(
+            "SWAP",
+            tanks[next],
+            &[(swap_used, Color::Yellow)],
+            swap_total,
+            swap_used,
+            swap_total,
+            &[],
+        ));
     }
     Line::from(spans)
+}
+
+/// Split one header row across its bar groups so the parts still sum to
+/// `width`; a `width / tanks` each would lose the remainder and shorten the
+/// line, which is exactly what the rendered-width assertions catch.
+fn tank_widths(width: usize, tanks: usize) -> Vec<usize> {
+    (0..tanks)
+        .scan(width, |rest, i| {
+            let w = *rest / (tanks - i);
+            *rest -= w;
+            Some(w)
+        })
+        .collect()
 }
 
 /// Slash-joined coloured labels plus the columns they occupy. The bar width
@@ -889,6 +925,53 @@ mod tests {
         assert!(!text.contains("VRAM ["), "{text}");
         assert!(text.contains("vram/gtt/cache/buf"), "{text}");
         assert_eq!(text.chars().count(), 100);
+    }
+
+    #[test]
+    fn tank_widths_always_sum_to_the_row() {
+        for width in [0, 1, 79, 80, 100, 201] {
+            for tanks in 1..=3 {
+                let w = tank_widths(width, tanks);
+                assert_eq!(w.len(), tanks);
+                assert_eq!(w.iter().sum::<usize>(), width, "{width}/{tanks}");
+            }
+        }
+        // The pre-swap split, unchanged: MEM first, the second tank the rest.
+        assert_eq!(tank_widths(101, 2), vec![50, 51]);
+    }
+
+    /// The machine this was written on has `SwapTotal: 0`, and there the header
+    /// must be byte-identical to the one heft printed before swap existed.
+    #[test]
+    fn a_swapless_host_gets_no_swap_tank() {
+        let tree = tree_with_gpu(&mem::GpuPool::default());
+        assert_eq!(tree.swap_total_bytes, 0);
+        let text = mem_header_line(&tree, 100).to_string();
+        assert!(!text.contains("SWAP"), "{text}");
+        assert!(text.starts_with(" MEM ["), "{text}");
+        assert_eq!(text.chars().count(), 100);
+    }
+
+    #[test]
+    fn swap_gets_its_own_tank_beside_mem() {
+        let g = 1024 * 1024 * 1024;
+        let mut tree = tree_with_gpu(&mem::GpuPool::default());
+        tree.swap_total_bytes = 8 * g;
+        tree.swap_used_bytes = 2 * g;
+        let text = mem_header_line(&tree, 100).to_string();
+        // The bug this guards: swap painted as a segment of MemTotal, which
+        // would put pages that are not in RAM inside the RAM bar.
+        assert!(text.contains("SWAP ["), "{text}");
+        assert!(text.contains("2.0G/8.0G"), "{text}");
+        assert!(text.contains("8.0G/32.0G"), "{text}");
+        assert_eq!(text.chars().count(), 100);
+
+        // Discrete VRAM and swap together still fit the same two-row header.
+        tree.vram_total_bytes = Some(12 * g);
+        tree.vram_used_bytes = Some(6 * g);
+        let text = mem_header_line(&tree, 120).to_string();
+        assert!(text.contains("VRAM [") && text.contains("SWAP ["), "{text}");
+        assert_eq!(text.chars().count(), 120);
     }
 
     fn flat(depth: u16, name: &str) -> Flat {

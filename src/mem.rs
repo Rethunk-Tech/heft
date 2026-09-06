@@ -9,6 +9,8 @@ pub struct RamInfo {
     pub total_bytes: u64,
     pub buffers_bytes: u64,
     pub cached_bytes: u64,
+    pub swap_used_bytes: u64,
+    pub swap_total_bytes: u64,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -49,6 +51,8 @@ pub fn parse_meminfo(text: &str) -> RamInfo {
     let mut avail = 0u64;
     let mut buffers = 0u64;
     let mut cached = 0u64;
+    let mut swap_total = 0u64;
+    let mut swap_free = 0u64;
     for line in text.lines() {
         if let Some(v) = field_u64(line, "MemTotal:") {
             total = v.saturating_mul(1024);
@@ -58,6 +62,10 @@ pub fn parse_meminfo(text: &str) -> RamInfo {
             buffers = v.saturating_mul(1024);
         } else if let Some(v) = field_u64(line, "Cached:") {
             cached = v.saturating_mul(1024);
+        } else if let Some(v) = field_u64(line, "SwapTotal:") {
+            swap_total = v.saturating_mul(1024);
+        } else if let Some(v) = field_u64(line, "SwapFree:") {
+            swap_free = v.saturating_mul(1024);
         }
     }
     RamInfo {
@@ -65,6 +73,11 @@ pub fn parse_meminfo(text: &str) -> RamInfo {
         total_bytes: total,
         buffers_bytes: buffers,
         cached_bytes: cached,
+        // `SwapCached:` is swapped-out pages that also still sit in RAM, so it
+        // is neither free swap nor a separate tank: total - free is what is
+        // actually out on disk.
+        swap_used_bytes: swap_total.saturating_sub(swap_free),
+        swap_total_bytes: swap_total,
     }
 }
 
@@ -153,12 +166,23 @@ mod tests {
     #[test]
     fn meminfo_used() {
         let ram = parse_meminfo(
-            "MemTotal: 1000 kB\nMemAvailable: 400 kB\nBuffers: 10 kB\nCached: 50 kB\n",
+            "MemTotal: 1000 kB\nMemAvailable: 400 kB\nBuffers: 10 kB\nCached: 50 kB\nSwapCached: 7 kB\nSwapTotal: 800 kB\nSwapFree: 300 kB\n",
         );
         assert_eq!(ram.total_bytes, 1000 * 1024);
         assert_eq!(ram.used_bytes, 600 * 1024);
         assert_eq!(ram.buffers_bytes, 10 * 1024);
         assert_eq!(ram.cached_bytes, 50 * 1024);
+        assert_eq!(ram.swap_total_bytes, 800 * 1024);
+        assert_eq!(ram.swap_used_bytes, 500 * 1024);
+    }
+
+    /// The swapless machine this was written on: every swap key reads 0, and
+    /// the header must then render as if swap did not exist at all.
+    #[test]
+    fn swapless_meminfo_is_zero_not_garbage() {
+        let ram = parse_meminfo("MemTotal: 1000 kB\nSwapTotal: 0 kB\nSwapFree: 0 kB\n");
+        assert_eq!(ram.swap_total_bytes, 0);
+        assert_eq!(ram.swap_used_bytes, 0);
     }
 
     #[test]

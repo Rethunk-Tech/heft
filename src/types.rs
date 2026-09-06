@@ -18,6 +18,9 @@ pub struct Process {
     pub stime: u64,
     pub rss_pages: Option<u64>,
     pub pss_kb: Option<u64>,
+    /// `SwapPss:` from the same `smaps_rollup` read as `pss_kb`, so it costs no
+    /// extra file and arrives on the same `--pss-interval` cadence.
+    pub swap_pss_kb: Option<u64>,
     pub read_bytes: Option<u64>,
     pub write_bytes: Option<u64>,
     pub gpu: GpuCounters,
@@ -55,6 +58,13 @@ pub(crate) struct Metrics {
     pub(crate) rss_bytes: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) pss_bytes: Option<u64>,
+    /// `SwapPss`, not `Swap`: a swapped-out page shared by four processes is
+    /// one page of swap, and `Swap` bills it to each of them, so a summed tree
+    /// would report four. PSS is apportioned for the same reason, and the
+    /// summed-PSS-fits-in-RAM invariant depends on that apportionment holding
+    /// for swap too. Blank when the host has no swap configured.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) swap_bytes: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) disk_r_bps: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -83,6 +93,7 @@ impl Metrics {
         self.cpu_machine_pct += other.cpu_machine_pct;
         self.rss_bytes = sum_opt(self.rss_bytes, other.rss_bytes);
         self.pss_bytes = sum_opt(self.pss_bytes, other.pss_bytes);
+        self.swap_bytes = sum_opt(self.swap_bytes, other.swap_bytes);
         self.disk_r_bps = sum_opt_f(self.disk_r_bps, other.disk_r_bps);
         self.disk_w_bps = sum_opt_f(self.disk_w_bps, other.disk_w_bps);
         self.vram_bytes = sum_opt(self.vram_bytes, other.vram_bytes);
@@ -126,6 +137,8 @@ pub struct HostTree {
     pub(crate) mem_total_bytes: u64,
     pub(crate) mem_buffers_bytes: u64,
     pub(crate) mem_cached_bytes: u64,
+    pub(crate) swap_used_bytes: u64,
+    pub(crate) swap_total_bytes: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) vram_used_bytes: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]

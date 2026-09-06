@@ -4,6 +4,21 @@
 
 ### Added
 
+- A `SWAP` column and a host swap tank on the MEMORY header row. Both come from
+  files heft already opens — `SwapPss:` from the `smaps_rollup` it reads for
+  PSS, and `SwapTotal`/`SwapFree` from the `/proc/meminfo` it reads for the MEM
+  bar — so neither costs a tick any extra I/O, and per-process swap arrives on
+  the existing `--pss-interval` cadence. The column is `SwapPss` rather than
+  `Swap` for the reason PSS is the memory column: `Swap` bills a shared
+  swapped-out page to every process mapping it, which a summed tree then
+  reports several times over. Swap is a tank of its own and never a segment of
+  the MEM bar, because swapped pages are not in RAM. A machine with
+  `SwapTotal: 0` renders exactly as before: no tank, no swap field on the
+  `--once` host line, and blank `SWAP` cells rather than a column of zeros,
+  since with no swap configured there is no figure to report. Until now a
+  process with gigabytes paged out showed only its small resident RSS and PSS,
+  and heft's memory picture was actively misleading on any host that swaps.
+
 - `NETNS RX` / `NETNS TX` on container rows, from the non-`lo` interfaces of
   `/proc/<pid>/net/dev`. Every other row is blank, and the columns are named
   for the network namespace rather than the resource because that is what the

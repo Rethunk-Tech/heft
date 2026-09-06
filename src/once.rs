@@ -72,6 +72,16 @@ pub(crate) const COLUMNS: &[Column] = &[
         fmt: |_, _, m| fmt_bytes(m.rss_bytes),
         key: Some(|_, m| opt_u(m.rss_bytes)),
     },
+    // Blank, not 0, on a machine with no swap: `SwapTotal: 0` means no figure
+    // exists rather than nothing being paged out, the same distinction the
+    // NETNS columns draw below.
+    Column {
+        label: "swap",
+        header: "SWAP",
+        width: 6,
+        fmt: |_, _, m| fmt_bytes(m.swap_bytes),
+        key: Some(|_, m| opt_u(m.swap_bytes)),
+    },
     Column {
         label: "diskr",
         header: "DISK R",
@@ -284,13 +294,14 @@ pub fn print_table(interval: Duration) -> Result<(), Error> {
     let mut out = io::stdout();
     writeln!(
         out,
-        "HOST  cpu {:>5.1}%  usr {:>4.1} sys {:>4.1} wait {:>4.1}  mem {} / {}  nproc {}",
+        "HOST  cpu {:>5.1}%  usr {:>4.1} sys {:>4.1} wait {:>4.1}  mem {} / {}{}  nproc {}",
         tree.cpu_pct,
         tree.cpu_user_pct,
         tree.cpu_system_pct,
         tree.cpu_wait_pct,
         fmt_bytes(Some(tree.mem_used_bytes)),
         fmt_bytes(Some(tree.mem_total_bytes)),
+        host_swap(&tree),
         tree.nproc
     )?;
     write_header(&mut out)?;
@@ -316,6 +327,20 @@ pub fn print_table(interval: Duration) -> Result<(), Error> {
     write_folder(&mut out, 1, "Containers", &tree.containers)?;
     write_folder(&mut out, 1, "System", &tree.system)?;
     Ok(())
+}
+
+/// `  swap used / total`, or nothing at all on a machine with no swap: an
+/// unconditional ` swap 0 / 0` would be a field about a device that is not
+/// there.
+fn host_swap(tree: &HostTree) -> String {
+    if tree.swap_total_bytes == 0 {
+        return String::new();
+    }
+    format!(
+        "  swap {} / {}",
+        fmt_bytes(Some(tree.swap_used_bytes)),
+        fmt_bytes(Some(tree.swap_total_bytes))
+    )
 }
 
 /// # Errors
@@ -560,6 +585,9 @@ mod tests {
                 cpu_machine_pct: 1.5,
                 rss_bytes: Some(2048),
                 pss_bytes: Some(1536),
+                // A swapless host: the whole column is blank, not a column of
+                // zeros, which is the layout most machines print.
+                swap_bytes: None,
                 disk_r_bps: Some(disk_r_bps),
                 disk_w_bps: None,
                 vram_bytes: Some(1024 * 1024),
@@ -587,14 +615,14 @@ mod tests {
         write_folder(&mut out, 1, "Applications", &[sample_ident(1536.0)]).unwrap();
         assert_eq!(
             String::from_utf8(out).unwrap(),
-            "NAME                            N   %CORE   %MACH      PSS      RSS   DISK R   DISK W     VRAM      GTT   GFX   CMP NETNS RX NETNS TX\n  Applications                  7    12.2     1.5     1.5K     2.0K   1.5K/s              1.0M            3.0                        \n    an-identity-name-long-e\u{2026}    7    12.2     1.5     1.5K     2.0K   1.5K/s              1.0M            3.0                        \n"
+            "NAME                            N   %CORE   %MACH      PSS      RSS   SWAP   DISK R   DISK W     VRAM      GTT   GFX   CMP NETNS RX NETNS TX\n  Applications                  7    12.2     1.5     1.5K     2.0K          1.5K/s              1.0M            3.0                        \n    an-identity-name-long-e\u{2026}    7    12.2     1.5     1.5K     2.0K          1.5K/s              1.0M            3.0                        \n"
         );
 
         let mut out = Vec::new();
         write_folder(&mut out, 1, "Applications", &[sample_ident(1_030_963.0)]).unwrap();
         assert_eq!(
             String::from_utf8(out).unwrap(),
-            "  Applications                  7    12.2     1.5     1.5K     2.0K 1006.8K/s              1.0M            3.0                        \n    an-identity-name-long-e\u{2026}    7    12.2     1.5     1.5K     2.0K 1006.8K/s              1.0M            3.0                        \n"
+            "  Applications                  7    12.2     1.5     1.5K     2.0K        1006.8K/s              1.0M            3.0                        \n    an-identity-name-long-e\u{2026}    7    12.2     1.5     1.5K     2.0K        1006.8K/s              1.0M            3.0                        \n"
         );
     }
 

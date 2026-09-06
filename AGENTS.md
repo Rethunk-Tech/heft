@@ -16,8 +16,8 @@ build.rs             clap_complete + clap_mangen → OUT_DIR/assets (build-deps 
 src/types.rs         Process, Metrics, HostTree, JSON shape
 src/proc.rs          every visible PID; blank metrics on EACCES
 src/cpu.rs           /proc/stat split (usr/sys/wait) + per-pid utime/stime rates
-src/mem.rs           meminfo used/Buffers/Cached, unified APU clip, host VRAM
-src/io.rs            /proc/pid/io rates and smaps_rollup PSS
+src/mem.rs           meminfo used/Buffers/Cached/Swap, unified APU clip, host VRAM
+src/io.rs            /proc/pid/io rates and smaps_rollup PSS + SwapPss
 src/net.rs           per-netns rx/tx from /proc/pid/net/dev; container rows only
 src/gpu.rs           amdgpu/i915/xe fdinfo; dri/drm prefilter; full walk on PSS/--once; drm-client-id dedupe
 src/classify.rs      launcher / worker / shell / terminal / compositor tables
@@ -132,6 +132,8 @@ stderr from `config::load_overrides` and grouping continues built-in.
 | `%machine` | `%core / nproc` |
 | RSS | `/proc/pid/statm` |
 | PSS | `/proc/pid/smaps_rollup` — cadence in [HUMANS.md](HUMANS.md) |
+| SWAP | `SwapPss:` from that same rollup read, so it costs no extra file and shares the PSS cadence. `SwapPss`, never `Swap`: a shared swapped page must be apportioned or a summed tree reports it once per mapper. Blank on a `SwapTotal: 0` host |
+| Host swap | `SwapTotal` − `SwapFree` from `/proc/meminfo` (`SwapCached` is neither, so it is not subtracted) |
 | Disk R/W | Δ `read_bytes` / `write_bytes` from `/proc/pid/io` |
 | GPU mem | prefer `drm-resident-*` over `drm-total-*`; regions `vram`/`gtt` (amdgpu), `local0`/`system0` (i915), `vram0`/`gtt` (xe) |
 | NETNS RX/TX | Δ non-`lo` bytes from `/proc/<container-scope-pid>/net/dev`; a new pid or a counter that went backwards discards the interval |
@@ -141,8 +143,9 @@ stderr from `config::load_overrides` and grouping continues built-in.
 | --- | --- |
 | CPU bar | `/proc/stat` Δ user+nice / system+irq+softirq / iowait; idle+steal unfilled |
 | MEM bar | one MemTotal width when APU VRAM is unified; VRAM (unified only) / GTT resident, then Cached/Buffers, then anon; clip so the stack never exceeds `used.min(MemTotal)` (`mem::clip_used`) |
-| Discrete VRAM | own tank against `mem_info_vram_total`, sharing the MEMORY row with the MEM bar (half width each); only `vram` drops from that legend — GTT is pinned system RAM and stays in MEM |
-| Layout | 2 unbordered header rows (a second tank splits the MEMORY row, never adds a third); persistent rules: header↔tree and tree↔footer |
+| Discrete VRAM | own tank against `mem_info_vram_total`, sharing the MEMORY row with the MEM bar; only `vram` drops from that legend — GTT is pinned system RAM and stays in MEM |
+| Swap | own tank against `SwapTotal`, never a MEM segment: swapped pages are not in RAM. Absent entirely when `SwapTotal` is 0, so a swapless host renders as it did before swap existed |
+| Layout | 2 unbordered header rows (extra tanks split the MEMORY row via `ui::tank_widths`, never add a third row); persistent rules: header↔tree and tree↔footer |
 | Disk R/W | table columns only (formatted rates change width every tick) |
 | NETNS RX/TX | last two columns, named for the namespace and not the resource: a blank cell means the row owns no namespace, not that it moved no bytes |
 | Ordering | one comparator in `once.rs` for every level; a `None` metric sorts last in either direction, name breaks ties, stable over `group::proc_forest` pid order |

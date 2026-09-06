@@ -12,7 +12,11 @@ use crate::group;
 use crate::types::{GpuCounters, HostHeader, HostTree, Process};
 use crate::{gpu, io as pio, net};
 
-fn collect(want_pss: bool, prev: Option<&HashMap<u32, Process>>) -> HashMap<u32, Process> {
+fn collect(
+    want_pss: bool,
+    want_swap: bool,
+    prev: Option<&HashMap<u32, Process>>,
+) -> HashMap<u32, Process> {
     let mut out = HashMap::new();
     let Ok(dir) = fs::read_dir("/proc") else {
         return out;
@@ -22,14 +26,14 @@ fn collect(want_pss: bool, prev: Option<&HashMap<u32, Process>>) -> HashMap<u32,
         let Some(pid) = name.to_str().and_then(|s| s.parse::<u32>().ok()) else {
             continue;
         };
-        if let Some(p) = read_pid(pid, want_pss, prev.and_then(|m| m.get(&pid))) {
+        if let Some(p) = read_pid(pid, want_pss, want_swap, prev.and_then(|m| m.get(&pid))) {
             out.insert(pid, p);
         }
     }
     out
 }
 
-fn read_pid(pid: u32, want_pss: bool, prev: Option<&Process>) -> Option<Process> {
+fn read_pid(pid: u32, want_pss: bool, want_swap: bool, prev: Option<&Process>) -> Option<Process> {
     let base = format!("/proc/{pid}");
     let stat = fs::read_to_string(format!("{base}/stat")).ok()?;
     let parsed = parse_stat(&stat)?;
@@ -43,7 +47,7 @@ fn read_pid(pid: u32, want_pss: bool, prev: Option<&Process>) -> Option<Process>
     let rss_pages = read_rss_pages(&format!("{base}/statm"));
     // PSS is a level, not a rate. Kernel threads have no rollup. Prime and
     // TUI ticks between `--pss-interval` reuse last (new PIDs stay blank).
-    let pss_kb = pss_kb_for(want_pss, parsed.kthread, prev.and_then(|p| p.pss_kb), pid);
+    let (pss_kb, swap_pss_kb) = rollup_for(want_pss, want_swap, parsed.kthread, prev, pid);
     // PF_KTHREAD has no userspace /proc/pid/io or drm fdinfo.
     let (read_bytes, write_bytes, gpu) = if parsed.kthread {
         (None, None, GpuCounters::default())
@@ -67,19 +71,29 @@ fn read_pid(pid: u32, want_pss: bool, prev: Option<&Process>) -> Option<Process>
         stime: parsed.stime,
         rss_pages,
         pss_kb,
+        swap_pss_kb,
         read_bytes,
         write_bytes,
         gpu,
     })
 }
 
-fn pss_kb_for(want_pss: bool, kthread: bool, prev: Option<u64>, pid: u32) -> Option<u64> {
+fn rollup_for(
+    want_pss: bool,
+    want_swap: bool,
+    kthread: bool,
+    prev: Option<&Process>,
+    pid: u32,
+) -> (Option<u64>, Option<u64>) {
     if kthread {
-        None
+        (None, None)
     } else if want_pss {
-        pio::read_pss_kb(pid)
+        pio::read_rollup_kb(pid, want_swap)
     } else {
-        prev
+        (
+            prev.and_then(|p| p.pss_kb),
+            prev.and_then(|p| p.swap_pss_kb),
+        )
     }
 }
 
@@ -216,7 +230,7 @@ impl Sampler {
         let overrides = crate::config::load_overrides();
         let mut inspect_cache = InspectCache::default();
         let mut net = net::Sampler::default();
-        let prev = collect(false, None);
+        let prev = collect(false, false, None);
         // Netns counters are levels, so the first published tick needs a
         // baseline here or `--once` and `--json` would always print a blank
         // rate. The inspect cache makes the tick's own load a no-op.
@@ -244,7 +258,10 @@ impl Sampler {
         let t1 = Instant::now();
         let cpu1 = cpu::read_host();
         let want_pss = force_pss || pss_due(self.last_pss, t1, self.pss_interval);
-        let curr = collect(want_pss, Some(&self.prev));
+        // Built before the walk so the walk knows whether this machine has swap
+        // at all; it reads only world-readable host files, so the order is free.
+        let header = cpu::header_from(&self.consts, &self.cpu0, &cpu1);
+        let curr = collect(want_pss, header.swap_total_bytes > 0, Some(&self.prev));
         if want_pss {
             self.last_pss = Some(t1);
         }
@@ -252,7 +269,6 @@ impl Sampler {
         let net = self
             .net
             .tick(&containers, &curr, elapsed.as_secs_f64().max(1e-6));
-        let header = cpu::header_from(&self.consts, &self.cpu0, &cpu1);
         let mut tree = group::build_tree(
             &self.prev,
             &curr,
@@ -369,8 +385,19 @@ mod tests {
 
     #[test]
     fn carried_pss_skips_kthread_and_new_pids() {
-        assert_eq!(pss_kb_for(false, true, Some(12), 1), None);
-        assert_eq!(pss_kb_for(false, false, Some(12), 1), Some(12));
-        assert_eq!(pss_kb_for(false, false, None, 1), None);
+        let carried = Process {
+            pss_kb: Some(12),
+            swap_pss_kb: Some(3),
+            ..Process::default()
+        };
+        assert_eq!(
+            rollup_for(false, true, true, Some(&carried), 1),
+            (None, None)
+        );
+        assert_eq!(
+            rollup_for(false, true, false, Some(&carried), 1),
+            (Some(12), Some(3))
+        );
+        assert_eq!(rollup_for(false, true, false, None, 1), (None, None));
     }
 }

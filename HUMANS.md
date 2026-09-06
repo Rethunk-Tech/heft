@@ -86,7 +86,10 @@ Other users, User Services, Host-level Containers, and System start collapsed.
   total. GTT stays in the MEM bar either way — it is system RAM pinned for the
   GPU, not card memory. That GTT slice, and the unified VRAM slice beside it,
   add up only the drm clients heft can see, the same caveat as the Host row,
-  which sums only visible PIDs and so can sit below the header.
+  which sums only visible PIDs and so can sit below the header. Swap, when the
+  machine has any, is a third tank on that same row rather than a segment of
+  MEM: swapped pages are not in RAM. A machine with `SwapTotal: 0` gets no
+  swap tank and no `SWAP` figures at all.
 - **User** is a unix uid. Terminals, shells, and the compositor live under that
   user — not as Host.
 - **Applications** vs **User Services**: a user-instance `*.service` whose name
@@ -107,6 +110,19 @@ Other users, User Services, Host-level Containers, and System start collapsed.
 Other uids appear as extra User nodes when `/proc` lists them. Metrics heft
 cannot read (`smaps_rollup`, `io`, fdinfo, `exe`) render as a blank cell. A
 blank is not a zero: those rows sort last whichever way the sort runs.
+
+## SWAP
+
+`SWAP` is `SwapPss` from `/proc/<pid>/smaps_rollup`, the file heft already
+reads for PSS, so it arrives on the same `--pss-interval` cadence and costs no
+extra read. It is `SwapPss` and not `Swap` for the reason PSS is the memory
+column: a swapped-out page shared by four processes is one page of swap, and
+`Swap` bills it to all four, so a summed tree would report it four times.
+
+The column is blank on a machine with no swap configured. That is the blank
+contract, not a zero: with `SwapTotal: 0` there is no swap for a process to be
+paged out to, so no figure exists. On a machine that does swap, `0` means that
+process has nothing paged out.
 
 ## NETNS RX / NETNS TX
 

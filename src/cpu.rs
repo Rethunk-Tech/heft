@@ -130,6 +130,7 @@ pub fn process_metrics(
     };
     let rss_bytes = cur.rss_pages.map(|p| p.saturating_mul(consts.page_size));
     let pss_bytes = cur.pss_kb.map(|k| k.saturating_mul(1024));
+    let swap_bytes = cur.swap_pss_kb.map(|k| k.saturating_mul(1024));
     let disk_r_bps = rate(prev.and_then(|p| p.read_bytes), cur.read_bytes, secs);
     let disk_w_bps = rate(prev.and_then(|p| p.write_bytes), cur.write_bytes, secs);
     // Two formulas, because the drivers measure two different things: a
@@ -160,6 +161,7 @@ pub fn process_metrics(
         cpu_machine_pct: machine,
         rss_bytes,
         pss_bytes,
+        swap_bytes,
         disk_r_bps,
         disk_w_bps,
         vram_bytes: cur.gpu.vram_bytes,
@@ -228,6 +230,8 @@ pub fn header_from(c: &HostHeader, a: &HostCpu, b: &HostCpu) -> HostTree {
         mem_total_bytes: ram.total_bytes,
         mem_buffers_bytes: ram.buffers_bytes,
         mem_cached_bytes: ram.cached_bytes,
+        swap_used_bytes: ram.swap_used_bytes,
+        swap_total_bytes: ram.swap_total_bytes,
         vram_used_bytes: gpu.vram_used,
         vram_total_bytes: gpu.vram_total,
         unified_memory: crate::mem::is_unified(ram.total_bytes, &gpu),

@@ -341,6 +341,17 @@ fn app_from_crash_helper_path(s: &str) -> Option<String> {
     if !is_crash_helper_name(&norm(&basename(s))) {
         return None;
     }
+    // AppImages and self-extracting bundles unpack under a temp root, so the
+    // directory name is per-run (`/tmp/mount`, `/tmp/.mount_cursorAb12Cd`) and
+    // never an app identity. Declining here lets `group` bill the helper to the
+    // ancestor that launched it; the `/firefox/` rule above still answers when
+    // that ancestor is user systemd.
+    if ["/tmp/", "/var/tmp/", "/run/"]
+        .iter()
+        .any(|root| lower.starts_with(root))
+    {
+        return None;
+    }
     let dir = s.rsplit_once('/')?.0;
     let owner = basename(dir);
     if owner.is_empty() || matches!(owner.as_str(), "bin" | "libexec" | "lib" | "lib64") {
@@ -755,6 +766,31 @@ mod tests {
             .as_deref(),
             Some("firefox")
         );
+        assert_eq!(
+            crash_helper_app(&p(
+                "chrome_crashpad_handler",
+                &["/opt/cursor/chrome_crashpad_handler"]
+            ))
+            .as_deref(),
+            Some("cursor"),
+            "an install path still names the owning app"
+        );
+        for temp in [
+            "/tmp/mount/chrome_crashpad_handler",
+            "/tmp/.mount_cursorAb12Cd/chrome_crashpad_handler",
+            "/run/user/1000/appimage/chrome_crashpad_handler",
+        ] {
+            assert_eq!(
+                crash_helper_app(&Process {
+                    comm: "chrome_crashpad_handler".into(),
+                    exe: Some(temp.into()),
+                    cmdline: vec![temp.into()],
+                    ..Process::default()
+                }),
+                None,
+                "a temp mount directory is not an app identity: {temp}"
+            );
+        }
         let zypak = p(
             "bwrap",
             &[

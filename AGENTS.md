@@ -34,6 +34,12 @@ tests/fixtures/      GUI grouping snapshot
 No `sysinfo` crate. No `nix` unless rustix cannot do it; v1 uses `std` + `libc`.
 Never read `/proc/pid/mem`. Never ptrace.
 
+The hand-rolled helpers — the `/proc` and fdinfo field parsers,
+`once::scale_1024`, `once::trunc`, `ui::share_cells`,
+`identity::systemd_unescape`, and the GET-only HTTP client in
+`containers::unix_get` — have no std equivalent at the 1.98 floor. That is
+checked, not assumed, so replacing them is not pending work.
+
 ## Grouping invariants
 
 - **Host** is the machine, not the compositor or a terminal.

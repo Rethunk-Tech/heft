@@ -282,8 +282,7 @@ fn docker_get_path(path: &str) -> bool {
     if path == "/containers/json" {
         return true;
     }
-    path.strip_prefix("/containers/")
-        .and_then(|rest| rest.strip_suffix("/json"))
+    path.strip_circumfix("/containers/", "/json")
         .is_some_and(|id| hex_id(id).is_some())
 }
 

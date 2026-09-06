@@ -324,7 +324,13 @@ pub fn print_table(interval: Duration) -> Result<(), Error> {
 pub fn print_json(interval: Duration) -> Result<(), Error> {
     let tree = proc::sample_world(interval);
     let doc = serde_json::json!({ "host": tree });
-    println!("{}", serde_json::to_string_pretty(&doc)?);
+    // `println!` panics when the reader closes, and the release profile is
+    // `panic = abort`, so `heft --json | head` would abort. Serialize first,
+    // then write through `io::Write`: serializing into the stream instead
+    // would bury the EPIPE inside a `serde_json::Error`, which `main` cannot
+    // recognise as a closed pipe.
+    let text = serde_json::to_string_pretty(&doc)?;
+    writeln!(io::stdout(), "{text}")?;
     Ok(())
 }
 

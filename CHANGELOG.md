@@ -15,6 +15,15 @@
   machine's, and a restart drops one interval instead of reporting a negative
   rate.
 
+## Unreleased
+
+### Fixed
+
+- `heft --once | head` and `heft --json | head` exit quietly instead of
+  reporting a broken pipe. `--json` previously panicked outright, which the
+  `panic = abort` release profile turns into an abort. A genuine write failure
+  such as a full disk is still reported.
+
 ## 0.2.0 - 2026-09-06
 
 ### Added

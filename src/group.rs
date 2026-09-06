@@ -230,7 +230,7 @@ fn user_place(p: &Process) -> Place {
     let title = if classify::is_generic(p) {
         identity::generic_fallback(p, unit.as_deref())
     } else {
-        identity::leaf_title(p)
+        name_of(p)
     };
     Place {
         folder,

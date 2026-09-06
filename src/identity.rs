@@ -104,10 +104,6 @@ pub fn is_kernel(p: &Process) -> bool {
     p.uid == 0 && (p.ppid == 2 || p.pid == 2 || p.comm.starts_with('[') || p.comm == "kthreadd")
 }
 
-pub fn leaf_title(p: &Process) -> String {
-    classify::name_of(p)
-}
-
 pub fn generic_fallback(p: &Process, unit: Option<&str>) -> String {
     if let Some(u) = unit
         && !lying_unit(u)
@@ -126,7 +122,7 @@ pub fn generic_fallback(p: &Process, unit: Option<&str>) -> String {
             return script;
         }
     }
-    leaf_title(p)
+    classify::name_of(p)
 }
 
 pub fn instance_key(p: &Process, container_id: Option<&str>) -> String {

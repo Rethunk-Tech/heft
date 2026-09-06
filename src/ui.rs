@@ -132,7 +132,7 @@ fn run_loop(
     let _sampler = proc::spawn_sampler(interval, pss_interval, slot.clone())?;
     let tree = proc::placeholder_tree();
     let mut app = App {
-        expand: default_expand(&tree),
+        expand: default_expand(),
         tree,
         cursor: 0,
         row_off: 0,
@@ -169,16 +169,13 @@ fn run_loop(
     Ok(())
 }
 
-fn default_expand(tree: &HostTree) -> HashSet<String> {
+fn default_expand() -> HashSet<String> {
     let mut s = HashSet::new();
     s.insert("host".into());
     let me = cpu::euid();
     s.insert(format!("user:{me}"));
     s.insert(format!("user:{me}/apps"));
     s.insert(format!("user:{me}/containers"));
-    if tree.users.iter().any(|u| u.uid == me) {
-        // keep defaults
-    }
     s
 }
 
@@ -208,18 +205,14 @@ fn flatten(tree: &HostTree, expand: &HashSet<String>, view: &View) -> Vec<Flat> 
         for user in &tree.users {
             let uid = user.uid;
             let id = format!("user:{uid}");
-            push_maybe(
-                &mut rows,
-                Flat {
-                    id: id.clone(),
-                    depth: 1,
-                    name: format!("{} ({uid})", user.name),
-                    nproc: user_nproc(user),
-                    metrics: sum_lists([&user.applications, &user.user_services, &user.containers]),
-                    expandable: true,
-                },
-                &filter,
-            );
+            rows.push(Flat {
+                id: id.clone(),
+                depth: 1,
+                name: format!("{} ({uid})", user.name),
+                nproc: user_nproc(user),
+                metrics: sum_lists([&user.applications, &user.user_services, &user.containers]),
+                expandable: true,
+            });
             if expand.contains(&id) {
                 push_folder(
                     &mut rows,
@@ -288,11 +281,6 @@ fn flatten(tree: &HostTree, expand: &HashSet<String>, view: &View) -> Vec<Flat> 
         keep_matches(&mut rows, &filter);
     }
     rows
-}
-
-fn push_maybe(rows: &mut Vec<Flat>, row: Flat, filter: &str) {
-    let _ = filter;
-    rows.push(row);
 }
 
 fn keep_matches(rows: &mut Vec<Flat>, filter: &str) {

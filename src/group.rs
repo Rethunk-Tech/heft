@@ -41,19 +41,7 @@ fn metrics_map(
     consts: &HostHeader,
 ) -> HashMap<u32, Metrics> {
     curr.iter()
-        .map(|(pid, p)| {
-            (
-                *pid,
-                process_metrics(
-                    prev.get(pid),
-                    p,
-                    elapsed,
-                    consts.nproc,
-                    consts.clk_tck,
-                    consts.page_size,
-                ),
-            )
-        })
+        .map(|(pid, p)| (*pid, process_metrics(prev.get(pid), p, elapsed, consts)))
         .collect()
 }
 

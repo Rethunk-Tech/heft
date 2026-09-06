@@ -116,21 +116,19 @@ pub fn process_metrics(
     prev: Option<&Process>,
     cur: &Process,
     elapsed: Duration,
-    nproc: u32,
-    clk: u64,
-    page: u64,
+    consts: &HostHeader,
 ) -> Metrics {
     let secs = elapsed.as_secs_f64().max(1e-6);
-    let cores = f64::from(nproc.max(1));
+    let cores = f64::from(consts.nproc.max(1));
     let (core, machine) = match prev {
         Some(p) => {
             let ticks = (cur.utime + cur.stime).saturating_sub(p.utime + p.stime) as f64;
-            let core = 100.0 * ticks / (clk as f64 * secs);
+            let core = 100.0 * ticks / (consts.clk_tck as f64 * secs);
             (core, core / cores)
         }
         None => (0.0, 0.0),
     };
-    let rss_bytes = cur.rss_pages.map(|p| p.saturating_mul(page));
+    let rss_bytes = cur.rss_pages.map(|p| p.saturating_mul(consts.page_size));
     let pss_bytes = cur.pss_kb.map(|k| k.saturating_mul(1024));
     let disk_r_bps = rate(prev.and_then(|p| p.read_bytes), cur.read_bytes, secs);
     let disk_w_bps = rate(prev.and_then(|p| p.write_bytes), cur.write_bytes, secs);

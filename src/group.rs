@@ -454,7 +454,7 @@ fn ident_node(
     let mut instances: Vec<InstanceNode> = by_inst
         .into_iter()
         .map(|(k, inst_pids)| InstanceNode {
-            nproc: inst_pids.len() as u32,
+            nproc: u32::try_from(inst_pids.len()).unwrap_or(u32::MAX),
             metrics: sum_metrics(&inst_pids, metrics),
             processes: proc_forest(&inst_pids, curr, metrics),
             key: k,
@@ -471,7 +471,7 @@ fn ident_node(
         .map(|(name, mpids)| MemberContainer {
             id: name.clone(),
             title: name.clone(),
-            nproc: mpids.len() as u32,
+            nproc: u32::try_from(mpids.len()).unwrap_or(u32::MAX),
             metrics: sum_metrics(mpids, metrics),
             processes: proc_forest(mpids, curr, metrics),
         })
@@ -480,7 +480,7 @@ fn ident_node(
     IdentNode {
         id: key.to_string(),
         title: title.to_string(),
-        nproc: pids.len() as u32,
+        nproc: u32::try_from(pids.len()).unwrap_or(u32::MAX),
         metrics: sum_metrics(pids, metrics),
         instances,
         containers: members,

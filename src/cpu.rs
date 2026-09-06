@@ -31,8 +31,8 @@ pub fn nproc() -> u32 {
                 .filter(|l| {
                     l.starts_with("cpu") && l.as_bytes().get(3).is_some_and(u8::is_ascii_digit)
                 })
-                .count() as u32;
-            n.max(1)
+                .count();
+            u32::try_from(n).unwrap_or(u32::MAX).max(1)
         }
         Err(_) => 1,
     }

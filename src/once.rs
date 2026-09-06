@@ -126,28 +126,34 @@ fn trunc(s: &str, width: usize) -> String {
     }
     s.chars().take(width.saturating_sub(1)).collect::<String>() + "…"
 }
-pub(crate) fn fmt_bytes(n: Option<u64>) -> String {
+/// 1024-scale suffix, or None below 1 KiB where the caller decides: a byte
+/// count prints exactly, a rate rounds.
+fn scale_1024(x: f64) -> Option<String> {
     const K: f64 = 1024.0;
+    if x >= K * K * K {
+        Some(format!("{:.1}G", x / (K * K * K)))
+    } else if x >= K * K {
+        Some(format!("{:.1}M", x / (K * K)))
+    } else if x >= K {
+        Some(format!("{:.1}K", x / K))
+    } else {
+        None
+    }
+}
+
+pub(crate) fn fmt_bytes(n: Option<u64>) -> String {
     let Some(b) = n else {
         return String::new();
     };
-    let x = b as f64;
-    if x >= K * K * K {
-        format!("{:.1}G", x / (K * K * K))
-    } else if x >= K * K {
-        format!("{:.1}M", x / (K * K))
-    } else if x >= K {
-        format!("{:.1}K", x / K)
-    } else {
-        format!("{b}")
-    }
+    scale_1024(b as f64).unwrap_or_else(|| b.to_string())
 }
+
 pub(crate) fn fmt_rate(n: Option<f64>) -> String {
     n.map(|v| {
         if v <= 0.0 {
             "0".into()
         } else {
-            format!("{}/s", fmt_bytes(Some(v as u64)))
+            format!("{}/s", scale_1024(v).unwrap_or_else(|| format!("{v:.0}")))
         }
     })
     .unwrap_or_default()
@@ -158,4 +164,25 @@ pub(crate) fn fmt_pct(v: f64) -> String {
 
 pub(crate) fn fmt_opt_pct(v: Option<f64>) -> String {
     v.map(fmt_pct).unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scaling_keeps_byte_counts_exact_and_rates_fractional() {
+        assert_eq!(fmt_bytes(None), "");
+        assert_eq!(fmt_bytes(Some(0)), "0");
+        assert_eq!(fmt_bytes(Some(1023)), "1023");
+        assert_eq!(fmt_bytes(Some(1024)), "1.0K");
+        assert_eq!(fmt_bytes(Some(1024 * 1024)), "1.0M");
+        assert_eq!(fmt_bytes(Some(1024 * 1024 * 1024)), "1.0G");
+        assert_eq!(fmt_rate(None), "");
+        assert_eq!(fmt_rate(Some(0.0)), "0");
+        assert_eq!(fmt_rate(Some(-1.0)), "0");
+        // the fraction survives instead of truncating through u64
+        assert_eq!(fmt_rate(Some(1536.0)), "1.5K/s");
+        assert_eq!(fmt_rate(Some(900.6)), "901/s");
+    }
 }

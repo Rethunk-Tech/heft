@@ -52,7 +52,11 @@ fn load(path: &str) -> (HashMap<u32, Process>, ContainerIndex, HostHeader) {
             Process {
                 pid: p.pid,
                 ppid: p.ppid,
-                pgrp: if p.pgrp == 0 { p.pid as i32 } else { p.pgrp },
+                pgrp: if p.pgrp == 0 {
+                    i32::try_from(p.pid).expect("fixture pid fits i32")
+                } else {
+                    p.pgrp
+                },
                 sid: p.sid,
                 uid: p.uid,
                 comm: p.comm,

@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Disk rates below 1 KiB/s round instead of truncating; they no longer
+  round-trip through an integer byte count.
 - TUI start no longer creates `$XDG_STATE_HOME/heft` or `$XDG_CACHE_HOME/heft`.
   Only `$XDG_CONFIG_HOME/heft` is created, and only when saving a view.
 

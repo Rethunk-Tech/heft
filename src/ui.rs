@@ -778,8 +778,9 @@ fn help_text() -> String {
 
 fn draw_help(f: &mut ratatui::Frame<'_>, area: Rect) {
     let text = help_text();
-    let cols = text.lines().map(|l| l.chars().count()).max().unwrap_or(0) as u16;
-    let rows = text.lines().count() as u16;
+    let cols = u16::try_from(text.lines().map(|l| l.chars().count()).max().unwrap_or(0))
+        .unwrap_or(u16::MAX);
+    let rows = u16::try_from(text.lines().count()).unwrap_or(u16::MAX);
     let width = (cols + 2).min(area.width.saturating_sub(2)).max(3);
     let height = (rows + 2).min(area.height.saturating_sub(1)).max(3);
     let popup = Rect {

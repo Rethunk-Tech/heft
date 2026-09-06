@@ -200,11 +200,6 @@ impl ContainerIndex {
         self.by_id
             .get(&id)
             .or_else(|| id.get(..12).and_then(|s| self.by_id.get(s)))
-            .or_else(|| {
-                self.by_id
-                    .values()
-                    .find(|c| c.id.starts_with(&id) || id.starts_with(&c.id))
-            })
     }
     pub(crate) fn by_ip(&self, ip: &str) -> Option<&ContainerInfo> {
         self.by_ip.get(ip).and_then(|id| self.get(id))

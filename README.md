@@ -4,7 +4,7 @@
 
 <img src="https://img.shields.io/badge/os-linux-blue" alt="Linux" />
 <img src="https://img.shields.io/badge/lang-Rust-dea584?logo=rust&logoColor=000" alt="Rust" />
-<img src="https://img.shields.io/badge/repo-private-lightgrey" alt="Private repository" />
+<img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache 2.0" />
 
 </div>
 
@@ -41,9 +41,10 @@ written.
 | [HUMANS.md](HUMANS.md) | Install, run, keys, XDG paths, verification |
 | [AGENTS.md](AGENTS.md) | Layout, grouping invariants, gates |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Commits, tests, review bar |
+| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | Expected conduct and enforcement |
 | [SECURITY.md](SECURITY.md) | Observe-only boundary and disclosure |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes |
 
 ## License
 
-Private repository — all rights reserved. See [LICENSE](LICENSE).
+Apache-2.0. See [LICENSE](LICENSE).

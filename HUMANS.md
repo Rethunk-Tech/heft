@@ -3,7 +3,7 @@
 ## Install
 
 ```sh
-git clone git@github.com:Rethunk-Tech/heft.git && cd heft
+git clone https://github.com/Rethunk-Tech/heft.git && cd heft
 cargo build --release
 install -Dm755 target/release/heft ~/.local/bin/heft
 ```
@@ -100,12 +100,12 @@ sysfs, or cgroup files.
 heft --once
 ```
 
-`--once` should list your terminal, interactive shells, and any of `claude`,
-`cursor`, `easyeffects`, `minecraft-launcher`, `signal-desktop`, `spotify`,
-`vesktop.bin`, `vivaldi-bin` that are running; User Services should include
-`earshotd` / `engined` / the compositor when those units exist; Containers
-should split `engined-*` and sum a Supabase/compose project rather than
-billing `dockerd`.
+`--once` should list your terminal, your interactive shells, and each running
+desktop app as its own Applications row — an Electron app appears once, not
+once per helper process. User Services should hold your compositor and any
+user `*.service` units. Containers should sum a compose project under one row
+and bill `containerd-shim` / `conmon` / `runc` to their container, never to
+`dockerd`.
 
 Contributor gates live in [CONTRIBUTING.md](CONTRIBUTING.md).
 

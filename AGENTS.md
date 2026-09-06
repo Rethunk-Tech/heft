@@ -121,4 +121,4 @@ Release profile: LTO, `codegen-units = 1`, strip, `panic = abort`.
 
 ## Git
 
-Remote is `Rethunk-Tech/heft`, private.
+Remote is `Rethunk-Tech/heft`, public, Apache-2.0.

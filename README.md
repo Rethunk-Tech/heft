@@ -10,11 +10,15 @@
 
 ---
 
-`heft` walks `/proc` and DRM fdinfo (amdgpu, i915, xe), then draws a tree: **Host → each User
-(Applications, User Services, Containers) → System**. Docker and Podman
+`heft` walks `/proc` and DRM fdinfo (amdgpu, i915, xe), then draws a tree:
+**Host → each User (Applications, User Services, Containers) → System**. Docker and Podman
 workloads are never billed to `dockerd`, `containerd`, or the starter daemon.
 
 ## Quick start
+
+Grab a binary from the
+[latest release](https://github.com/Rethunk-Tech/heft/releases/latest) — the
+musl build is static and needs no toolchain — or build it:
 
 ```sh
 cargo run --release -- --once
@@ -31,8 +35,11 @@ written.
   `dockerd`.
 - **No root** — every visible PID is listed; `EACCES` blanks that metric and
   keeps the row. Heft does not kill, nice, or write `/proc`.
+- **One row, every dimension** — CPU, PSS/RSS/swap, disk, GPU memory and
+  engine percent, per-container network, threads and age. Hide the columns you
+  do not want; a metric heft cannot read stays blank rather than reading zero.
 - **TUI plus scripts** — fullscreen table by default; `--once` and `--json`
-  for one sample.
+  for one sample, with `--sort` and `--filter` for the shape you want.
 
 ## Documentation
 

@@ -21,7 +21,7 @@ src/classify.rs      launcher / worker / shell / terminal / compositor tables
 src/identity.rs      cgroup parse, merge key + display name
 src/containers.rs    GET-only docker/podman; project vs per-container
 src/group.rs         Host → User → Applications | User Services | Containers, System
-src/config.rs        XDG view.json; persist only on explicit save
+src/config.rs        XDG view.json (write on save) and grouping.json (read-only)
 src/once.rs          columns, tree ordering, table and JSON
 src/ui.rs            ratatui header + tree table
 tests/grouping.rs    integration tests over tests/fixtures/
@@ -85,6 +85,26 @@ Never read `/proc/pid/mem`. Never ptrace.
   workdir path uid, else the first non-root uid owning an `Inspect.Mounts`
   bind source (named volumes are root-owned and skipped), else Host →
   Containers.
+
+## Grouping overrides
+
+`$XDG_CONFIG_HOME/heft/grouping.json` moves local names out of the compiled
+tables. Heft never writes it and never creates the directory for it; absent
+means today's behaviour exactly. Keys are tree identities — the row title, not
+a pid, comm, or unit: `applications` / `user_services` pin an identity to a
+folder, `fold` re-keys one identity onto another, `container_owners` maps a
+container name to a uid.
+
+Order is container and System bucketing, then every built-in table, then the
+user's `fold`, then the user's folder pin (`group::override_place`, run on the
+finished `Place`). So an override beats any built-in table, and cannot reach a
+container or a kernel thread: an override naming a System or Containers row is
+**ignored with no message**, because that check runs per process per tick and a
+warning there would repeat every second. `container_owners` is consulted before
+workdir and bind-mount inference in `containers::insert_resolved`.
+
+Malformed JSON or an unknown key (`serde(deny_unknown_fields)`) warns once on
+stderr from `config::load_overrides` and grouping continues built-in.
 
 ## Sampler
 

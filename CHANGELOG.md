@@ -4,6 +4,14 @@
 
 ### Added
 
+- Optional grouping overrides in `$XDG_CONFIG_HOME/heft/grouping.json`, so a
+  local daemon, worker, or container no longer needs a patch to heft's compiled
+  tables. `applications` / `user_services` pin an identity to a folder, `fold`
+  bills one identity to another, and `container_owners` pins a container to a
+  uid. Heft only reads the file; with none present grouping is unchanged. An
+  override beats every built-in table but cannot move a container or a kernel
+  thread, and a malformed file warns on stderr instead of stopping the monitor.
+
 - Intel GPUs report VRAM/GTT and gfx%/compute% instead of blank columns. The
   driver gate accepted only `amdgpu`, so i915 and xe users saw nothing; their
   fdinfo region and engine names now map onto the same counters. xe publishes

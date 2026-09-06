@@ -9,6 +9,7 @@ use serde_json::Value;
 
 use std::os::unix::fs::MetadataExt;
 
+use crate::config::Overrides;
 use crate::identity::docker_scope_id;
 use crate::types::Process;
 
@@ -77,7 +78,7 @@ pub struct ContainerIndex {
 }
 
 impl ContainerIndex {
-    pub(crate) fn load(cache: &mut InspectCache) -> Self {
+    pub(crate) fn load(cache: &mut InspectCache, ov: &Overrides) -> Self {
         let mut idx = Self::default();
         let Some(sock) = docker_sock() else {
             cache.refresh(Vec::new(), |_| None);
@@ -102,7 +103,7 @@ impl ContainerIndex {
             }
             let inspect =
                 hex_id(&item.id).and_then(|id| cache.inspects.get(&id.to_ascii_lowercase()));
-            idx.insert_resolved(item, inspect, None);
+            idx.insert_resolved(item, inspect, None, ov);
         }
         idx
     }
@@ -111,13 +112,14 @@ impl ContainerIndex {
         items: &[ListItem],
         inspects: &HashMap<String, Inspect>,
         workdir_uids: &HashMap<PathBuf, u32>,
+        ov: &Overrides,
     ) -> Self {
         let mut idx = Self::default();
         for item in items {
             if list_skip(item) {
                 continue;
             }
-            idx.insert_resolved(item, inspects.get(&item.id), Some(workdir_uids));
+            idx.insert_resolved(item, inspects.get(&item.id), Some(workdir_uids), ov);
         }
         idx
     }
@@ -127,6 +129,7 @@ impl ContainerIndex {
         item: &ListItem,
         inspect: Option<&Inspect>,
         workdir_uids: Option<&HashMap<PathBuf, u32>>,
+        ov: &Overrides,
     ) {
         let Some(id) = hex_id(&item.id).map(str::to_ascii_lowercase) else {
             return;
@@ -152,15 +155,20 @@ impl ContainerIndex {
         // so only a bind source carries ownership, and uid 0 is no information
         // rather than an owner: Host -> Containers stays right for a container
         // that mounts nothing of a user's.
-        let owner = workdir.as_deref().and_then(owner_of).or_else(|| {
-            inspect
-                .map(|i| i.mounts.as_slice())
-                .unwrap_or_default()
-                .iter()
-                .filter(|m| m.kind.as_deref() == Some("bind"))
-                .filter_map(|m| owner_of(m.source.as_deref()?))
-                .find(|&uid| uid != 0)
-        });
+        // A user pin comes first: it is the escape hatch for a container that
+        // mounts nothing of theirs, so inference must not be able to beat it.
+        let owner = ov
+            .container_owner(&name)
+            .or_else(|| workdir.as_deref().and_then(owner_of))
+            .or_else(|| {
+                inspect
+                    .map(|i| i.mounts.as_slice())
+                    .unwrap_or_default()
+                    .iter()
+                    .filter(|m| m.kind.as_deref() == Some("bind"))
+                    .filter_map(|m| owner_of(m.source.as_deref()?))
+                    .find(|&uid| uid != 0)
+            });
         let ips = inspect.map(Inspect::ips).unwrap_or_default();
         let running = inspect
             .and_then(|i| i.state.as_ref())

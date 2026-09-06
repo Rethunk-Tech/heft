@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
 use crate::classify::{self, name_of};
+use crate::config::Overrides;
 use crate::containers::{self, ContainerIndex};
 use crate::cpu::process_metrics;
 use crate::identity::{self, docker_scope_id};
@@ -10,6 +11,13 @@ use crate::types::{
     Folder, HostHeader, HostTree, IdentNode, InstanceNode, MemberContainer, Metrics, ProcNode,
     Process, UserNode,
 };
+
+/// The two read-only inputs every placement rule needs, bundled so the
+/// recursive walk keeps one parameter instead of two.
+struct Ctx<'a> {
+    containers: &'a ContainerIndex,
+    ov: &'a Overrides,
+}
 
 #[derive(Clone)]
 struct Place {
@@ -27,8 +35,9 @@ pub fn build_tree(
     consts: &HostHeader,
     header: HostTree,
     containers: &ContainerIndex,
+    ov: &Overrides,
 ) -> HostTree {
-    let places = resolve(curr, containers);
+    let places = resolve(curr, &Ctx { containers, ov });
     let metrics = metrics_map(prev, curr, elapsed, consts);
     let mut tree = assemble(curr, &places, &metrics, header);
     crate::once::sort_default(&mut tree);
@@ -46,11 +55,11 @@ fn metrics_map(
         .collect()
 }
 
-fn resolve(curr: &HashMap<u32, Process>, containers: &ContainerIndex) -> HashMap<u32, Place> {
+fn resolve(curr: &HashMap<u32, Process>, ctx: &Ctx<'_>) -> HashMap<u32, Place> {
     let mut memo: HashMap<u32, Place> = HashMap::new();
     let mut walking = HashSet::new();
     for pid in curr.keys().copied() {
-        resolve_one(pid, curr, containers, &mut memo, &mut walking);
+        resolve_one(pid, curr, ctx, &mut memo, &mut walking);
     }
     memo
 }
@@ -58,7 +67,7 @@ fn resolve(curr: &HashMap<u32, Process>, containers: &ContainerIndex) -> HashMap
 fn resolve_one(
     pid: u32,
     curr: &HashMap<u32, Process>,
-    containers: &ContainerIndex,
+    ctx: &Ctx<'_>,
     memo: &mut HashMap<u32, Place>,
     walking: &mut HashSet<u32>,
 ) -> Option<Place> {
@@ -67,9 +76,9 @@ fn resolve_one(
     }
     let p = curr.get(&pid)?;
     if !walking.insert(pid) {
-        return Some(raw_place(p, containers));
+        return Some(override_place(ctx.ov, raw_place(p, ctx)));
     }
-    let place = compute_place(p, curr, containers, memo, walking);
+    let place = override_place(ctx.ov, compute_place(p, curr, ctx, memo, walking));
     walking.remove(&pid);
     memo.insert(pid, place.clone());
     Some(place)
@@ -78,16 +87,16 @@ fn resolve_one(
 fn compute_place(
     p: &Process,
     curr: &HashMap<u32, Process>,
-    containers: &ContainerIndex,
+    ctx: &Ctx<'_>,
     memo: &mut HashMap<u32, Place>,
     walking: &mut HashSet<u32>,
 ) -> Place {
-    if let Some(place) = direct_place(p, containers) {
+    if let Some(place) = direct_place(p, ctx) {
         return place;
     }
 
     if classify::is_worker(p)
-        && let Some(parent) = resolve_one(p.ppid, curr, containers, memo, walking)
+        && let Some(parent) = resolve_one(p.ppid, curr, ctx, memo, walking)
         && parent.folder != Folder::System
         // `key` is the ppid's RESOLVED Place identity, not its process name, and
         // the two disagree both ways: a `systemd` that resolved into a container
@@ -105,7 +114,7 @@ fn compute_place(
     // Pipe helpers under a launcher (flatpak bwrap `cat`) or an app (vivaldi).
     // Immediate parent only — never a sibling identity under a mixed shell.
     if classify::is_session_noise(p)
-        && let Some(parent) = resolve_one(p.ppid, curr, containers, memo, walking)
+        && let Some(parent) = resolve_one(p.ppid, curr, ctx, memo, walking)
         && parent.folder != Folder::System
     {
         return Place {
@@ -115,7 +124,7 @@ fn compute_place(
     }
 
     if classify::is_foldable_helper(p) {
-        if let Some(payload) = unique_descendant_ident(p.pid, curr, containers, memo, walking) {
+        if let Some(payload) = unique_descendant_ident(p.pid, curr, ctx, memo, walking) {
             return Place {
                 instance: identity::instance_key(p, None),
                 ..payload
@@ -127,7 +136,7 @@ fn compute_place(
                 place.key = hint;
                 return place;
             }
-            if let Some(parent) = resolve_one(p.ppid, curr, containers, memo, walking)
+            if let Some(parent) = resolve_one(p.ppid, curr, ctx, memo, walking)
                 && parent.folder != Folder::System
                 && !classify::is_launcher_name(&parent.key)
             {
@@ -140,7 +149,7 @@ fn compute_place(
     }
 
     if classify::is_generic(p)
-        && let Some(owner) = owning_app_ancestor(p.ppid, curr, containers, memo, walking)
+        && let Some(owner) = owning_app_ancestor(p.ppid, curr, ctx, memo, walking)
     {
         return Place {
             instance: identity::instance_key(p, None),
@@ -239,8 +248,8 @@ fn crash_helper_place(p: &Process) -> Option<Place> {
 
 /// The bucket rules that need no ancestor walk, so the cycle-breaking path can
 /// answer with the same verdict `compute_place` would give instead of a subset.
-fn direct_place(p: &Process, containers: &ContainerIndex) -> Option<Place> {
-    if let Some(place) = container_place(p, containers) {
+fn direct_place(p: &Process, ctx: &Ctx<'_>) -> Option<Place> {
+    if let Some(place) = container_place(p, ctx.containers) {
         return Some(place);
     }
     if identity::is_kernel(p)
@@ -251,14 +260,31 @@ fn direct_place(p: &Process, containers: &ContainerIndex) -> Option<Place> {
     session_plumbing_place(p).or_else(|| crash_helper_place(p))
 }
 
-fn raw_place(p: &Process, containers: &ContainerIndex) -> Place {
-    direct_place(p, containers).unwrap_or_else(|| user_place(p))
+fn raw_place(p: &Process, ctx: &Ctx<'_>) -> Place {
+    direct_place(p, ctx).unwrap_or_else(|| user_place(p))
+}
+
+/// Apply the user's overrides to a finished placement. They run last, so a pin
+/// beats every built-in table; they run only on the two user-owned folders, so
+/// no override can pull a container or a kernel thread out of where it belongs.
+fn override_place(ov: &Overrides, place: Place) -> Place {
+    if ov.is_empty() || !matches!(place.folder, Folder::Applications | Folder::UserServices) {
+        return place;
+    }
+    // Fold first: the pin then names the row the user is left looking at.
+    let key = ov.fold_key(&place.key).map_or(place.key, str::to_string);
+    let folder = ov.folder_for(&key).unwrap_or(place.folder);
+    Place {
+        folder,
+        key,
+        ..place
+    }
 }
 
 fn owning_app_ancestor(
     mut pid: u32,
     curr: &HashMap<u32, Process>,
-    containers: &ContainerIndex,
+    ctx: &Ctx<'_>,
     memo: &mut HashMap<u32, Place>,
     walking: &mut HashSet<u32>,
 ) -> Option<Place> {
@@ -275,7 +301,7 @@ fn owning_app_ancestor(
         if !classify::absorbs_generic(proc) {
             return None;
         }
-        let place = resolve_one(pid, curr, containers, memo, walking)?;
+        let place = resolve_one(pid, curr, ctx, memo, walking)?;
         if place.folder == Folder::System || place.folder == Folder::Containers {
             return None;
         }
@@ -287,20 +313,20 @@ fn owning_app_ancestor(
 fn unique_descendant_ident(
     pid: u32,
     curr: &HashMap<u32, Process>,
-    containers: &ContainerIndex,
+    ctx: &Ctx<'_>,
     memo: &mut HashMap<u32, Place>,
     walking: &mut HashSet<u32>,
 ) -> Option<Place> {
     let mut kids = Vec::new();
     for child in curr.values().filter(|c| c.ppid == pid) {
         if classify::is_foldable_helper(child) || classify::is_session_noise(child) {
-            if let Some(p) = unique_descendant_ident(child.pid, curr, containers, memo, walking) {
+            if let Some(p) = unique_descendant_ident(child.pid, curr, ctx, memo, walking) {
                 kids.push(p);
             }
             continue;
         }
         if classify::is_worker(child) {
-            if let Some(p) = unique_descendant_ident(child.pid, curr, containers, memo, walking) {
+            if let Some(p) = unique_descendant_ident(child.pid, curr, ctx, memo, walking) {
                 kids.push(p);
             } else {
                 // Zygote-only sandbox: no non-worker grandchild to resolve.
@@ -308,7 +334,7 @@ fn unique_descendant_ident(
             }
             continue;
         }
-        if let Some(place) = resolve_one(child.pid, curr, containers, memo, walking) {
+        if let Some(place) = resolve_one(child.pid, curr, ctx, memo, walking) {
             kids.push(place);
         }
     }
@@ -487,7 +513,8 @@ fn proc_node(
 
 #[cfg(test)]
 mod tests {
-    use super::{Folder, Process, raw_place};
+    use super::{Ctx, Folder, Process, raw_place};
+    use crate::config::Overrides;
     use crate::containers::ContainerIndex;
 
     #[test]
@@ -501,7 +528,10 @@ mod tests {
                 cgroup: "0::/user.slice/user-1000.slice/user@1000.service/app.slice".into(),
                 ..Process::default()
             },
-            &ContainerIndex::default(),
+            &Ctx {
+                containers: &ContainerIndex::default(),
+                ov: &Overrides::default(),
+            },
         );
         assert_eq!(place.folder, Folder::Applications);
         assert_eq!(place.key, "firefox");

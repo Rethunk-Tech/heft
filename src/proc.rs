@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use crate::config::Overrides;
 use crate::containers::{ContainerIndex, InspectCache};
 use crate::cpu;
 use crate::group;
@@ -206,6 +207,7 @@ struct Sampler {
     pss_interval: Duration,
     consts: HostHeader,
     inspect_cache: InspectCache,
+    overrides: Overrides,
 }
 
 impl Sampler {
@@ -219,11 +221,12 @@ impl Sampler {
             last_pss: None,
             pss_interval,
             inspect_cache: InspectCache::default(),
+            overrides: crate::config::load_overrides(),
         }
     }
 
     fn tick(&mut self, force_pss: bool) -> HostTree {
-        let containers = ContainerIndex::load(&mut self.inspect_cache);
+        let containers = ContainerIndex::load(&mut self.inspect_cache, &self.overrides);
         let t1 = Instant::now();
         let cpu1 = cpu::read_host();
         let want_pss = force_pss || pss_due(self.last_pss, t1, self.pss_interval);
@@ -240,6 +243,7 @@ impl Sampler {
             &self.consts,
             header,
             &containers,
+            &self.overrides,
         );
         self.prev = curr;
         self.cpu0 = cpu1;

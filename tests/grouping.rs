@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use heft::config::Overrides;
 use heft::containers::{ContainerIndex, Inspect, ListItem};
 use heft::group::build_tree;
 use heft::types::Process;
@@ -43,7 +44,9 @@ struct ProcFix {
     stime: u64,
 }
 
-fn load(path: &str) -> (HashMap<u32, Process>, ContainerIndex, HostHeader) {
+const GUI: &str = "tests/fixtures/gui/world.json";
+
+fn load(path: &str, ov: &Overrides) -> (HashMap<u32, Process>, ContainerIndex, HostHeader) {
     let text = std::fs::read_to_string(path).unwrap();
     let fix: Fixture = serde_json::from_str(&text).unwrap();
     let mut curr = HashMap::new();
@@ -71,13 +74,26 @@ fn load(path: &str) -> (HashMap<u32, Process>, ContainerIndex, HostHeader) {
             },
         );
     }
-    let idx = ContainerIndex::from_list(&fix.containers, &fix.inspects, &fix.workdir_uids);
+    let idx = ContainerIndex::from_list(&fix.containers, &fix.inspects, &fix.workdir_uids, ov);
     let header = HostHeader {
         nproc: fix.nproc,
         clk_tck: fix.clk_tck,
         page_size: fix.page_size,
     };
     (curr, idx, header)
+}
+
+fn tree_of(path: &str, ov: &Overrides) -> HostTree {
+    let (curr, idx, header) = load(path, ov);
+    build_tree(
+        &curr,
+        &curr,
+        Duration::from_secs(1),
+        &header,
+        HostTree::default(),
+        &idx,
+        ov,
+    )
 }
 
 fn titles(nodes: &[heft::IdentNode]) -> Vec<String> {
@@ -106,15 +122,7 @@ fn proc_names(n: &heft::IdentNode) -> Vec<String> {
 
 #[test]
 fn gui_and_docker_fixture() {
-    let (curr, idx, header) = load("tests/fixtures/gui/world.json");
-    let tree = build_tree(
-        &curr,
-        &curr,
-        Duration::from_secs(1),
-        &header,
-        HostTree::default(),
-        &idx,
-    );
+    let tree = tree_of(GUI, &Overrides::default());
     let user = tree.users.iter().find(|u| u.uid == 1000).expect("uid 1000");
 
     for name in [
@@ -543,4 +551,99 @@ fn gui_and_docker_fixture() {
     assert!(!has(&tree.system, "acme-encoder"));
     assert!(!has(&tree.system, "supabase:demo"));
     assert!(!tree.system.iter().any(|n| n.title.starts_with("docker-")));
+}
+
+fn user_of(tree: &HostTree, uid: u32) -> &heft::UserNode {
+    tree.users
+        .iter()
+        .find(|u| u.uid == uid)
+        .unwrap_or_else(|| panic!("uid {uid}"))
+}
+
+#[test]
+fn one_override_moves_one_row_and_leaves_the_rest_alone() {
+    let base = tree_of(GUI, &Overrides::default());
+    let ov = Overrides::parse(r#"{"user_services": ["htop"]}"#).expect("valid overrides");
+    let pinned = tree_of(GUI, &ov);
+
+    let (b, p) = (user_of(&base, 1000), user_of(&pinned, 1000));
+    assert!(has(&b.applications, "htop") && !has(&b.user_services, "htop"));
+    assert!(has(&p.user_services, "htop") && !has(&p.applications, "htop"));
+
+    let drop_htop =
+        |v: Vec<String>| -> Vec<String> { v.into_iter().filter(|t| t != "htop").collect() };
+    assert_eq!(drop_htop(titles(&b.applications)), titles(&p.applications));
+    assert_eq!(
+        titles(&b.user_services),
+        drop_htop(titles(&p.user_services))
+    );
+    assert_eq!(titles(&b.containers), titles(&p.containers));
+    assert_eq!(titles(&base.containers), titles(&pinned.containers));
+    assert_eq!(titles(&base.system), titles(&pinned.system));
+}
+
+#[test]
+fn fold_bills_a_named_process_to_another_identity() {
+    let ov = Overrides::parse(r#"{"fold": {"spotify": "media"}}"#).expect("valid overrides");
+    let tree = tree_of(GUI, &ov);
+    let user = &user_of(&tree, 1000).applications;
+    assert!(!has(user, "spotify"), "{:?}", titles(user));
+    let media = user.iter().find(|n| n.id == "media").expect("media");
+    assert!(
+        proc_names(media).iter().any(|n| n == "spotify"),
+        "{:?}",
+        proc_names(media)
+    );
+}
+
+#[test]
+fn a_malformed_override_file_is_rejected_rather_than_obeyed() {
+    // The loader turns each of these into a stderr warning and built-in
+    // behaviour; parsing is where the file is judged.
+    assert!(Overrides::parse("{ not json }").is_err());
+    assert!(
+        Overrides::parse(r#"{"applicatons": ["htop"]}"#).is_err(),
+        "a typoed key must not be silently dropped"
+    );
+    assert!(Overrides::parse(r#"{"applications": "htop"}"#).is_err());
+    assert!(Overrides::parse("{}").is_ok());
+    // Built-in behaviour is what the default stands in for.
+    assert!(has(
+        &user_of(&tree_of(GUI, &Overrides::default()), 1000).applications,
+        "htop"
+    ));
+}
+
+#[test]
+fn an_override_cannot_break_a_structural_invariant() {
+    let ov = Overrides::parse(
+        r#"{"applications": ["kernel", "acme-indexer"],
+            "fold": {"kernel": "myapp", "acme-indexer": "myapp"}}"#,
+    )
+    .expect("valid overrides");
+    let tree = tree_of(GUI, &ov);
+    let user = user_of(&tree, 1000);
+    assert!(has(&tree.system, "kernel"), "{:?}", titles(&tree.system));
+    assert!(
+        has(&user.containers, "acme-indexer"),
+        "{:?}",
+        titles(&user.containers)
+    );
+    for bucket in [&user.applications, &user.user_services, &user.containers] {
+        assert!(
+            !has(bucket, "myapp") && !has(bucket, "kthreadd"),
+            "{:?}",
+            titles(bucket)
+        );
+    }
+}
+
+#[test]
+fn a_container_owner_override_beats_bind_mount_inference() {
+    let ov = Overrides::parse(r#"{"container_owners": {"acme-encoder": 1001}}"#)
+        .expect("valid overrides");
+    let tree = tree_of(GUI, &ov);
+    assert!(has(&user_of(&tree, 1001).containers, "acme-encoder"));
+    assert!(!has(&user_of(&tree, 1000).containers, "acme-encoder"));
+    assert!(!has(&tree.containers, "acme-encoder"));
 }

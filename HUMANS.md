@@ -95,10 +95,37 @@ container title is `docker-<12hex>`. Stopped containers (no PID) do not appear.
 | tree | path | what |
 | --- | --- | --- |
 | config | `$XDG_CONFIG_HOME/heft/view.json` (default `~/.config/heft/view.json`) | saved sort + filter, only after `s` |
+| config | `$XDG_CONFIG_HOME/heft/grouping.json` | your grouping overrides, if you write one |
 
 v1 creates no `$XDG_STATE_HOME/heft` or `$XDG_CACHE_HOME/heft`. Heft writes
 only that config directory and the TTY alternate screen — never `/proc`,
 sysfs, or cgroup files.
+
+## Grouping overrides
+
+Optional. Without the file heft groups exactly as it always has. Write
+`grouping.json` yourself — heft only reads it, and a bad one warns on stderr
+and is ignored rather than taking the monitor down.
+
+Keys are the identities the tree shows you, not pids or comms.
+
+| key | effect |
+| --- | --- |
+| `applications` | list of identities pinned under Applications |
+| `user_services` | list of identities pinned under User Services |
+| `fold` | identity → the identity it bills to instead |
+| `container_owners` | container name → the uid that owns it |
+
+```json
+{
+  "user_services": ["mydaemon"],
+  "fold": { "mydaemon-worker": "mydaemon" },
+  "container_owners": { "scratch-runner": 1000 }
+}
+```
+
+An override always beats the built-in tables, but never moves a container or a
+kernel thread: those rows ignore it.
 
 ## Verify
 

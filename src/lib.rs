@@ -7,6 +7,7 @@ pub mod group;
 pub(crate) mod identity;
 pub(crate) mod io;
 pub(crate) mod mem;
+pub(crate) mod net;
 pub mod once;
 pub mod proc;
 pub mod types;

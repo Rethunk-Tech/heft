@@ -60,5 +60,12 @@ No snapshot libraries. A new test must hit a branch nothing else hits.
 ## Scope
 
 Heft stays observe-only toward the OS. Do not add kill, nice, ptrace, `/proc`
-writes, or mutating Docker/Podman calls. NVIDIA, cgroup v1, and network I/O
-are out of v1.
+writes, or mutating Docker/Podman calls. NVIDIA and cgroup v1 are out of v1.
+
+Per-process network I/O is not a missing feature, it is unavailable: measured,
+`/proc/<pid>/net/dev` is per network namespace and byte-identical across
+unrelated pids, socket `fdinfo` carries no byte counter, `/proc/net/tcp`
+queues are depths rather than totals, `rchar`/`wchar` miss `send`/`recv`, and
+cgroup v2 has no network controller. Every remaining route needs CAP_NET_RAW,
+CAP_BPF or ptrace. Containers get NETNS RX/TX because a container owns a
+namespace; nothing else does.

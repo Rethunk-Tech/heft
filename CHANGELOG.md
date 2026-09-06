@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `NETNS RX` / `NETNS TX` on container rows, from the non-`lo` interfaces of
+  `/proc/<pid>/net/dev`. Every other row is blank, and the columns are named
+  for the network namespace rather than the resource because that is what the
+  counter belongs to: a container gets a figure by owning a namespace, and
+  nothing else in the tree owns one. Per-process network I/O is not deferred,
+  it is unavailable without CAP_NET_RAW, CAP_BPF or ptrace — see
+  [CONTRIBUTING.md](CONTRIBUTING.md) for what was measured. A
+  `--network=host` container stays blank, since its counters are the
+  machine's, and a restart drops one interval instead of reporting a negative
+  rate.
+
 ## 0.2.0 - 2026-09-06
 
 ### Added

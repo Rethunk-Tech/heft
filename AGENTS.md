@@ -18,6 +18,7 @@ src/proc.rs          every visible PID; blank metrics on EACCES
 src/cpu.rs           /proc/stat split (usr/sys/wait) + per-pid utime/stime rates
 src/mem.rs           meminfo used/Buffers/Cached, unified APU clip, host VRAM
 src/io.rs            /proc/pid/io rates and smaps_rollup PSS
+src/net.rs           per-netns rx/tx from /proc/pid/net/dev; container rows only
 src/gpu.rs           amdgpu/i915/xe fdinfo; dri/drm prefilter; full walk on PSS/--once; drm-client-id dedupe
 src/classify.rs      launcher / worker / shell / terminal / compositor tables
 src/identity.rs      cgroup parse, merge key + display name
@@ -94,6 +95,14 @@ checked, not assumed, so replacing them is not pending work.
   workdir path uid, else the first non-root uid owning an `Inspect.Mounts`
   bind source (named volumes are root-owned and skipped), else Host →
   Containers.
+- NETNS RX/TX is the one metric a container row carries and no other row can.
+  `/proc/pid/net/dev` is per network namespace, so `net::netns_pids` reads it
+  only through the lowest pid in that container's own cgroup scope: the shim,
+  `conmon` and `docker-proxy` are billed to the container but run in the root
+  namespace. A container is skipped when `HostConfig.NetworkMode` is `host` or
+  absent (`Inspect::owns_netns`), because that namespace is the machine's.
+  `Metrics::accumulate` never sums the pair, so a folder, User or Host row
+  stays blank rather than reporting one namespace as its own.
 
 ## Grouping overrides
 
@@ -125,6 +134,7 @@ stderr from `config::load_overrides` and grouping continues built-in.
 | PSS | `/proc/pid/smaps_rollup` — cadence in [HUMANS.md](HUMANS.md) |
 | Disk R/W | Δ `read_bytes` / `write_bytes` from `/proc/pid/io` |
 | GPU mem | prefer `drm-resident-*` over `drm-total-*`; regions `vram`/`gtt` (amdgpu), `local0`/`system0` (i915), `vram0`/`gtt` (xe) |
+| NETNS RX/TX | Δ non-`lo` bytes from `/proc/<container-scope-pid>/net/dev`; a new pid or a counter that went backwards discards the interval |
 | gfx% / compute% | `drm-engine-gfx`/`-render` and `-compute` ns deltas over wall clock. xe has no ns key: `drm-cycles-rcs`/`-ccs` delta over the `drm-total-cycles-*` GPU-clock delta, each divided by `drm-engine-capacity-*`. Two formulas, deliberately not unified |
 
 | surface | rule |
@@ -134,6 +144,7 @@ stderr from `config::load_overrides` and grouping continues built-in.
 | Discrete VRAM | own tank against `mem_info_vram_total`, sharing the MEMORY row with the MEM bar (half width each); only `vram` drops from that legend — GTT is pinned system RAM and stays in MEM |
 | Layout | 2 unbordered header rows (a second tank splits the MEMORY row, never adds a third); persistent rules: header↔tree and tree↔footer |
 | Disk R/W | table columns only (formatted rates change width every tick) |
+| NETNS RX/TX | last two columns, named for the namespace and not the resource: a blank cell means the row owns no namespace, not that it moved no bytes |
 | Ordering | one comparator in `once.rs` for every level; a `None` metric sorts last in either direction, name breaks ties, stable over `group::proc_forest` pid order |
 
 TUI sampling runs on a background thread; the ratatui loop only swaps in the

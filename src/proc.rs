@@ -10,7 +10,7 @@ use crate::containers::{ContainerIndex, InspectCache};
 use crate::cpu;
 use crate::group;
 use crate::types::{GpuCounters, HostHeader, HostTree, Process};
-use crate::{gpu, io as pio};
+use crate::{gpu, io as pio, net};
 
 fn collect(want_pss: bool, prev: Option<&HashMap<u32, Process>>) -> HashMap<u32, Process> {
     let mut out = HashMap::new();
@@ -208,20 +208,34 @@ struct Sampler {
     consts: HostHeader,
     inspect_cache: InspectCache,
     overrides: Overrides,
+    net: net::Sampler,
 }
 
 impl Sampler {
     fn prime(pss_interval: Duration) -> Self {
+        let overrides = crate::config::load_overrides();
+        let mut inspect_cache = InspectCache::default();
+        let mut net = net::Sampler::default();
+        let prev = collect(false, None);
+        // Netns counters are levels, so the first published tick needs a
+        // baseline here or `--once` and `--json` would always print a blank
+        // rate. The inspect cache makes the tick's own load a no-op.
+        net.tick(
+            &ContainerIndex::load(&mut inspect_cache, &overrides),
+            &prev,
+            1.0,
+        );
         let t0 = Instant::now();
         Self {
             consts: cpu::host_consts(),
             cpu0: cpu::read_host(),
-            prev: collect(false, None),
+            prev,
             t0,
             last_pss: None,
             pss_interval,
-            inspect_cache: InspectCache::default(),
-            overrides: crate::config::load_overrides(),
+            inspect_cache,
+            overrides,
+            net,
         }
     }
 
@@ -235,8 +249,11 @@ impl Sampler {
             self.last_pss = Some(t1);
         }
         let elapsed = t1.duration_since(self.t0);
+        let net = self
+            .net
+            .tick(&containers, &curr, elapsed.as_secs_f64().max(1e-6));
         let header = cpu::header_from(&self.consts, &self.cpu0, &cpu1);
-        let tree = group::build_tree(
+        let mut tree = group::build_tree(
             &self.prev,
             &curr,
             elapsed,
@@ -245,6 +262,7 @@ impl Sampler {
             &containers,
             &self.overrides,
         );
+        net.apply(&mut tree);
         self.prev = curr;
         self.cpu0 = cpu1;
         self.t0 = t1;

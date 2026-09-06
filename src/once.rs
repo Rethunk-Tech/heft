@@ -114,6 +114,25 @@ pub(crate) const COLUMNS: &[Column] = &[
         fmt: |_, _, m| fmt_opt_pct(m.compute_pct),
         key: Some(|_, m| m.compute_pct),
     },
+    // NETNS, not NET: the counter belongs to a network namespace, and a
+    // container is the only thing in this tree that owns one. Naming the
+    // column after the resource would make a blank process cell read as "this
+    // process moved no bytes" when it means "no namespace of its own, so no
+    // figure exists" — the blank contract every other column already uses.
+    Column {
+        label: "netns_rx",
+        header: "NETNS RX",
+        width: 8,
+        fmt: |_, _, m| fmt_rate(m.net_rx_bps),
+        key: Some(|_, m| m.net_rx_bps),
+    },
+    Column {
+        label: "netns_tx",
+        header: "NETNS TX",
+        width: 8,
+        fmt: |_, _, m| fmt_rate(m.net_tx_bps),
+        key: Some(|_, m| m.net_tx_bps),
+    },
 ];
 
 /// Byte counts stay exact in f64 out past 9 PB, so one key type covers the
@@ -541,6 +560,10 @@ mod tests {
                 gtt_bytes: None,
                 gfx_pct: Some(3.0),
                 compute_pct: None,
+                // An Applications row can never carry a netns rate; the blank
+                // pair is the layout this table shows for every non-container.
+                net_rx_bps: None,
+                net_tx_bps: None,
             },
             instances: Vec::new(),
             containers: Vec::new(),
@@ -558,14 +581,14 @@ mod tests {
         write_folder(&mut out, 1, "Applications", &[sample_ident(1536.0)]).unwrap();
         assert_eq!(
             String::from_utf8(out).unwrap(),
-            "NAME                            N   %CORE   %MACH      PSS      RSS   DISK R   DISK W     VRAM      GTT   GFX   CMP\n  Applications                  7    12.2     1.5     1.5K     2.0K   1.5K/s              1.0M            3.0      \n    an-identity-name-long-e\u{2026}    7    12.2     1.5     1.5K     2.0K   1.5K/s              1.0M            3.0      \n"
+            "NAME                            N   %CORE   %MACH      PSS      RSS   DISK R   DISK W     VRAM      GTT   GFX   CMP NETNS RX NETNS TX\n  Applications                  7    12.2     1.5     1.5K     2.0K   1.5K/s              1.0M            3.0                        \n    an-identity-name-long-e\u{2026}    7    12.2     1.5     1.5K     2.0K   1.5K/s              1.0M            3.0                        \n"
         );
 
         let mut out = Vec::new();
         write_folder(&mut out, 1, "Applications", &[sample_ident(1_030_963.0)]).unwrap();
         assert_eq!(
             String::from_utf8(out).unwrap(),
-            "  Applications                  7    12.2     1.5     1.5K     2.0K 1006.8K/s              1.0M            3.0      \n    an-identity-name-long-e\u{2026}    7    12.2     1.5     1.5K     2.0K 1006.8K/s              1.0M            3.0      \n"
+            "  Applications                  7    12.2     1.5     1.5K     2.0K 1006.8K/s              1.0M            3.0                        \n    an-identity-name-long-e\u{2026}    7    12.2     1.5     1.5K     2.0K 1006.8K/s              1.0M            3.0                        \n"
         );
     }
 

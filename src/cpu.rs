@@ -166,6 +166,12 @@ pub fn process_metrics(
         gtt_bytes: cur.gpu.gtt_bytes,
         gfx_pct,
         compute_pct,
+        // No per-process network counter exists to fill these. `/proc/<pid>/net/dev`
+        // is the namespace total, socket fdinfo has no byte counter, `/proc/net/tcp`
+        // queues are depths rather than totals, and `rchar`/`wchar` miss send/recv.
+        // `net::Rates` bills the container rows afterwards.
+        net_rx_bps: None,
+        net_tx_bps: None,
     }
 }
 

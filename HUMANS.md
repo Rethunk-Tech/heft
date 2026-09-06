@@ -108,6 +108,31 @@ Other uids appear as extra User nodes when `/proc` lists them. Metrics heft
 cannot read (`smaps_rollup`, `io`, fdinfo, `exe`) render as a blank cell. A
 blank is not a zero: those rows sort last whichever way the sort runs.
 
+## NETNS RX / NETNS TX
+
+Network I/O is counted per network *namespace*, never per process. A container
+gets a figure because it owns a namespace; nothing else in the tree owns one,
+so every other row — process, application, user service, folder, User, Host —
+is blank there. That blank means heft cannot know, not that the process moved
+no bytes. Linux publishes no per-process byte counter that heft could read
+without CAP_NET_RAW, CAP_BPF or ptrace, all of which are outside what heft
+does; htop and btop leave the column out for the same reason.
+
+The columns are last in the table, so `]` scrolls to them on a narrow
+terminal. What they sum:
+
+- The container's own interfaces except `lo`. Loopback traffic never left the
+  namespace, and counting it can multiply the figure severalfold.
+- A `--network=host` container is blank: it shares the machine's namespace, so
+  the only number available is the host's own lifetime traffic. `docker stats`
+  reports `0B / 0B` for the same containers.
+- One row per container; a compose or Supabase project row sums its
+  containers.
+- A restart resets the counters, so heft drops that one interval rather than
+  showing a negative rate. The next sample resumes.
+- Without a reachable Docker or Podman socket heft cannot tell a host-network
+  container from a bridged one, so every container is blank.
+
 ## Docker / Podman
 
 Heft `GET`s `/containers/json` and inspect on `/var/run/docker.sock`,

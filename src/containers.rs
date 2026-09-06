@@ -45,7 +45,6 @@ fn path_owner(path: &Path) -> Option<u32> {
 pub(crate) struct ContainerInfo {
     pub(crate) id: String,
     pub(crate) ident_key: String,
-    pub(crate) ident_title: String,
     pub(crate) member_name: Option<String>,
     pub(crate) owner_uid: Option<u32>,
     /// Named `engined-*` or carrying the `engined.spec` label. Labels are not
@@ -148,7 +147,7 @@ impl ContainerIndex {
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| format!("docker-{}", hex12(&id).unwrap_or(id.as_str())));
         let labels = item.labels.clone().unwrap_or_default();
-        let (ident_key, ident_title, member_name) = project_identity(&name, &labels);
+        let (ident_key, member_name) = project_identity(&name, &labels);
         let workdir = labels.get("com.supabase.cli.workdir").cloned().or_else(|| {
             labels
                 .get("com.docker.compose.project.working_dir")
@@ -175,7 +174,6 @@ impl ContainerIndex {
         let info = ContainerInfo {
             id,
             ident_key,
-            ident_title,
             member_name,
             owner_uid: owner,
             engined,
@@ -241,25 +239,17 @@ pub(crate) fn helper_id(p: &Process) -> Option<String> {
 pub(crate) fn project_identity(
     name: &str,
     labels: &HashMap<String, String>,
-) -> (String, String, Option<String>) {
+) -> (String, Option<String>) {
     if let Some(p) = labels.get("com.supabase.cli.project") {
-        return (
-            format!("supabase:{p}"),
-            format!("supabase:{p}"),
-            Some(name.to_string()),
-        );
+        return (format!("supabase:{p}"), Some(name.to_string()));
     }
     if let Some(p) = supabase_project_from_name(name) {
-        return (
-            format!("supabase:{p}"),
-            format!("supabase:{p}"),
-            Some(name.to_string()),
-        );
+        return (format!("supabase:{p}"), Some(name.to_string()));
     }
     if let Some(p) = labels.get("com.docker.compose.project") {
-        return (p.clone(), p.clone(), Some(name.to_string()));
+        return (p.clone(), Some(name.to_string()));
     }
-    (name.to_string(), name.to_string(), None)
+    (name.to_string(), None)
 }
 pub(crate) fn supabase_project_from_name(name: &str) -> Option<&str> {
     let rest = name.strip_prefix("supabase_")?;
@@ -399,11 +389,10 @@ mod tests {
             Some("caldera")
         );
         let labels = HashMap::from([("com.supabase.cli.project".into(), "caldera".into())]);
-        let (k, t, m) = project_identity("supabase_db_caldera", &labels);
+        let (k, m) = project_identity("supabase_db_caldera", &labels);
         assert_eq!(k, "supabase:caldera");
-        assert_eq!(t, "supabase:caldera");
         assert_eq!(m.as_deref(), Some("supabase_db_caldera"));
-        let (k, _, m) = project_identity("engined-whisper", &HashMap::new());
+        let (k, m) = project_identity("engined-whisper", &HashMap::new());
         assert_eq!(k, "engined-whisper");
         assert!(m.is_none());
     }
@@ -420,7 +409,6 @@ mod tests {
         ContainerInfo {
             id: id.into(),
             ident_key: "x".into(),
-            ident_title: "x".into(),
             member_name: None,
             owner_uid: None,
             engined: false,

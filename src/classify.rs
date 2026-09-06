@@ -144,58 +144,54 @@ fn is_session_bus(n: &[String]) -> bool {
 ///
 /// A logical group is a documented unit/package/D-Bus/architecture family,
 /// not a comm prefix. Prefix-only lookalikes with a different product stay out.
-pub fn session_helper_ident(p: &Process) -> Option<(String, String)> {
+pub fn session_helper_ident(p: &Process) -> Option<&'static str> {
     let n = names_of(p);
     if is_session_bus(&n) {
-        return Some(ident("dbus-broker"));
+        return Some("dbus-broker");
     }
     if gnome_shell_helper(&n, p) {
-        return Some(ident("gnome-shell"));
+        return Some("gnome-shell");
     }
     if ibus_family(&n) {
-        return Some(ident("ibus-daemon"));
+        return Some("ibus-daemon");
     }
     if is_atspi_registry(&n) {
-        return Some(ident("at-spi-bus-launcher"));
+        return Some("at-spi-bus-launcher");
     }
     if is_goa_helper(&n) {
-        return Some(ident("goa-daemon"));
+        return Some("goa-daemon");
     }
     if names_match(&n, |x| x.starts_with("p11-kit")) {
-        return Some(ident("p11-kit"));
+        return Some("p11-kit");
     }
     if is_gsd_disk_utility_notify(&n, p) {
-        return Some(ident("gsd-disk-utility-notify"));
+        return Some("gsd-disk-utility-notify");
     }
     if is_gsd_plugin(&n) {
-        return Some(ident("gnome-settings-daemon"));
+        return Some("gnome-settings-daemon");
     }
     if is_gvfs_stack(&n, p) {
-        return Some(ident("gvfs"));
+        return Some("gvfs");
     }
     if is_flatpak_session_infra(&n, p) {
-        return Some(ident("flatpak"));
+        return Some("flatpak");
     }
     if is_xdg_desktop_portal_family(&n, p) {
-        return Some(ident("xdg-desktop-portal"));
+        return Some("xdg-desktop-portal");
     }
     if is_evolution_data_server(&n, p) {
-        return Some(ident("evolution-data-server"));
+        return Some("evolution-data-server");
     }
     if is_pipewire(&n) {
-        return Some(ident("pipewire"));
+        return Some("pipewire");
     }
     if is_gcr_ssh_agent(&n, p) {
-        return Some(ident("gcr-ssh-agent"));
+        return Some("gcr-ssh-agent");
     }
     if names_match(&n, |x| x == "abrt-applet") {
-        return Some(ident("abrt-applet"));
+        return Some("abrt-applet");
     }
     None
-}
-
-fn ident(name: &str) -> (String, String) {
-    (name.to_string(), name.to_string())
 }
 
 pub(crate) fn names_of(p: &Process) -> [String; 2] {
@@ -537,9 +533,7 @@ mod tests {
                     "/usr/share/gnome-shell/org.gnome.Shell.Notifications".into(),
                 ],
                 ..Process::default()
-            })
-            .as_ref()
-            .map(|(k, _)| k.as_str()),
+            }),
             Some("gnome-shell")
         );
         assert!(
@@ -547,51 +541,39 @@ mod tests {
             "unrelated gjs is not gnome-shell"
         );
         assert_eq!(
-            session_helper_ident(&p("ibus-portal", &["/usr/libexec/ibus-portal"]))
-                .as_ref()
-                .map(|(k, _)| k.as_str()),
+            session_helper_ident(&p("ibus-portal", &["/usr/libexec/ibus-portal"])),
             Some("ibus-daemon")
         );
         assert_eq!(
             session_helper_ident(&p(
                 "at-spi2-registryd",
                 &["/usr/libexec/at-spi2-registryd", "--use-gnome-session"]
-            ))
-            .as_ref()
-            .map(|(k, _)| k.as_str()),
+            )),
             Some("at-spi-bus-launcher")
         );
         assert_eq!(
             session_helper_ident(&p(
                 "goa-identity-service",
                 &["/usr/libexec/goa-identity-service"]
-            ))
-            .as_ref()
-            .map(|(k, _)| k.as_str()),
+            )),
             Some("goa-daemon")
         );
         assert_eq!(
-            session_helper_ident(&p("goa-daemon", &["/usr/libexec/goa-daemon"]))
-                .as_ref()
-                .map(|(k, _)| k.as_str()),
+            session_helper_ident(&p("goa-daemon", &["/usr/libexec/goa-daemon"])),
             Some("goa-daemon")
         );
         assert_eq!(
             session_helper_ident(&p(
                 "p11-kit-server",
                 &["/usr/libexec/p11-kit/p11-kit-server"]
-            ))
-            .as_ref()
-            .map(|(k, _)| k.as_str()),
+            )),
             Some("p11-kit")
         );
         assert_eq!(
             session_helper_ident(&p(
                 "p11-kit-remote",
                 &["/usr/libexec/p11-kit/p11-kit-remote"]
-            ))
-            .as_ref()
-            .map(|(k, _)| k.as_str()),
+            )),
             Some("p11-kit")
         );
         assert!(
@@ -608,30 +590,22 @@ mod tests {
             session_helper_ident(&p(
                 "gsd-disk-utility-notify",
                 &["/usr/libexec/gsd-disk-utility-notify"]
-            ))
-            .as_ref()
-            .map(|(k, _)| k.as_str()),
+            )),
             Some("gsd-disk-utility-notify")
         );
         assert_eq!(
-            session_helper_ident(&p("gsd-color", &["/usr/libexec/gsd-color"]))
-                .as_ref()
-                .map(|(k, _)| k.as_str()),
+            session_helper_ident(&p("gsd-color", &["/usr/libexec/gsd-color"])),
             Some("gnome-settings-daemon")
         );
         assert_eq!(
-            session_helper_ident(&p("gvfsd", &["/usr/libexec/gvfsd"]))
-                .as_ref()
-                .map(|(k, _)| k.as_str()),
+            session_helper_ident(&p("gvfsd", &["/usr/libexec/gvfsd"])),
             Some("gvfs")
         );
         assert_eq!(
             session_helper_ident(&p(
                 "gvfs-goa-volume-monitor",
                 &["/usr/libexec/gvfs-goa-volume-monitor"]
-            ))
-            .as_ref()
-            .map(|(k, _)| k.as_str()),
+            )),
             Some("gvfs"),
             "gvfs GOA volume monitor is GVFS, not goa-daemon"
         );
@@ -642,9 +616,7 @@ mod tests {
                 cmdline: vec!["/usr/bin/python3".into(), "/usr/bin/wsdd".into()],
                 cgroup: "0::/user.slice/user-1000.slice/user@1000.service/session.slice/gvfs-daemon.service".into(),
                 ..Process::default()
-            })
-            .as_ref()
-            .map(|(k, _)| k.as_str()),
+            }),
             Some("gvfs")
         );
         assert!(
@@ -655,15 +627,11 @@ mod tests {
             session_helper_ident(&p(
                 "flatpak-session-helper",
                 &["/usr/libexec/flatpak-session-helper"]
-            ))
-            .as_ref()
-            .map(|(k, _)| k.as_str()),
+            )),
             Some("flatpak")
         );
         assert_eq!(
-            session_helper_ident(&p("flatpak-portal", &["/usr/libexec/flatpak-portal"]))
-                .as_ref()
-                .map(|(k, _)| k.as_str()),
+            session_helper_ident(&p("flatpak-portal", &["/usr/libexec/flatpak-portal"])),
             Some("flatpak")
         );
         assert_eq!(
@@ -673,9 +641,7 @@ mod tests {
                 cmdline: vec!["/usr/bin/xdg-dbus-proxy".into()],
                 cgroup: "0::/user.slice/user-1000.slice/user@1000.service/session.slice/xdg-desktop-portal.service".into(),
                 ..Process::default()
-            })
-            .as_ref()
-            .map(|(k, _)| k.as_str()),
+            }),
             Some("flatpak"),
             "unbound xdg-dbus-proxy is Flatpak portal plumbing"
         );
@@ -693,18 +659,14 @@ mod tests {
             session_helper_ident(&p(
                 "xdg-desktop-portal-gnome",
                 &["/usr/libexec/xdg-desktop-portal-gnome"]
-            ))
-            .as_ref()
-            .map(|(k, _)| k.as_str()),
+            )),
             Some("xdg-desktop-portal")
         );
         assert_eq!(
             session_helper_ident(&p(
                 "evolution-addressbook-factory",
                 &["/usr/libexec/evolution-addressbook-factory"]
-            ))
-            .as_ref()
-            .map(|(k, _)| k.as_str()),
+            )),
             Some("evolution-data-server")
         );
         assert!(
@@ -712,9 +674,7 @@ mod tests {
             "Evolution GUI is not evolution-data-server"
         );
         assert_eq!(
-            session_helper_ident(&p("pipewire-pulse", &["/usr/bin/pipewire-pulse"]))
-                .as_ref()
-                .map(|(k, _)| k.as_str()),
+            session_helper_ident(&p("pipewire-pulse", &["/usr/bin/pipewire-pulse"])),
             Some("pipewire")
         );
         assert!(
@@ -722,15 +682,11 @@ mod tests {
             "wireplumber is a different package than pipewire"
         );
         assert_eq!(
-            session_helper_ident(&p("ibus-x11", &["/usr/libexec/ibus-x11"]))
-                .as_ref()
-                .map(|(k, _)| k.as_str()),
+            session_helper_ident(&p("ibus-x11", &["/usr/libexec/ibus-x11"])),
             Some("ibus-daemon")
         );
         assert_eq!(
-            session_helper_ident(&p("ibus-dconf", &["/usr/libexec/ibus-dconf"]))
-                .as_ref()
-                .map(|(k, _)| k.as_str()),
+            session_helper_ident(&p("ibus-dconf", &["/usr/libexec/ibus-dconf"])),
             Some("ibus-daemon")
         );
         assert_eq!(
@@ -738,9 +694,7 @@ mod tests {
                 comm: "Xwayland".into(),
                 exe: Some("/usr/bin/Xwayland".into()),
                 ..Process::default()
-            })
-            .as_ref()
-            .map(|(k, _)| k.as_str()),
+            }),
             Some("gnome-shell")
         );
         assert_eq!(
@@ -749,9 +703,7 @@ mod tests {
                 exe: Some("/usr/bin/ssh-agent".into()),
                 cgroup: "0::/user.slice/user-1000.slice/user@1000.service/app.slice/gcr-ssh-agent.service".into(),
                 ..Process::default()
-            })
-            .as_ref()
-            .map(|(k, _)| k.as_str()),
+            }),
             Some("gcr-ssh-agent")
         );
         assert!(
@@ -766,9 +718,7 @@ mod tests {
             session_helper_ident(&p(
                 "abrt-applet",
                 &["/usr/bin/abrt-applet", "--gapplication-service"]
-            ))
-            .as_ref()
-            .map(|(k, _)| k.as_str()),
+            )),
             Some("abrt-applet")
         );
         assert!(session_helper_ident(&p("gnome-abrt", &["gnome-abrt"])).is_none());

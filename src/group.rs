@@ -16,7 +16,6 @@ struct Place {
     folder: Folder,
     uid: Option<u32>,
     key: String,
-    title: String,
     instance: String,
     member: Option<String>,
 }
@@ -125,8 +124,7 @@ fn compute_place(
         if classify::is_launcher(p) {
             if let Some(hint) = classify::launcher_payload_hint(p) {
                 let mut place = user_place(p);
-                place.key.clone_from(&hint);
-                place.title = hint;
+                place.key = hint;
                 return place;
             }
             if let Some(parent) = resolve_one(p.ppid, curr, containers, memo, walking)
@@ -159,7 +157,6 @@ fn container_place(p: &Process, containers: &ContainerIndex) -> Option<Place> {
             folder: Folder::Containers,
             uid: info.owner_uid,
             key: info.ident_key.clone(),
-            title: info.ident_title.clone(),
             instance: identity::instance_key(p, Some(&info.id)),
             member: info.member_name.clone(),
         });
@@ -167,14 +164,12 @@ fn container_place(p: &Process, containers: &ContainerIndex) -> Option<Place> {
     let scope = docker_scope_id(&p.cgroup);
     if let Some(id) = scope.clone().or_else(|| containers::helper_id(p)) {
         let short = containers::hex12(&id).unwrap_or(&id);
-        let title = format!("docker-{short}");
         return Some(Place {
             folder: Folder::Containers,
             // Only a cgroup id is known on this path, so there is no name or
             // label to attribute an owner from; lookup_process does that.
             uid: None,
-            key: title.clone(),
-            title,
+            key: format!("docker-{short}"),
             instance: identity::instance_key(p, scope.as_deref()),
             member: None,
         });
@@ -183,16 +178,14 @@ fn container_place(p: &Process, containers: &ContainerIndex) -> Option<Place> {
 }
 
 fn system_place(p: &Process) -> Place {
-    let title = if identity::is_kernel(p) {
-        "kernel".to_string()
-    } else {
-        name_of(p)
-    };
     Place {
         folder: Folder::System,
         uid: None,
-        key: title.clone(),
-        title,
+        key: if identity::is_kernel(p) {
+            "kernel".to_string()
+        } else {
+            name_of(p)
+        },
         instance: identity::instance_key(p, None),
         member: None,
     }
@@ -209,28 +202,25 @@ fn user_place(p: &Process) -> Place {
     } else {
         Folder::Applications
     };
-    let title = if classify::is_generic(p) {
-        identity::generic_fallback(p, unit.as_deref())
-    } else {
-        name_of(p)
-    };
     Place {
         folder,
         uid: Some(p.uid),
-        key: title.clone(),
-        title,
+        key: if classify::is_generic(p) {
+            identity::generic_fallback(p, unit.as_deref())
+        } else {
+            name_of(p)
+        },
         instance: identity::instance_key(p, None),
         member: None,
     }
 }
 
 fn session_plumbing_place(p: &Process) -> Option<Place> {
-    let (key, title) = classify::session_helper_ident(p)?;
+    let key = classify::session_helper_ident(p)?;
     Some(Place {
         folder: Folder::UserServices,
         uid: Some(p.uid),
-        key,
-        title,
+        key: key.to_string(),
         instance: identity::instance_key(p, None),
         member: None,
     })
@@ -241,8 +231,7 @@ fn crash_helper_place(p: &Process) -> Option<Place> {
     Some(Place {
         folder: Folder::Applications,
         uid: Some(p.uid),
-        key: owner.clone(),
-        title: owner,
+        key: owner,
         instance: identity::instance_key(p, None),
         member: None,
     })
@@ -342,7 +331,6 @@ fn assemble(
 ) -> HostTree {
     #[derive(Default)]
     struct Bucket {
-        title: String,
         pids: Vec<u32>,
         members: HashMap<String, Vec<u32>>,
     }
@@ -351,10 +339,7 @@ fn assemble(
     for (pid, place) in places {
         let b = buckets
             .entry((place.folder, place.uid, place.key.clone()))
-            .or_insert_with(|| Bucket {
-                title: place.title.clone(),
-                ..Bucket::default()
-            });
+            .or_default();
         b.pids.push(*pid);
         if let Some(m) = &place.member {
             b.members.entry(m.clone()).or_default().push(*pid);
@@ -366,15 +351,7 @@ fn assemble(
     let mut system = Vec::new();
 
     for ((folder, uid, key), bucket) in buckets {
-        let node = ident_node(
-            &key,
-            &bucket.title,
-            &bucket.pids,
-            &bucket.members,
-            curr,
-            places,
-            metrics,
-        );
+        let node = ident_node(&key, &bucket.pids, &bucket.members, curr, places, metrics);
         match folder {
             Folder::System => system.push(node),
             Folder::Containers if uid.is_none() => host_containers.push(node),
@@ -413,7 +390,6 @@ fn assemble(
 
 fn ident_node(
     key: &str,
-    title: &str,
     pids: &[u32],
     members_map: &HashMap<String, Vec<u32>>,
     curr: &HashMap<u32, Process>,
@@ -448,7 +424,7 @@ fn ident_node(
         .collect();
     IdentNode {
         id: key.to_string(),
-        title: title.to_string(),
+        title: key.to_string(),
         nproc: u32::try_from(pids.len()).unwrap_or(u32::MAX),
         metrics: sum_metrics(pids, metrics),
         instances,

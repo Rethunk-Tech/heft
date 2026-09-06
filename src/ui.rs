@@ -472,15 +472,15 @@ fn cpu_header_line(tree: &HostTree, width: usize) -> Line<'static> {
     let prefix = " CPU [";
     let mid = format!("] {:>5}%  ", fmt_pct(tree.cpu_pct));
     let (tail, legend_len) = legend(&[
-        ("usr", Color::Cyan),
-        ("sys", Color::Magenta),
-        ("wait", Color::Yellow),
+        ("usr", Color::Cyan, '█'),
+        ("sys", Color::Magenta, '▓'),
+        ("wait", Color::Yellow, '▒'),
     ]);
     let bar_w = width.saturating_sub(prefix.len() + mid.len() + legend_len);
     let parts = [
-        (pct_weight(tree.cpu_user_pct), Color::Cyan),
-        (pct_weight(tree.cpu_system_pct), Color::Magenta),
-        (pct_weight(tree.cpu_wait_pct), Color::Yellow),
+        (pct_weight(tree.cpu_user_pct), Color::Cyan, '█'),
+        (pct_weight(tree.cpu_system_pct), Color::Magenta, '▓'),
+        (pct_weight(tree.cpu_wait_pct), Color::Yellow, '▒'),
     ];
     let mut spans = vec![Span::raw(prefix)];
     spans.extend(stacked_bar(bar_w, &parts, 10_000));
@@ -494,11 +494,11 @@ fn cpu_header_line(tree: &HostTree, width: usize) -> Line<'static> {
 fn bar_group(
     label: &str,
     width: usize,
-    parts: &[(u64, Color)],
+    parts: &[(u64, Color, char)],
     cap: u64,
     used: u64,
     total: u64,
-    labels: &[(&str, Color)],
+    labels: &[(&str, Color, char)],
 ) -> Vec<Span<'static>> {
     let prefix = format!(" {label} [");
     let mid = format!("] {}/{}  ", fmt_bytes(Some(used)), fmt_bytes(Some(total)));
@@ -549,22 +549,26 @@ fn mem_header_line(tree: &HostTree, width: usize) -> Line<'static> {
         1 + usize::from(discrete.is_some()) + usize::from(swap.is_some()),
     );
     let mem_width = tanks[0];
-    let mut labels: Vec<(&str, Color)> = Vec::new();
+    // `anon` is the unlabelled bulk of the bar, so it keeps the full block and
+    // the carve-outs take the distinguishable glyphs. The two quadrant glyphs
+    // are East Asian *narrow*, unlike the shade ramp, so they cannot double up
+    // in a terminal that widens ambiguous characters.
+    let mut labels: Vec<(&str, Color, char)> = Vec::new();
     if tree.unified_memory {
-        labels.push(("vram", Color::LightRed));
+        labels.push(("vram", Color::LightRed, '▚'));
     }
-    labels.push(("gtt", Color::LightCyan));
-    labels.push(("cache", Color::Blue));
-    labels.push(("buf", Color::Green));
+    labels.push(("gtt", Color::LightCyan, '▙'));
+    labels.push(("cache", Color::Blue, '▓'));
+    labels.push(("buf", Color::Green, '▒'));
     let mut spans = bar_group(
         "MEM",
         mem_width,
         &[
-            (seg.vram, Color::LightRed),
-            (seg.gtt, Color::LightCyan),
-            (seg.cache, Color::Blue),
-            (seg.buffers, Color::Green),
-            (seg.anon, Color::Gray),
+            (seg.vram, Color::LightRed, '▚'),
+            (seg.gtt, Color::LightCyan, '▙'),
+            (seg.cache, Color::Blue, '▓'),
+            (seg.buffers, Color::Green, '▒'),
+            (seg.anon, Color::Gray, '█'),
         ],
         tree.mem_total_bytes,
         tree.mem_used_bytes,
@@ -577,7 +581,7 @@ fn mem_header_line(tree: &HostTree, width: usize) -> Line<'static> {
         spans.extend(bar_group(
             "VRAM",
             tanks[next],
-            &[(vram_used, Color::LightRed)],
+            &[(vram_used, Color::LightRed, '█')],
             vram_total,
             vram_used,
             vram_total,
@@ -590,7 +594,7 @@ fn mem_header_line(tree: &HostTree, width: usize) -> Line<'static> {
         spans.extend(bar_group(
             "SWAP",
             tanks[next],
-            &[(swap_used, Color::Yellow)],
+            &[(swap_used, Color::Yellow, '█')],
             swap_total,
             swap_used,
             swap_total,
@@ -616,34 +620,44 @@ fn tank_widths(width: usize, tanks: usize) -> Vec<usize> {
 /// Slash-joined coloured labels plus the columns they occupy. The bar width
 /// subtracts that count, so deriving it here is what keeps a renamed label
 /// from overflowing the line.
-fn legend(labels: &[(&str, Color)]) -> (Vec<Span<'static>>, usize) {
+fn legend(labels: &[(&str, Color, char)]) -> (Vec<Span<'static>>, usize) {
     let mut spans = Vec::new();
     let mut cols = 0;
-    for (i, (text, color)) in labels.iter().enumerate() {
+    for (i, (text, color, glyph)) in labels.iter().enumerate() {
         if i > 0 {
             spans.push(Span::raw("/"));
             cols += 1;
         }
         spans.push(Span::styled(
-            (*text).to_string(),
+            format!("{glyph}{text}"),
             Style::default().fg(*color),
         ));
-        cols += text.chars().count();
+        cols += text.chars().count() + 1;
     }
     (spans, cols)
 }
 
-fn stacked_bar(width: usize, parts: &[(u64, Color)], capacity: u64) -> Vec<Span<'static>> {
+/// Each segment carries its own fill glyph as well as its own colour, and the
+/// legend prints that glyph beside the label. Hue alone cannot carry the
+/// distinction: cyan against magenta is the pair deuteranopia collapses, a
+/// piped or recorded frame keeps the characters and loses the styling, and
+/// `NO_COLOR` is a request nobody should have to make to read a bar. Doing it
+/// unconditionally keeps one render path rather than a colour one and a
+/// monochrome one that drift.
+fn stacked_bar(width: usize, parts: &[(u64, Color, char)], capacity: u64) -> Vec<Span<'static>> {
     if width == 0 {
         return Vec::new();
     }
-    let weights: Vec<u64> = parts.iter().map(|(w, _)| *w).collect();
+    let weights: Vec<u64> = parts.iter().map(|(w, _, _)| *w).collect();
     let cells = share_cells(&weights, capacity, width);
     let filled: usize = cells.iter().sum();
     let mut out = Vec::new();
-    for (n, (_, color)) in cells.into_iter().zip(parts.iter()) {
+    for (n, (_, color, glyph)) in cells.into_iter().zip(parts.iter()) {
         if n > 0 {
-            out.push(Span::styled("█".repeat(n), Style::default().fg(*color)));
+            out.push(Span::styled(
+                glyph.to_string().repeat(n),
+                Style::default().fg(*color),
+            ));
         }
     }
     let rest = width.saturating_sub(filled);
@@ -890,7 +904,7 @@ mod tests {
         let text = line.to_string();
         // The bug this guards: GTT dropped entirely once VRAM moved to its own
         // tank, even though it is system RAM sitting inside the MEM bar's used.
-        assert!(text.contains("gtt/cache/buf"), "{text}");
+        assert!(text.contains("▙gtt/▓cache/▒buf"), "{text}");
         assert!(
             !text.contains("vram/"),
             "discrete vram is not a MEM segment"
@@ -898,7 +912,7 @@ mod tests {
         assert!(
             line.spans
                 .iter()
-                .any(|s| s.style.fg == Some(Color::LightCyan) && s.content.contains('█')),
+                .any(|s| s.style.fg == Some(Color::LightCyan) && s.content.contains('▙')),
             "{text}"
         );
         assert_eq!(text.chars().count(), 100);
@@ -915,7 +929,7 @@ mod tests {
         assert!(tree.unified_memory);
         let text = mem_header_line(&tree, 100).to_string();
         assert!(!text.contains("VRAM ["), "{text}");
-        assert!(text.contains("vram/gtt/cache/buf"), "{text}");
+        assert!(text.contains("▚vram/▙gtt/▓cache/▒buf"), "{text}");
         assert_eq!(text.chars().count(), 100);
     }
 

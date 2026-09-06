@@ -105,7 +105,11 @@ Other users, User Services, Host-level Containers, and System start collapsed.
 ## What the tree means
 
 - **Host** is the machine. The header is two unbordered rows: stacked CPU
-  (usr/sys/wait from `/proc/stat`) and a MEMORY row. Where memory is unified,
+  (usr/sys/wait from `/proc/stat`) and a MEMORY row. Every bar segment has its
+  own fill character as well as its own colour, and the legend prints that
+  character beside the label (`█usr/▓sys/▒wait`), so the bars stay readable
+  without colour — piped, recorded, on a monochrome terminal, or to anyone for
+  whom cyan and magenta are the same hue. Where memory is unified,
   VRAM and GTT are carve-outs of that same pool, not a second tank, so the row
   is one MEMORY bar whose width is MemTotal. With a discrete card the MEMORY
   row splits in half: MEM against MemTotal, and VRAM against the card's own

@@ -59,6 +59,12 @@ heft --once --user 1000   # only this user's branch (name or uid, repeatable)
 The TUI needs a terminal. `heft > file`, or heft in a script, says so and
 exits non-zero rather than falling back to `--once` behind your back.
 
+`q`, `Esc` and `Ctrl-C` all quit. Every other `Ctrl-` or `Alt-` combination is
+ignored rather than running the unmodified key's binding. If heft is killed —
+`SIGTERM`, a closed terminal emulator, a logout, or a panic — it puts the
+terminal back before it goes, and exits `128 +` the signal, so you are never
+left at a shell with no echo.
+
 `--interval` is the catch-all (default 1s, floor 0.05s): `/proc` walk, RSS,
 io, GPU, grouping, and CPU/disk/GPU rates. The TUI sleeps `--interval` minus
 sample time; a PSS pass may stretch that tick.

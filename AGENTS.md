@@ -28,6 +28,7 @@ src/group.rs         Host → User → Applications | User Services | Containers
 src/config.rs        XDG view.json (sort, filter, hide_columns; write on save) and grouping.json (read-only)
 src/once.rs          columns, tree ordering, table and JSON
 src/ui.rs            ratatui header + tree table
+src/tty.rs           panic hook + signal handler; restores the terminal
 tests/grouping.rs    integration tests over tests/fixtures/
 tests/live_proc.rs   invariants over the real /proc; must hold in a bare container
 tests/fixtures/      GUI grouping snapshot

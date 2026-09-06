@@ -56,6 +56,9 @@ pub fn run(interval: Duration, pss_interval: Duration, view: View) -> Result<(),
     // Resolve columns before the alternate screen: a warning about a stale
     // hide entry printed after it would be wiped on the first frame.
     let cols = Columns::from_view(&view);
+    // Before raw mode, so the guard captures the settings it will have to put
+    // back, and covers the window from here to the teardown below.
+    crate::tty::guard();
     enable_raw_mode()?;
     let mut out = stdout();
     execute!(out, EnterAlternateScreen, Hide)?;
@@ -64,6 +67,9 @@ pub fn run(interval: Duration, pss_interval: Duration, view: View) -> Result<(),
     let result = run_loop(&mut terminal, interval, pss_interval, view, cols);
     disable_raw_mode()?;
     execute!(io::stdout(), LeaveAlternateScreen, Show)?;
+    // Disarm only once the terminal is genuinely back, or a signal arriving
+    // during teardown would write escape codes over a shell prompt.
+    crate::tty::released();
     result
 }
 

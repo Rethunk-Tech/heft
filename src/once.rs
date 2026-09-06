@@ -7,6 +7,9 @@ use crate::types::{
     user_nproc,
 };
 
+/// # Errors
+///
+/// Returns an error if writing the table to stdout fails.
 pub fn print_table(interval: Duration) -> Result<(), Error> {
     let tree = proc::sample_world(interval);
     let mut out = io::stdout();
@@ -61,6 +64,9 @@ pub fn print_table(interval: Duration) -> Result<(), Error> {
     Ok(())
 }
 
+/// # Errors
+///
+/// Returns an error if the tree cannot be serialized or stdout cannot be written.
 pub fn print_json(interval: Duration) -> Result<(), Error> {
     let tree = proc::sample_world(interval);
     let doc = serde_json::json!({ "host": tree });

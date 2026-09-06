@@ -110,7 +110,7 @@ fn read_u64(path: &Path) -> Option<u64> {
     fs::read_to_string(path).ok()?.trim().parse().ok()
 }
 
-/// APU / unified: sysfs VRAM is a carve-out of MemTotal (GTT covers most of RAM),
+/// APU / unified: sysfs VRAM is a carve-out of `MemTotal` (GTT covers most of RAM),
 /// not a second device. Discrete VRAM as its own tank is out of scope.
 pub fn is_unified(mem_total: u64, gpu: &GpuPool) -> bool {
     let Some(vram) = gpu.vram_total.filter(|v| *v > 0) else {

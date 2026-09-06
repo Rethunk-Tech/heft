@@ -39,9 +39,7 @@ fn xdg_dir(var: &str, fallback: &str) -> PathBuf {
 }
 
 fn home() -> PathBuf {
-    std::env::var("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("/"))
+    std::env::var("HOME").map_or_else(|_| PathBuf::from("/"), PathBuf::from)
 }
 
 pub fn view_path() -> PathBuf {
@@ -56,6 +54,10 @@ pub fn load_view() -> View {
     serde_json::from_str(&text).unwrap_or_default()
 }
 
+/// # Errors
+///
+/// Returns an error if the XDG config directory cannot be created or
+/// permissioned, the view cannot be serialized, or the file cannot be written.
 pub fn save_view(view: &View) -> Result<(), Error> {
     let dir = config_dir();
     fs::DirBuilder::new()

@@ -106,6 +106,10 @@ struct App {
     help: bool,
 }
 
+/// # Errors
+///
+/// Returns an error if the terminal cannot enter or leave raw mode, the sampler
+/// thread cannot be spawned, a frame cannot be drawn, or a view save fails.
 pub fn run(interval: Duration, pss_interval: Duration) -> Result<(), Error> {
     enable_raw_mode()?;
     let mut out = stdout();
@@ -147,18 +151,18 @@ fn run_loop(
         app.row_vis = table_body_rows(terminal.size()?.height);
         app.row_off = follow_viewport(app.cursor, app.row_off, app.row_vis, rows.len());
         terminal.draw(|f| draw(f, &app, &rows))?;
-        if event::poll(Duration::from_millis(50))? {
-            match event::read()? {
-                Event::Key(k) if k.kind == KeyEventKind::Press => {
-                    if handle_key(&mut app, k.code, k.modifiers, &rows)? {
-                        break;
-                    }
-                }
-                Event::Resize(_, _) => {}
-                _ => {}
-            }
+        if event::poll(Duration::from_millis(50))?
+            && let Event::Key(k) = event::read()?
+            && k.kind == KeyEventKind::Press
+            && handle_key(&mut app, k.code, k.modifiers, &rows)?
+        {
+            break;
         }
-        if let Some(tree) = slot.lock().unwrap_or_else(|p| p.into_inner()).take() {
+        if let Some(tree) = slot
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+        {
             app.tree = tree;
         }
     }
@@ -219,7 +223,7 @@ fn flatten(tree: &HostTree, expand: &HashSet<String>, view: &View) -> Vec<Flat> 
             if expand.contains(&id) {
                 push_folder(
                     &mut rows,
-                    FolderPush {
+                    &FolderPush {
                         expand,
                         sort,
                         desc: view.desc,
@@ -231,7 +235,7 @@ fn flatten(tree: &HostTree, expand: &HashSet<String>, view: &View) -> Vec<Flat> 
                 );
                 push_folder(
                     &mut rows,
-                    FolderPush {
+                    &FolderPush {
                         expand,
                         sort,
                         desc: view.desc,
@@ -243,7 +247,7 @@ fn flatten(tree: &HostTree, expand: &HashSet<String>, view: &View) -> Vec<Flat> 
                 );
                 push_folder(
                     &mut rows,
-                    FolderPush {
+                    &FolderPush {
                         expand,
                         sort,
                         desc: view.desc,
@@ -257,7 +261,7 @@ fn flatten(tree: &HostTree, expand: &HashSet<String>, view: &View) -> Vec<Flat> 
         }
         push_folder(
             &mut rows,
-            FolderPush {
+            &FolderPush {
                 expand,
                 sort,
                 desc: view.desc,
@@ -269,7 +273,7 @@ fn flatten(tree: &HostTree, expand: &HashSet<String>, view: &View) -> Vec<Flat> 
         );
         push_folder(
             &mut rows,
-            FolderPush {
+            &FolderPush {
                 expand,
                 sort,
                 desc: view.desc,
@@ -329,7 +333,7 @@ struct FolderPush<'a> {
     idents: &'a [IdentNode],
 }
 
-fn push_folder(rows: &mut Vec<Flat>, p: FolderPush<'_>) {
+fn push_folder(rows: &mut Vec<Flat>, p: &FolderPush<'_>) {
     rows.push(Flat {
         id: p.id.to_string(),
         depth: p.depth,
@@ -471,10 +475,9 @@ fn handle_key(
         return Ok(false);
     }
     match code {
-        KeyCode::Char('q') => return Ok(true),
-        KeyCode::Esc => return Ok(true),
+        KeyCode::Char('q') | KeyCode::Esc => return Ok(true),
         KeyCode::Char('/') => app.filter_edit = true,
-        KeyCode::Char('s') | KeyCode::Char('S') => {
+        KeyCode::Char('s' | 'S') => {
             config::save_view(&app.view)?;
             app.status = format!("saved {}", config::view_path().display());
         }
@@ -494,7 +497,7 @@ fn handle_key(
                 app.expand.remove(&r.id);
             }
         }
-        KeyCode::Right | KeyCode::Char('l') | KeyCode::Enter | KeyCode::Char(' ') => {
+        KeyCode::Right | KeyCode::Char('l' | ' ') | KeyCode::Enter => {
             if let Some(r) = rows.get(app.cursor)
                 && r.expandable
                 && !app.expand.insert(r.id.clone())
@@ -508,8 +511,8 @@ fn handle_key(
         }
         KeyCode::Home => app.cursor = 0,
         KeyCode::End => app.cursor = rows.len().saturating_sub(1),
-        KeyCode::Char('[') | KeyCode::Char('<') => app.col_off = app.col_off.saturating_sub(1),
-        KeyCode::Char(']') | KeyCode::Char('>') => app.col_off = app.col_off.saturating_add(1),
+        KeyCode::Char('[' | '<') => app.col_off = app.col_off.saturating_sub(1),
+        KeyCode::Char(']' | '>') => app.col_off = app.col_off.saturating_add(1),
         _ => {}
     }
     Ok(false)
@@ -730,18 +733,18 @@ fn share_cells(parts: &[u64], capacity: u64, width: usize) -> Vec<usize> {
     }
     let mut cells: Vec<usize> = parts
         .iter()
-        .map(|w| ((*w as u128 * width as u128) / capacity as u128) as usize)
+        .map(|w| ((u128::from(*w) * width as u128) / u128::from(capacity)) as usize)
         .collect();
     let assigned: usize = cells.iter().sum();
-    let target =
-        ((parts.iter().copied().sum::<u64>() as u128 * width as u128) / capacity as u128) as usize;
+    let target = ((u128::from(parts.iter().copied().sum::<u64>()) * width as u128)
+        / u128::from(capacity)) as usize;
     let mut extra = target
         .saturating_sub(assigned)
         .min(width.saturating_sub(assigned));
     let mut order: Vec<(u128, usize)> = parts
         .iter()
         .enumerate()
-        .map(|(i, w)| (*w as u128 * width as u128 % capacity as u128, i))
+        .map(|(i, w)| (u128::from(*w) * width as u128 % u128::from(capacity), i))
         .collect();
     order.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
     for (_, i) in order {

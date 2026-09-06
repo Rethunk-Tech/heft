@@ -29,7 +29,7 @@ pub fn nproc() -> u32 {
             let n = text
                 .lines()
                 .filter(|l| {
-                    l.starts_with("cpu") && l.as_bytes().get(3).is_some_and(|c| c.is_ascii_digit())
+                    l.starts_with("cpu") && l.as_bytes().get(3).is_some_and(u8::is_ascii_digit)
                 })
                 .count() as u32;
             n.max(1)
@@ -41,13 +41,13 @@ pub fn nproc() -> u32 {
 pub fn clk_tck() -> u64 {
     // SAFETY: sysconf is a pure query; a non-positive result is replaced.
     let v = unsafe { libc::sysconf(libc::_SC_CLK_TCK) };
-    if v > 0 { v as u64 } else { 100 }
+    if v > 0 { v.cast_unsigned() } else { 100 }
 }
 
 pub fn page_size() -> u64 {
     // SAFETY: sysconf is a pure query; a non-positive result is replaced.
     let v = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
-    if v > 0 { v as u64 } else { 4096 }
+    if v > 0 { v.cast_unsigned() } else { 4096 }
 }
 
 pub fn euid() -> u32 {
@@ -130,7 +130,7 @@ pub fn process_metrics(
     page: u64,
 ) -> Metrics {
     let secs = elapsed.as_secs_f64().max(1e-6);
-    let cores = nproc.max(1) as f64;
+    let cores = f64::from(nproc.max(1));
     let (core, machine) = match prev {
         Some(p) => {
             let ticks = (cur.utime + cur.stime).saturating_sub(p.utime + p.stime) as f64;

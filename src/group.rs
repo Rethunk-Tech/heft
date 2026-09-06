@@ -143,7 +143,7 @@ fn compute_place(
         if classify::is_launcher(p) {
             if let Some(hint) = classify::launcher_payload_hint(p) {
                 let mut place = user_place(p);
-                place.key = hint.clone();
+                place.key.clone_from(&hint);
                 place.title = hint;
                 return place;
             }
@@ -448,8 +448,7 @@ fn ident_node(
     for pid in pids {
         let inst = places
             .get(pid)
-            .map(|p| p.instance.clone())
-            .unwrap_or_else(|| format!("pid:{pid}"));
+            .map_or_else(|| format!("pid:{pid}"), |p| p.instance.clone());
         by_inst.entry(inst).or_default().push(*pid);
     }
     let mut instances: Vec<InstanceNode> = by_inst
@@ -517,14 +516,14 @@ fn proc_forest(
     let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
     let mut roots = Vec::new();
     for pid in pids {
-        let ppid = curr.get(pid).map(|p| p.ppid).unwrap_or(0);
+        let ppid = curr.get(pid).map_or(0, |p| p.ppid);
         if set.contains(&ppid) {
             children.entry(ppid).or_default().push(*pid);
         } else {
             roots.push(*pid);
         }
     }
-    roots.sort();
+    roots.sort_unstable();
     roots
         .into_iter()
         .map(|pid| proc_node(pid, &children, curr, metrics))
@@ -537,12 +536,9 @@ fn proc_node(
     curr: &HashMap<u32, Process>,
     metrics: &HashMap<u32, Metrics>,
 ) -> ProcNode {
-    let name = curr
-        .get(&pid)
-        .map(name_of)
-        .unwrap_or_else(|| pid.to_string());
+    let name = curr.get(&pid).map_or_else(|| pid.to_string(), name_of);
     let mut kids = children.get(&pid).cloned().unwrap_or_default();
-    kids.sort();
+    kids.sort_unstable();
     ProcNode {
         pid,
         name,

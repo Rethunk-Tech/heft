@@ -8,7 +8,7 @@ use crate::types::GpuCounters;
 /// `full_scan` is the PSS / `--once` published pass. Prime and TUI catch-all
 /// ticks pass false: dri/drm symlink names are enough, and a first sighting
 /// must not walk every fdinfo. Clients whose fd names omit dri/drm show up
-/// on the next full_scan (up to `--pss-interval`).
+/// on the next `full_scan` (up to `--pss-interval`).
 pub fn read_pid(pid: u32, full_scan: bool) -> GpuCounters {
     let drm_fds = match drm_fd_nums(pid) {
         Err(e) if e.kind() == io::ErrorKind::PermissionDenied => return GpuCounters::default(),
@@ -67,9 +67,8 @@ fn read_fdinfo_files(pid: u32, fds: &[u32]) -> GpuCounters {
 
 fn read_all_fdinfo(pid: u32) -> GpuCounters {
     let dir = format!("/proc/{pid}/fdinfo");
-    let entries = match fs::read_dir(&dir) {
-        Ok(e) => e,
-        Err(_) => return GpuCounters::default(),
+    let Ok(entries) = fs::read_dir(&dir) else {
+        return GpuCounters::default();
     };
     let mut texts = Vec::new();
     for ent in entries.flatten() {
@@ -104,7 +103,7 @@ pub fn parse_fdinfo(text: &str) -> Option<ClientView> {
             _ => {}
         }
     }
-    if !driver_ok && !(text.contains("drm-client-id") && text.contains("drm-resident")) {
+    if !(driver_ok || (text.contains("drm-client-id") && text.contains("drm-resident"))) {
         return None;
     }
     Some(ClientView {

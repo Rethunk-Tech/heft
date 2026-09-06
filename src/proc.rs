@@ -255,6 +255,10 @@ pub fn sample_world(interval: Duration) -> HostTree {
 }
 
 /// Latest complete tree. The UI takes; the sampler only publishes.
+///
+/// # Errors
+///
+/// Returns an error if the sampler thread cannot be spawned.
 pub fn spawn_sampler(
     interval: Duration,
     pss_interval: Duration,
@@ -267,7 +271,9 @@ pub fn spawn_sampler(
             loop {
                 let start = Instant::now();
                 let tree = sampler.tick(false);
-                *slot.lock().unwrap_or_else(|p| p.into_inner()) = Some(tree);
+                *slot
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(tree);
                 thread::sleep(interval.saturating_sub(start.elapsed()));
             }
         })

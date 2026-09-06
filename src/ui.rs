@@ -210,7 +210,7 @@ fn flatten(tree: &HostTree, expand: &HashSet<String>, view: &View) -> Vec<Flat> 
                 depth: 1,
                 name: format!("{} ({uid})", user.name),
                 nproc: user_nproc(user),
-                metrics: sum_lists([&user.applications, &user.user_services, &user.containers]),
+                metrics: sum_lists(&[&user.applications, &user.user_services, &user.containers]),
                 expandable: true,
             });
             if expand.contains(&id) {

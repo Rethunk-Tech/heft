@@ -53,7 +53,7 @@ pub fn print_table(interval: Duration) -> Result<(), Error> {
             1,
             &format!("{} ({})", user.name, user.uid),
             user_nproc(user),
-            &sum_lists([&user.applications, &user.user_services, &user.containers]),
+            &sum_lists(&[&user.applications, &user.user_services, &user.containers]),
         )?;
         write_folder(&mut out, 2, "Applications", &user.applications)?;
         write_folder(&mut out, 2, "User Services", &user.user_services)?;

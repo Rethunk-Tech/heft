@@ -264,13 +264,6 @@ pub fn helper_id(p: &Process) -> Option<String> {
     None
 }
 
-pub fn synthetic_from_cgroup(cgroup: &str) -> Option<(String, String)> {
-    let id = docker_scope_id(cgroup)?;
-    let short: String = id.chars().take(12).collect();
-    let title = format!("docker-{short}");
-    Some((title.clone(), title))
-}
-
 pub fn project_identity(
     name: &str,
     labels: &HashMap<String, String>,

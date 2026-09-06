@@ -182,23 +182,18 @@ fn container_place(p: &Process, containers: &ContainerIndex) -> Option<Place> {
             member: info.member_name.clone(),
         });
     }
-    if docker_scope_id(&p.cgroup).is_some() || containers::helper_id(p).is_some() {
-        let (key, title) = containers::synthetic_from_cgroup(&p.cgroup).unwrap_or_else(|| {
-            let id = docker_scope_id(&p.cgroup)
-                .or_else(|| containers::helper_id(p))
-                .unwrap_or_else(|| name_of(p));
-            let short: String = id.chars().take(12).collect();
-            let t = format!("docker-{short}");
-            (t.clone(), t)
-        });
+    let scope = docker_scope_id(&p.cgroup);
+    if let Some(id) = scope.clone().or_else(|| containers::helper_id(p)) {
+        let short: String = id.chars().take(12).collect();
+        let title = format!("docker-{short}");
         return Some(Place {
             folder: Folder::Containers,
-            uid: containers
-                .engined_uid
-                .filter(|_| key.starts_with("engined-")),
-            key,
+            // Only a cgroup id is known on this path, so there is no name or
+            // label to attribute an owner from; lookup_process does that.
+            uid: None,
+            key: title.clone(),
             title,
-            instance: identity::instance_key(p, docker_scope_id(&p.cgroup).as_deref()),
+            instance: identity::instance_key(p, scope.as_deref()),
             member: None,
         });
     }

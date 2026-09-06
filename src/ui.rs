@@ -909,4 +909,107 @@ mod tests {
         let mid = format!("] {:>5}%  ", fmt_pct(tree.cpu_pct)).len();
         assert_eq!(bar, width - " CPU [".len() - mid - "usr/sys/wait".len());
     }
+
+    fn flat(depth: u16, name: &str) -> Flat {
+        Flat {
+            id: name.to_string(),
+            depth,
+            name: name.to_string(),
+            nproc: 1,
+            metrics: Metrics::default(),
+            expandable: false,
+        }
+    }
+
+    fn names(rows: &[Flat]) -> Vec<&str> {
+        rows.iter().map(|r| r.name.as_str()).collect()
+    }
+
+    /// Host / alice / {Applications / [firefox, cursor], User Services / pipewire}
+    /// and Host / bob / Applications / vim.
+    fn filter_rows() -> Vec<Flat> {
+        vec![
+            flat(0, "Host"),
+            flat(1, "alice"),
+            flat(2, "Applications"),
+            flat(3, "firefox"),
+            flat(3, "cursor"),
+            flat(2, "User Services"),
+            flat(3, "pipewire"),
+            flat(1, "bob"),
+            flat(2, "Applications"),
+            flat(3, "vim"),
+        ]
+    }
+
+    #[test]
+    fn keep_matches_keeps_the_path_to_a_leaf() {
+        let mut rows = filter_rows();
+        keep_matches(&mut rows, "firefox");
+        assert_eq!(names(&rows), ["Host", "alice", "Applications", "firefox"]);
+    }
+
+    #[test]
+    fn keep_matches_also_keeps_shallower_rows_that_are_not_ancestors() {
+        // The retained depth is the match's own depth and never tightens while
+        // walking back, so every earlier row shallower than the match survives
+        // as far as the preceding depth-0 row -- alice's subtree rides along
+        // with a match under bob.
+        let mut rows = filter_rows();
+        keep_matches(&mut rows, "vim");
+        assert_eq!(
+            names(&rows),
+            [
+                "Host",
+                "alice",
+                "Applications",
+                "User Services",
+                "bob",
+                "Applications",
+                "vim",
+            ]
+        );
+    }
+
+    #[test]
+    fn keep_matches_drops_children_of_a_matching_folder() {
+        let mut rows = filter_rows();
+        keep_matches(&mut rows, "applications");
+        assert_eq!(
+            names(&rows),
+            ["Host", "alice", "Applications", "bob", "Applications"]
+        );
+    }
+
+    #[test]
+    fn keep_matches_lowercases_the_name_but_not_the_filter() {
+        let mut rows = filter_rows();
+        keep_matches(&mut rows, "user services");
+        assert_eq!(names(&rows), ["Host", "alice", "User Services"]);
+        // Callers hand in an already-lowercased needle; a capital drops everything.
+        let mut rows = filter_rows();
+        keep_matches(&mut rows, "Firefox");
+        assert!(rows.is_empty());
+    }
+
+    #[test]
+    fn sort_labels_round_trip() {
+        for s in Sort::all() {
+            assert_eq!(Sort::from_label(s.label()), s, "label {}", s.label());
+        }
+    }
+
+    #[test]
+    fn sort_next_cycles_every_variant() {
+        let all = Sort::all();
+        let mut s = all[0];
+        let mut seen = Vec::new();
+        for _ in 0..all.len() {
+            s = s.next();
+            seen.push(s);
+        }
+        let mut expect: Vec<Sort> = all[1..].to_vec();
+        expect.push(all[0]);
+        assert_eq!(seen, expect);
+    }
 }

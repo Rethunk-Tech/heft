@@ -5,6 +5,7 @@ use clap::Parser;
 #[derive(Parser)]
 #[command(
     name = "heft",
+    version,
     about = "Read-only Linux application-weight process monitor"
 )]
 struct Cli {

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Added
+
+- Discrete GPUs get a VRAM bar measured against the card's own
+  `mem_info_vram_total`. It shares the MEMORY header row with the MEM bar
+  rather than adding a third row, so a desktop-GPU user no longer sees VRAM
+  silently dropped from the header.
+
 ### Changed
 
 - Container ownership comes from bind-mount sources: a container with no
@@ -10,6 +17,13 @@
   `/var/lib/docker/volumes`), and a container that mounts only root-owned
   paths still sits on Host → Containers, so any tool laying out per-user bind
   mounts is attributed rather than only one vendor's.
+
+### Fixed
+
+- A crash helper unpacked under a temp root no longer invents an Applications
+  row from the mount directory (`/tmp/mount` rendered as a row literally
+  titled `mount`). AppImages mount at a per-run path, so that name was never
+  an app identity; the helper now bills to the ancestor that launched it.
 
 ## 0.1.0 - 2026-09-06
 

@@ -108,7 +108,8 @@ fn read_u64(path: &Path) -> Option<u64> {
 }
 
 /// APU / unified: sysfs VRAM is a carve-out of `MemTotal` (GTT covers most of RAM),
-/// not a second device. Discrete VRAM as its own tank is out of scope.
+/// not a second device. False means discrete, which `ui::mem_header_line` renders
+/// as its own tank against `vram_total` rather than folding it into `MemTotal`.
 pub fn is_unified(mem_total: u64, gpu: &GpuPool) -> bool {
     let Some(vram) = gpu.vram_total.filter(|v| *v > 0) else {
         return false;

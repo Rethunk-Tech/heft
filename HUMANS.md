@@ -56,10 +56,12 @@ Other users, User Services, Host-level Containers, and System start collapsed.
 ## What the tree means
 
 - **Host** is the machine. The header is two unbordered rows: stacked CPU
-  (usr/sys/wait from `/proc/stat`) and one MEMORY bar whose width is MemTotal.
-  Where memory is unified, VRAM and GTT are carve-outs of that same pool, not
-  a second tank. The Host row sums only the PIDs heft can see, so it can sit
-  below the header.
+  (usr/sys/wait from `/proc/stat`) and a MEMORY row. Where memory is unified,
+  VRAM and GTT are carve-outs of that same pool, not a second tank, so the row
+  is one MEMORY bar whose width is MemTotal. With a discrete card the MEMORY
+  row splits in half: MEM against MemTotal, and VRAM against the card's own
+  total. The Host row sums only the PIDs heft can see, so it can sit below the
+  header.
 - **User** is a unix uid. Terminals, shells, and the compositor live under that
   user — not as Host.
 - **Applications** vs **User Services**: a user-instance `*.service` whose name

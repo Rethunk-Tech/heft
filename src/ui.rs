@@ -497,8 +497,36 @@ fn cpu_header_line(tree: &HostTree, width: usize) -> Line<'static> {
     Line::from(spans)
 }
 
+/// `LABEL [bar] used/total  legend` sized to exactly `width` columns (the bar
+/// absorbs the slack), so two of these can share one header row.
+fn bar_group(
+    label: &str,
+    width: usize,
+    parts: &[(u64, Color)],
+    cap: u64,
+    used: u64,
+    total: u64,
+    labels: &[(&str, Color)],
+) -> Vec<Span<'static>> {
+    let prefix = format!(" {label} [");
+    let mid = format!("] {}/{}  ", fmt_bytes(Some(used)), fmt_bytes(Some(total)));
+    let (tail, legend_len) = legend(labels);
+    let bar_w = width.saturating_sub(prefix.len() + mid.len() + legend_len);
+    let mut spans = vec![Span::raw(prefix)];
+    spans.extend(stacked_bar(bar_w, parts, cap.max(1)));
+    spans.push(Span::raw(mid));
+    spans.extend(tail);
+    spans
+}
+
 fn mem_header_line(tree: &HostTree, width: usize) -> Line<'static> {
     let host = host_metrics(tree);
+    // Discrete VRAM is a second device, so measuring it against MemTotal is
+    // meaningless; it gets its own capacity instead. Unified (APU) VRAM/GTT are
+    // carve-outs of MemTotal and stay inside the MEM bar.
+    let discrete = (!tree.unified_memory)
+        .then(|| tree.vram_total_bytes.filter(|v| *v > 0))
+        .flatten();
     let (vram, gtt) = if tree.unified_memory {
         (host.vram_bytes.unwrap_or(0), host.gtt_bytes.unwrap_or(0))
     } else {
@@ -512,31 +540,43 @@ fn mem_header_line(tree: &HostTree, width: usize) -> Line<'static> {
         cache: tree.mem_cached_bytes,
         buffers: tree.mem_buffers_bytes,
     });
-    let prefix = " MEM [";
-    let mid = format!(
-        "] {}/{}  ",
-        fmt_bytes(Some(tree.mem_used_bytes)),
-        fmt_bytes(Some(tree.mem_total_bytes))
+    // Rejected a third header row: AGENTS.md fixes the header at two unbordered
+    // rows with rules above and below, so the second tank splits this row.
+    let mem_width = if discrete.is_some() { width / 2 } else { width };
+    let mut labels: Vec<(&str, Color)> = Vec::new();
+    if discrete.is_none() {
+        labels.push(("vram", Color::LightRed));
+        labels.push(("gtt", Color::LightCyan));
+    }
+    labels.push(("cache", Color::Blue));
+    labels.push(("buf", Color::Green));
+    let mut spans = bar_group(
+        "MEM",
+        mem_width,
+        &[
+            (seg.vram, Color::LightRed),
+            (seg.gtt, Color::LightCyan),
+            (seg.cache, Color::Blue),
+            (seg.buffers, Color::Green),
+            (seg.anon, Color::Gray),
+        ],
+        tree.mem_total_bytes,
+        tree.mem_used_bytes,
+        tree.mem_total_bytes,
+        &labels,
     );
-    let (tail, legend_len) = legend(&[
-        ("vram", Color::LightRed),
-        ("gtt", Color::LightCyan),
-        ("cache", Color::Blue),
-        ("buf", Color::Green),
-    ]);
-    let bar_w = width.saturating_sub(prefix.len() + mid.len() + legend_len);
-    let cap = tree.mem_total_bytes.max(1);
-    let parts = [
-        (seg.vram, Color::LightRed),
-        (seg.gtt, Color::LightCyan),
-        (seg.cache, Color::Blue),
-        (seg.buffers, Color::Green),
-        (seg.anon, Color::Gray),
-    ];
-    let mut spans = vec![Span::raw(prefix)];
-    spans.extend(stacked_bar(bar_w, &parts, cap));
-    spans.push(Span::raw(mid));
-    spans.extend(tail);
+    if let Some(vram_total) = discrete {
+        let vram_used = tree.vram_used_bytes.unwrap_or(0).min(vram_total);
+        spans.extend(bar_group(
+            "VRAM",
+            width - mem_width,
+            &[(vram_used, Color::LightRed)],
+            vram_total,
+            vram_used,
+            vram_total,
+            &[],
+        ));
+    }
     Line::from(spans)
 }
 
@@ -762,6 +802,51 @@ mod tests {
             mem_header_line(&tree, width).to_string().chars().count(),
             width
         );
+    }
+
+    fn tree_with_gpu(gpu: &mem::GpuPool) -> HostTree {
+        let mem_total = 32 * 1024 * 1024 * 1024;
+        HostTree {
+            mem_used_bytes: 8 * 1024 * 1024 * 1024,
+            mem_total_bytes: mem_total,
+            vram_used_bytes: gpu.vram_used,
+            vram_total_bytes: gpu.vram_total,
+            unified_memory: mem::is_unified(mem_total, gpu),
+            ..HostTree::default()
+        }
+    }
+
+    #[test]
+    fn discrete_vram_gets_its_own_capacity() {
+        let g = 1024 * 1024 * 1024;
+        let tree = tree_with_gpu(&mem::GpuPool {
+            vram_used: Some(6 * g),
+            vram_total: Some(12 * g),
+            gtt_total: Some(4 * g),
+        });
+        assert!(!tree.unified_memory);
+        let text = mem_header_line(&tree, 100).to_string();
+        // The bug this guards: VRAM measured against MemTotal instead of the
+        // card's own 12G.
+        assert!(text.contains("VRAM ["), "{text}");
+        assert!(text.contains("6.0G/12.0G"), "{text}");
+        assert!(text.contains("8.0G/32.0G"), "{text}");
+        assert_eq!(text.chars().count(), 100);
+    }
+
+    #[test]
+    fn unified_vram_stays_in_the_mem_bar() {
+        let g = 1024 * 1024 * 1024;
+        let tree = tree_with_gpu(&mem::GpuPool {
+            vram_used: Some(g / 2),
+            vram_total: Some(g),
+            gtt_total: Some(30 * g),
+        });
+        assert!(tree.unified_memory);
+        let text = mem_header_line(&tree, 100).to_string();
+        assert!(!text.contains("VRAM ["), "{text}");
+        assert!(text.contains("vram/gtt/cache/buf"), "{text}");
+        assert_eq!(text.chars().count(), 100);
     }
 
     fn flat(depth: u16, name: &str) -> Flat {

@@ -55,7 +55,9 @@ Never read `/proc/pid/mem`. Never ptrace.
   launchers and other generics; do not invent a script-basename identity
   (`context7-mcp`) when a launching agent (`claude`, `cursor`) is above.
   Processes stay visible on expand. `crash_helper_app` matches exe/cmdline
-  even when PPID is user systemd.
+  even when PPID is user systemd, but never derives an identity from a path
+  under `/tmp`, `/var/tmp`, or `/run`: an AppImage mount directory is per-run,
+  so those fall back to the ancestor walk.
 - User Services grouping is one identity for processes that share a systemd
   unit family, RPM/package family, D-Bus well-known name family, or documented
   process architecture — not a comm prefix. Mappings live in
@@ -100,8 +102,8 @@ Never read `/proc/pid/mem`. Never ptrace.
 | --- | --- |
 | CPU bar | `/proc/stat` Δ user+nice / system+irq+softirq / iowait; idle+steal unfilled |
 | MEM bar | one MemTotal width when APU VRAM is unified; VRAM/GTT resident, then Cached/Buffers, then anon; clip so the stack never exceeds `used.min(MemTotal)` (`mem::clip_used`) |
-| Discrete VRAM | out of scope as a second tank |
-| Layout | 2 unbordered header rows; persistent rules: header↔tree and tree↔footer |
+| Discrete VRAM | own tank against `mem_info_vram_total`, sharing the MEMORY row with the MEM bar (half width each); `vram`/`gtt` drop from that legend |
+| Layout | 2 unbordered header rows (a second tank splits the MEMORY row, never adds a third); persistent rules: header↔tree and tree↔footer |
 | Disk R/W | table columns only (formatted rates change width every tick) |
 | Ordering | one comparator in `once.rs` for every level; a `None` metric sorts last in either direction, name breaks ties, stable over `group::proc_forest` pid order |
 

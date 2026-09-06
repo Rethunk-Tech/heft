@@ -383,14 +383,11 @@ mod tests {
 
     #[test]
     fn supabase_project() {
-        assert_eq!(
-            supabase_project_from_name("supabase_db_caldera"),
-            Some("caldera")
-        );
-        let labels = HashMap::from([("com.supabase.cli.project".into(), "caldera".into())]);
-        let (k, m) = project_identity("supabase_db_caldera", &labels);
-        assert_eq!(k, "supabase:caldera");
-        assert_eq!(m.as_deref(), Some("supabase_db_caldera"));
+        assert_eq!(supabase_project_from_name("supabase_db_demo"), Some("demo"));
+        let labels = HashMap::from([("com.supabase.cli.project".into(), "demo".into())]);
+        let (k, m) = project_identity("supabase_db_demo", &labels);
+        assert_eq!(k, "supabase:demo");
+        assert_eq!(m.as_deref(), Some("supabase_db_demo"));
         let (k, m) = project_identity("spec-runner-7", &HashMap::new());
         assert_eq!(k, "spec-runner-7");
         assert!(m.is_none());

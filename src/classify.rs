@@ -73,8 +73,6 @@ const COMPOSITORS: &[&str] = &[
     "cosmic-comp",
 ];
 
-const WORKER_COMMS: &[&str] = &["chrome_crashpad_handler", "chrome_crashpad", "crashhelper"];
-
 pub fn basename(path: &str) -> String {
     path.rsplit('/').next().unwrap_or(path).to_string()
 }
@@ -366,7 +364,7 @@ fn app_from_crash_helper_path(s: &str) -> Option<String> {
     if lower.contains("/firefox/") || lower.ends_with("/firefox") {
         return Some("firefox".to_string());
     }
-    if !is_crash_helper_name(&basename(s)) {
+    if !is_crash_helper_name(&norm(&basename(s))) {
         return None;
     }
     let dir = s.rsplit_once('/')?.0;
@@ -409,13 +407,7 @@ pub fn is_interactive_shell(p: &Process) -> bool {
 }
 
 pub fn is_worker(p: &Process) -> bool {
-    if WORKER_COMMS
-        .iter()
-        .any(|c| p.comm == *c || name_of(p) == *c)
-    {
-        return true;
-    }
-    p.cmdline.iter().any(|a| a.starts_with("--type="))
+    names_match(p, is_crash_helper_name) || p.cmdline.iter().any(|a| a.starts_with("--type="))
 }
 
 pub fn is_foldable_helper(p: &Process) -> bool {

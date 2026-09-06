@@ -25,7 +25,7 @@ src/config.rs        XDG view.json; persist only on explicit save
 src/once.rs          table and JSON
 src/ui.rs            ratatui header + tree table
 tests/grouping.rs    integration tests over tests/fixtures/
-tests/fixtures/      GUI + docker grouping snapshots
+tests/fixtures/      GUI grouping snapshot
 ```
 
 No `sysinfo` crate. No `nix` unless rustix cannot do it; v1 uses `std` + `libc`.

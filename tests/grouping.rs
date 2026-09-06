@@ -482,6 +482,11 @@ fn gui_and_docker_fixture() {
     assert!(has(&user.containers, "engined-whisper"));
     assert!(has(&user.containers, "engined-llama"));
     assert!(has(&user.containers, "engined-kokoro"));
+    assert!(
+        has(&user.containers, "spec-runner-7"),
+        "engined.spec without an engined- name prefix must bill to the engined uid: {:?}",
+        titles(&user.containers)
+    );
     assert!(!has(&user.containers, "engined"));
     assert!(!has(&user.containers, "dockerd"));
     assert!(!has(&user.containers, "containerd"));

@@ -44,11 +44,14 @@ fn path_owner(path: &Path) -> Option<u32> {
 #[derive(Clone, Debug)]
 pub(crate) struct ContainerInfo {
     pub(crate) id: String,
-    pub(crate) name: String,
     pub(crate) ident_key: String,
     pub(crate) ident_title: String,
     pub(crate) member_name: Option<String>,
     pub(crate) owner_uid: Option<u32>,
+    /// Named `engined-*` or carrying the `engined.spec` label. Labels are not
+    /// retained (the spec label is not a merge key), so the signal is captured
+    /// here: the engined uid is only known after the index is built.
+    engined: bool,
 }
 
 #[derive(Default)]
@@ -76,7 +79,6 @@ impl InspectCache {
 pub struct ContainerIndex {
     by_id: HashMap<String, ContainerInfo>,
     by_ip: HashMap<String, String>,
-    pub(crate) engined_uid: Option<u32>,
 }
 
 impl ContainerIndex {
@@ -116,10 +118,7 @@ impl ContainerIndex {
         workdir_uids: &HashMap<PathBuf, u32>,
         engined_uid: Option<u32>,
     ) -> Self {
-        let mut idx = Self {
-            engined_uid,
-            ..Self::default()
-        };
+        let mut idx = Self::default();
         for item in items {
             if list_skip(item) {
                 continue;
@@ -132,6 +131,10 @@ impl ContainerIndex {
             });
             idx.insert_resolved(item, inspect, Some(workdir_uids));
         }
+        // Same order as the live sampler: the engined uid is only known after
+        // the walk that finds engined.service, so it lands on an index already
+        // built.
+        idx.apply_engined_uid(engined_uid);
         idx
     }
 
@@ -161,17 +164,16 @@ impl ContainerIndex {
                 .get("com.docker.compose.project.working_dir")
                 .cloned()
         });
-        let mut owner = workdir.as_ref().and_then(|p| {
+        let owner = workdir.as_ref().and_then(|p| {
             if let Some(map) = workdir_uids {
                 map.get(&PathBuf::from(p)).copied()
             } else {
                 path_owner(Path::new(p))
             }
         });
-        let engined = name.starts_with("engined-") || labels.contains_key("engined.spec");
-        if owner.is_none() && engined {
-            owner = self.engined_uid;
-        }
+        let engined = name.starts_with("engined-")
+            || ident_key.starts_with("engined-")
+            || labels.contains_key("engined.spec");
         let ips = inspect.map(Inspect::ips).unwrap_or_default();
         let running = inspect
             .and_then(|i| i.state.as_ref())
@@ -182,11 +184,11 @@ impl ContainerIndex {
         }
         let info = ContainerInfo {
             id,
-            name,
             ident_key,
             ident_title,
             member_name,
             owner_uid: owner,
+            engined,
         };
         self.index_ids(&info);
         for ip in ips {
@@ -228,11 +230,8 @@ impl ContainerIndex {
     }
 
     pub(crate) fn apply_engined_uid(&mut self, uid: Option<u32>) {
-        self.engined_uid = uid;
         for info in self.by_id.values_mut() {
-            if info.owner_uid.is_none()
-                && (info.name.starts_with("engined-") || info.ident_key.starts_with("engined-"))
-            {
+            if info.owner_uid.is_none() && info.engined {
                 info.owner_uid = uid;
             }
         }
@@ -437,11 +436,11 @@ mod tests {
     fn info(id: &str) -> ContainerInfo {
         ContainerInfo {
             id: id.into(),
-            name: "x".into(),
             ident_key: "x".into(),
             ident_title: "x".into(),
             member_name: None,
             owner_uid: None,
+            engined: false,
         }
     }
 

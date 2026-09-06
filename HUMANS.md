@@ -9,8 +9,17 @@ curl -fsSLO https://github.com/Rethunk-Tech/heft/releases/latest/download/heft-x
 install -Dm755 heft-x86_64-unknown-linux-musl ~/.local/bin/heft
 ```
 
-Every release also carries a `x86_64-unknown-linux-gnu` build and a `.sha256`
-beside each binary (`sha256sum -c heft-<target>.sha256`).
+Every release carries four binaries — `x86_64` and `aarch64`, each in a `musl`
+and a `gnu` build — with a `.sha256` beside each
+(`sha256sum -c heft-<target>.sha256`).
+
+The checksum proves the download arrived intact. To also prove it is the
+binary this repository built, every release binary carries a signed provenance
+statement:
+
+```sh
+gh attestation verify heft-x86_64-unknown-linux-musl --repo Rethunk-Tech/heft
+```
 
 Or build it, which is also how you get completions and the man page:
 

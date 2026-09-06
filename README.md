@@ -39,6 +39,8 @@ written.
 - **One row, every dimension** — CPU, PSS/RSS/swap, disk, GPU memory and
   engine percent, per-container network, threads and age. Hide the columns you
   do not want; a metric heft cannot read stays blank rather than reading zero.
+- **Slow, not just busy** — per-cgroup CPU/IO/memory stall percentages, so a
+  row that is blocked on the disk stops looking the same as one that is idle.
 - **TUI plus scripts** — fullscreen table by default; `--once` and `--json`
   for one sample, with `--sort` and `--filter` for the shape you want.
 

@@ -843,6 +843,7 @@ mod tests {
             }],
             ..HostTree::default()
         };
+        let mut tree = tree;
         let width = 80;
         let text = cpu_header_line(&tree, width).to_string();
         assert!(text.contains("usr"));
@@ -852,6 +853,17 @@ mod tests {
         // The only check that catches a legend whose labels disagree with the
         // width the bar subtracts: the rendered line must land on `width`.
         assert_eq!(text.chars().count(), width);
+        assert_eq!(cpu_header_line(&tree, 200).to_string().chars().count(), 200);
+
+        // The PSI tail is subtracted from the same bar width, so it needs the
+        // same check: a host with pressure must still land on `width`, and a
+        // resource the kernel does not account must not shift the other two.
+        tree.psi_cpu_avg10 = Some(12.75);
+        tree.psi_io_avg10 = None;
+        tree.psi_mem_avg10 = Some(0.0);
+        let withpsi = cpu_header_line(&tree, width).to_string();
+        assert!(withpsi.contains("psi 12.8/-/0.0"), "{withpsi}");
+        assert_eq!(withpsi.chars().count(), width);
         assert_eq!(cpu_header_line(&tree, 200).to_string().chars().count(), 200);
         assert_eq!(
             mem_header_line(&tree, width).to_string().chars().count(),

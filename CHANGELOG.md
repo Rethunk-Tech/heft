@@ -1,5 +1,63 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `CPU ST` / `IO ST` / `MEM ST`, per-cgroup stall percentages from the kernel's
+  pressure stall information, plus a `psi` figure on the host header. `%CORE`
+  says a row used the processor and `PSS` says it holds memory; neither can
+  tell an application halfway through its work from one blocked on the disk,
+  because both look idle. The columns are Δ`some ... total=` over wall clock so
+  they share a time base with `%CORE` and the disk rates beside them, while the
+  header uses the kernel's own `avg10`, where a machine-wide trend reads better
+  smoothed — the same deliberate split `gfx%`/`compute%` already carries.
+
+  A row carries a figure only when it *is* one non-root cgroup. A stall is a
+  percentage of an interval and not a quantity, so two cgroups cannot be added,
+  and `Metrics::accumulate` leaves the trio out exactly as it leaves out the
+  netns pair. That excludes more than it first appears: `user-<uid>.slice` is
+  not heft's User row, because a rootful container lives in `system.slice` and
+  is still billed to its owner, and `system.slice` is not the System row,
+  because kernel threads sit in the root cgroup. A row resolving to the root
+  cgroup is blank because that pressure is the machine's — the rule that
+  already blanks a `--network=host` container. A process row is blank unless
+  its cgroup holds only that pid, since a cgroup's stall is not one process's.
+  Measured, 67% of user identity rows carry a figure on one desktop, and
+  sampling costs about 5 ms a tick.
+
+- `--user <NAME|UID>`, repeatable, cutting the tree to one owner's branch.
+  System and Host-level Containers survive it, since they are the machine's
+  cost and belong to nobody and a tree without them stops explaining the header
+  above it. It applies to `--json` too, unlike `--filter`, because the JSON
+  tree does have User nodes for a prune to mean something. It is never written
+  to `view.json`: a saved user cut would hide most of the machine on every
+  later run for a reason held by the file rather than the command line.
+
+### Changed
+
+- The `/proc` walk is split across threads. Almost all of its wall clock was
+  this process waiting on the kernel to build one small file at a time, so the
+  pid list now goes to a `thread::scope`. Ten interleaved runs of
+  `--once --interval 0.05` on a 777-pid host: 1.02s to 0.41s. The gain is not
+  uniform — an ordinary tick goes 120ms to 20ms, which is what makes the
+  documented 0.05s `--interval` floor reachable rather than aspirational, while
+  a PSS tick only goes 850ms to 340ms and still stretches its interval, because
+  `smaps_rollup` makes the kernel walk page tables and that is memory-bound.
+
+- Every bar segment now carries its own fill glyph as well as its own colour,
+  and the legend prints that glyph beside the label (`█usr/▓sys/▒wait`). Hue
+  alone could not carry the distinction: cyan against magenta is the pair
+  deuteranopia collapses, and a piped or recorded frame keeps the characters
+  while losing the styling. Unconditional rather than gated on `NO_COLOR`, so
+  there is one render path instead of two that drift, and nobody needs to know
+  an environment variable to read a bar.
+
+- Releases now carry `aarch64` binaries beside `x86_64`, each in a `musl` and a
+  `gnu` build, and every release binary carries a signed build provenance
+  statement (`gh attestation verify`). A published `.sha256` proves a download
+  arrived intact; provenance proves which workflow at which commit produced it.
+
 ## 0.3.0 - 2026-09-06
 
 ### Added

@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.1.0 - 2026-09-06
 
-First release. Nothing is tagged yet, so this is what `heft` 0.1.0 contains.
+First release.
 
 ### Added
 

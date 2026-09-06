@@ -1,5 +1,7 @@
 use std::fs;
 
+use crate::proc::field_u64;
+
 pub fn read_io(pid: u32) -> (Option<u64>, Option<u64>) {
     match fs::read_to_string(format!("/proc/{pid}/io")) {
         Ok(text) => parse_io(&text),
@@ -11,10 +13,10 @@ pub fn parse_io(text: &str) -> (Option<u64>, Option<u64>) {
     let mut r = None;
     let mut w = None;
     for line in text.lines() {
-        if let Some(v) = line.strip_prefix("read_bytes:") {
-            r = v.trim().parse().ok();
-        } else if let Some(v) = line.strip_prefix("write_bytes:") {
-            w = v.trim().parse().ok();
+        if let Some(v) = field_u64(line, "read_bytes:") {
+            r = Some(v);
+        } else if let Some(v) = field_u64(line, "write_bytes:") {
+            w = Some(v);
         }
     }
     (r, w)
@@ -28,12 +30,8 @@ pub fn read_pss_kb(pid: u32) -> Option<u64> {
 }
 
 pub fn parse_pss_kb(text: &str) -> Option<u64> {
-    for line in text.lines() {
-        if let Some(rest) = line.strip_prefix("Pss:") {
-            return rest.split_whitespace().next()?.parse().ok();
-        }
-    }
-    None
+    // `Pss:` only — smaps_rollup also carries Pss_Anon/Pss_File/Pss_Shmem.
+    text.lines().find_map(|l| field_u64(l, "Pss:"))
 }
 
 #[cfg(test)]

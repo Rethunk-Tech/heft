@@ -132,16 +132,24 @@ fn parse_stat(stat: &str) -> Option<StatFields> {
     })
 }
 
+/// One `/proc` `Key: value` line as a number. Takes the first whitespace token
+/// only: meminfo and smaps_rollup append a ` kB` unit that parsing the whole
+/// remainder would reject. `None` covers both a missing key and an unparsable
+/// value; each caller decides whether that is a blank cell or a default.
+pub(crate) fn field_u64(line: &str, key: &str) -> Option<u64> {
+    line.strip_prefix(key)?
+        .split_whitespace()
+        .next()?
+        .parse()
+        .ok()
+}
+
 fn read_uid(status_path: &str) -> Option<u32> {
     // /proc/<pid> inode uid is euid; grouping uses ruid (Uid: field 1). They
     // diverge on setuid (e.g. fusermount3).
     let text = fs::read_to_string(status_path).ok()?;
-    for line in text.lines() {
-        if let Some(rest) = line.strip_prefix("Uid:") {
-            return rest.split_whitespace().next()?.parse().ok();
-        }
-    }
-    None
+    let uid = text.lines().find_map(|l| field_u64(l, "Uid:"))?;
+    u32::try_from(uid).ok()
 }
 
 fn read_exe(path: &str) -> Option<String> {
@@ -329,6 +337,20 @@ mod tests {
         assert!(!pss_due(Some(start), start, five));
         assert!(!pss_due(Some(start), start + Duration::from_secs(4), five));
         assert!(pss_due(Some(start), start + five, five));
+    }
+
+    #[test]
+    fn field_u64_takes_first_token_and_blanks_on_failure() {
+        assert_eq!(field_u64("MemTotal:  1000 kB", "MemTotal:"), Some(1000));
+        assert_eq!(field_u64("read_bytes: 10", "read_bytes:"), Some(10));
+        assert_eq!(
+            field_u64("Uid:\t1000\t1000\t1000\t1000", "Uid:"),
+            Some(1000)
+        );
+        // An unreadable metric must stay blank, never fall back to 0.
+        assert_eq!(field_u64("Pss: kB", "Pss:"), None);
+        assert_eq!(field_u64("Pss_Anon: 4 kB", "Pss:"), None);
+        assert_eq!(field_u64("Rss: 9 kB", "Pss:"), None);
     }
 
     #[test]

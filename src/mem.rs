@@ -1,6 +1,8 @@
 use std::fs;
 use std::path::Path;
 
+use crate::proc::field_u64;
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct RamInfo {
     pub used_bytes: u64,
@@ -48,13 +50,13 @@ pub fn parse_meminfo(text: &str) -> RamInfo {
     let mut buffers = 0u64;
     let mut cached = 0u64;
     for line in text.lines() {
-        if let Some(v) = kb_field(line, "MemTotal:") {
+        if let Some(v) = field_u64(line, "MemTotal:") {
             total = v.saturating_mul(1024);
-        } else if let Some(v) = kb_field(line, "MemAvailable:") {
+        } else if let Some(v) = field_u64(line, "MemAvailable:") {
             avail = v.saturating_mul(1024);
-        } else if let Some(v) = kb_field(line, "Buffers:") {
+        } else if let Some(v) = field_u64(line, "Buffers:") {
             buffers = v.saturating_mul(1024);
-        } else if let Some(v) = kb_field(line, "Cached:") {
+        } else if let Some(v) = field_u64(line, "Cached:") {
             cached = v.saturating_mul(1024);
         }
     }
@@ -64,11 +66,6 @@ pub fn parse_meminfo(text: &str) -> RamInfo {
         buffers_bytes: buffers,
         cached_bytes: cached,
     }
-}
-
-fn kb_field(line: &str, key: &str) -> Option<u64> {
-    let rest = line.strip_prefix(key)?.trim();
-    rest.split_whitespace().next()?.parse().ok()
 }
 
 pub fn read_gpu() -> GpuPool {

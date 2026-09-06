@@ -22,7 +22,7 @@ src/identity.rs      cgroup parse, merge key + display name
 src/containers.rs    GET-only docker/podman; project vs per-container
 src/group.rs         Host → User → Applications | User Services | Containers, System
 src/config.rs        XDG view.json; persist only on explicit save
-src/once.rs          table and JSON
+src/once.rs          columns, tree ordering, table and JSON
 src/ui.rs            ratatui header + tree table
 tests/grouping.rs    integration tests over tests/fixtures/
 tests/fixtures/      GUI grouping snapshot

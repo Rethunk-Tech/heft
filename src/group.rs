@@ -31,7 +31,9 @@ pub fn build_tree(
 ) -> HostTree {
     let places = resolve(curr, containers);
     let metrics = metrics_map(prev, curr, elapsed, consts);
-    assemble(curr, &places, &metrics, header)
+    let mut tree = assemble(curr, &places, &metrics, header);
+    crate::once::sort_default(&mut tree);
+    tree
 }
 
 fn metrics_map(
@@ -403,14 +405,6 @@ fn assemble(
             .then(a.name.cmp(&b.name))
             .then(a.uid.cmp(&b.uid))
     });
-    for u in &mut user_list {
-        sort_idents(&mut u.applications);
-        sort_idents(&mut u.user_services);
-        sort_idents(&mut u.containers);
-    }
-    sort_idents(&mut host_containers);
-    sort_idents(&mut system);
-
     header.users = user_list;
     header.containers = host_containers;
     header.system = system;
@@ -433,7 +427,7 @@ fn ident_node(
             .map_or_else(|| format!("pid:{pid}"), |p| p.instance.clone());
         by_inst.entry(inst).or_default().push(*pid);
     }
-    let mut instances: Vec<InstanceNode> = by_inst
+    let instances: Vec<InstanceNode> = by_inst
         .into_iter()
         .map(|(k, inst_pids)| InstanceNode {
             nproc: u32::try_from(inst_pids.len()).unwrap_or(u32::MAX),
@@ -442,13 +436,7 @@ fn ident_node(
             key: k,
         })
         .collect();
-    instances.sort_by(|a, b| {
-        b.metrics
-            .cpu_machine_pct
-            .total_cmp(&a.metrics.cpu_machine_pct)
-            .then(a.key.cmp(&b.key))
-    });
-    let mut members: Vec<MemberContainer> = members_map
+    let members: Vec<MemberContainer> = members_map
         .iter()
         .map(|(name, mpids)| MemberContainer {
             id: name.clone(),
@@ -458,7 +446,6 @@ fn ident_node(
             processes: proc_forest(mpids, curr, metrics),
         })
         .collect();
-    members.sort_by(|a, b| a.title.cmp(&b.title));
     IdentNode {
         id: key.to_string(),
         title: title.to_string(),
@@ -467,16 +454,6 @@ fn ident_node(
         instances,
         containers: members,
     }
-}
-
-fn sort_idents(v: &mut [IdentNode]) {
-    v.sort_by(|a, b| {
-        b.metrics
-            .pss_bytes
-            .unwrap_or(0)
-            .cmp(&a.metrics.pss_bytes.unwrap_or(0))
-            .then(a.title.cmp(&b.title))
-    });
 }
 
 fn sum_metrics(pids: &[u32], metrics: &HashMap<u32, Metrics>) -> Metrics {

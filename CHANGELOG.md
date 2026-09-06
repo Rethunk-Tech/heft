@@ -4,6 +4,10 @@
 
 ### Changed
 
+- The TUI `c` and `d` keys now reorder instance, member-container and process
+  rows too, not just identity rows. Every level of the tree, and the `--once` /
+  `--json` order, starts PSS descending as documented; a metric heft cannot
+  read sorts last in either direction instead of as a zero.
 - Disk rates below 1 KiB/s round instead of truncating; they no longer
   round-trip through an integer byte count.
 - TUI start no longer creates `$XDG_STATE_HOME/heft` or `$XDG_CACHE_HOME/heft`.

@@ -19,7 +19,7 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph, Row, Table};
 use crate::config::{self, View};
 use crate::cpu;
 use crate::mem::{self, MemParts};
-use crate::once::{COLUMNS, fmt_bytes, fmt_pct};
+use crate::once::{COLUMNS, Sort, fmt_bytes, fmt_pct, sort_tree};
 use crate::proc;
 use crate::types::{
     Error, HostTree, IdentNode, Metrics, ProcNode, folder_nproc, host_metrics, sum_idents,
@@ -27,34 +27,6 @@ use crate::types::{
 };
 
 const HEADER_ROWS: u16 = 2;
-
-/// Index into `once::COLUMNS`; the saved view stores that column's label.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Sort(usize);
-
-impl Sort {
-    /// Only the tests enumerate the sorts; `next` and `from_label` index
-    /// `COLUMNS` directly.
-    #[cfg(test)]
-    fn all() -> Vec<Sort> {
-        (0..COLUMNS.len()).map(Sort).collect()
-    }
-
-    fn label(self) -> &'static str {
-        COLUMNS[self.0].label
-    }
-
-    fn from_label(s: &str) -> Self {
-        let find = |l: &str| COLUMNS.iter().position(|c| c.label == l);
-        // An unknown label means a saved view from another column set; PSS is
-        // the documented default.
-        Sort(find(s).or_else(|| find("pss")).unwrap_or(0))
-    }
-
-    fn next(self) -> Self {
-        Sort((self.0 + 1) % COLUMNS.len())
-    }
-}
 
 struct App {
     tree: HostTree,
@@ -107,6 +79,13 @@ fn run_loop(
         help: false,
     };
     loop {
+        // Re-sorting an already ordered tree each frame is what lets `c` and
+        // `d` reorder every level without re-sampling.
+        sort_tree(
+            &mut app.tree,
+            Sort::from_label(&app.view.sort),
+            app.view.desc,
+        );
         let rows = flatten(&app.tree, &app.expand, &app.view);
         if app.cursor >= rows.len() {
             app.cursor = rows.len().saturating_sub(1);
@@ -153,7 +132,6 @@ struct Flat {
 
 fn flatten(tree: &HostTree, expand: &HashSet<String>, view: &View) -> Vec<Flat> {
     let filter = view.filter.to_ascii_lowercase();
-    let sort = Sort::from_label(&view.sort);
     let mut rows = Vec::new();
     let host_n = tree_host_nproc(tree);
     rows.push(Flat {
@@ -186,8 +164,6 @@ fn flatten(tree: &HostTree, expand: &HashSet<String>, view: &View) -> Vec<Flat> 
                         &mut rows,
                         &FolderPush {
                             expand,
-                            sort,
-                            desc: view.desc,
                             depth: 2,
                             id: &format!("user:{uid}/{slug}"),
                             title,
@@ -205,8 +181,6 @@ fn flatten(tree: &HostTree, expand: &HashSet<String>, view: &View) -> Vec<Flat> 
                 &mut rows,
                 &FolderPush {
                     expand,
-                    sort,
-                    desc: view.desc,
                     depth: 1,
                     id,
                     title,
@@ -242,8 +216,6 @@ fn keep_matches(rows: &mut Vec<Flat>, filter: &str) {
 
 struct FolderPush<'a> {
     expand: &'a HashSet<String>,
-    sort: Sort,
-    desc: bool,
     depth: u16,
     id: &'a str,
     title: &'a str,
@@ -262,9 +234,7 @@ fn push_folder(rows: &mut Vec<Flat>, p: &FolderPush<'_>) {
     if !p.expand.contains(p.id) {
         return;
     }
-    let mut ordered: Vec<&IdentNode> = p.idents.iter().collect();
-    ordered.sort_by(|a, b| cmp_ident(a, b, p.sort, p.desc));
-    for ident in ordered {
+    for ident in p.idents {
         let iid = format!("{}/{}", p.id, ident.id);
         rows.push(Flat {
             id: iid.clone(),
@@ -329,15 +299,6 @@ fn push_procs(
             push_procs(rows, expand, depth + 1, &id, &p.children);
         }
     }
-}
-
-fn cmp_ident(a: &IdentNode, b: &IdentNode, sort: Sort, desc: bool) -> std::cmp::Ordering {
-    let Some(key) = COLUMNS[sort.0].key else {
-        let ord = a.title.cmp(&b.title);
-        return if desc { ord } else { ord.reverse() };
-    };
-    let ord = key(a).total_cmp(&key(b));
-    if desc { ord.reverse() } else { ord }
 }
 
 fn handle_key(
@@ -733,15 +694,6 @@ mod tests {
     }
 
     #[test]
-    fn default_sort_is_pss_desc() {
-        let v = View::default();
-        assert_eq!(v.sort, "pss");
-        assert!(v.desc);
-        assert_eq!(Sort::from_label("").label(), "pss");
-        assert_eq!(Sort::from_label("machine").label(), "machine");
-    }
-
-    #[test]
     fn help_text_aligns_keys() {
         let text = help_text();
         let lines: Vec<&str> = text.lines().collect();
@@ -880,27 +832,6 @@ mod tests {
         let mut rows = filter_rows();
         keep_matches(&mut rows, "Firefox");
         assert!(rows.is_empty());
-    }
-
-    #[test]
-    fn sort_labels_round_trip() {
-        for s in Sort::all() {
-            assert_eq!(Sort::from_label(s.label()), s, "label {}", s.label());
-        }
-    }
-
-    #[test]
-    fn sort_next_cycles_every_variant() {
-        let all = Sort::all();
-        let mut s = all[0];
-        let mut seen = Vec::new();
-        for _ in 0..all.len() {
-            s = s.next();
-            seen.push(s);
-        }
-        let mut expect: Vec<Sort> = all[1..].to_vec();
-        expect.push(all[0]);
-        assert_eq!(seen, expect);
     }
 
     fn ident(id: &str) -> IdentNode {

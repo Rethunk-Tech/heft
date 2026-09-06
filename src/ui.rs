@@ -19,7 +19,7 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph, Row, Table};
 use crate::config::{self, View};
 use crate::cpu;
 use crate::mem::{self, MemParts};
-use crate::once::{Columns, Sort, fmt_bytes, fmt_pct, keep_matches, keep_users, sort_tree};
+use crate::once::{Columns, Filter, Sort, fmt_bytes, fmt_pct, keep_matches, keep_users, sort_tree};
 use crate::proc;
 use crate::types::{
     Error, HostTree, IdentNode, Metrics, ProcNode, folder_nproc, host_metrics, sum_idents,
@@ -37,6 +37,12 @@ struct App {
     view: View,
     cols: Columns,
     filter_edit: bool,
+    /// The last `/` text that compiled. Kept rather than recomputed per frame
+    /// because a pattern is half-written for most of the keystrokes that make
+    /// it: `app[` is not a regex, and dropping the filter for that frame would
+    /// flash the whole tree back on screen between two characters. The footer
+    /// says when the text on screen is not what is filtering.
+    filter_re: Option<Filter>,
     col_off: u16,
     status: String,
     help: bool,
@@ -71,6 +77,7 @@ fn run_loop(
     let slot = Arc::new(Mutex::new(None));
     let _sampler = proc::spawn_sampler(interval, pss_interval, slot.clone())?;
     let tree = proc::placeholder_tree();
+    let filter_re = Filter::new(&view.filter);
     let mut app = App {
         expand: default_expand(),
         tree,
@@ -80,6 +87,7 @@ fn run_loop(
         view,
         cols,
         filter_edit: false,
+        filter_re,
         col_off: 0,
         status: String::new(),
         help: false,
@@ -92,7 +100,7 @@ fn run_loop(
             Sort::from_label(&app.view.sort),
             app.view.desc,
         );
-        let rows = flatten(&app.tree, &app.expand, &app.view);
+        let rows = flatten(&app.tree, &app.expand, &app.view, app.filter_re.as_ref());
         if app.cursor >= rows.len() {
             app.cursor = rows.len().saturating_sub(1);
         }
@@ -137,8 +145,12 @@ struct Flat {
     expandable: bool,
 }
 
-fn flatten(tree: &HostTree, expand: &HashSet<String>, view: &View) -> Vec<Flat> {
-    let filter = view.filter.to_ascii_lowercase();
+fn flatten(
+    tree: &HostTree,
+    expand: &HashSet<String>,
+    view: &View,
+    filter: Option<&Filter>,
+) -> Vec<Flat> {
     let mut rows = Vec::new();
     let host_n = tree_host_nproc(tree);
     rows.push(Flat {
@@ -196,13 +208,13 @@ fn flatten(tree: &HostTree, expand: &HashSet<String>, view: &View) -> Vec<Flat> 
             );
         }
     }
-    if !filter.is_empty() {
-        keep_rows(&mut rows, &filter);
+    if let Some(filter) = filter.filter(|_| !view.filter.is_empty()) {
+        keep_rows(&mut rows, filter);
     }
     rows
 }
 
-fn keep_rows(rows: &mut Vec<Flat>, filter: &str) {
+fn keep_rows(rows: &mut Vec<Flat>, filter: &Filter) {
     keep_matches(rows, filter, |r| (r.depth, r.name.as_str()));
 }
 
@@ -300,6 +312,7 @@ fn handle_key(
     rows: &[Flat],
 ) -> Result<bool, Error> {
     if app.filter_edit {
+        let before = app.view.filter.clone();
         match code {
             KeyCode::Esc => {
                 app.filter_edit = false;
@@ -313,6 +326,14 @@ fn handle_key(
                 app.view.filter.push(c);
             }
             _ => {}
+        }
+        // Only replace it when the new text compiles, so a half-written
+        // pattern keeps filtering with the last one that worked instead of
+        // flashing the whole tree back between two keystrokes.
+        if app.view.filter != before
+            && let Some(f) = Filter::new(&app.view.filter)
+        {
+            app.filter_re = Some(f);
         }
         return Ok(false);
     }
@@ -435,12 +456,19 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &App, rows: &[Flat]) {
         draw_help(f, chunks[2]);
     }
 
+    // `?` says the text on screen is not a usable pattern yet, so what is on
+    // the table is still the last one that compiled.
+    let stale = if Filter::new(&app.view.filter).is_some() {
+        ""
+    } else {
+        " ?"
+    };
     let filter = if app.filter_edit {
-        format!("filter> {}_", app.view.filter)
+        format!("filter> {}_{stale}", app.view.filter)
     } else if app.view.filter.is_empty() {
         String::new()
     } else {
-        format!("filter: {}", app.view.filter)
+        format!("filter: {}{stale}", app.view.filter)
     };
     let footer = format!(
         " q quit  / filter  c sort ({})  s save  [ ] scroll  ? help  {}  {}",
@@ -1032,10 +1060,14 @@ mod tests {
         ]
     }
 
+    fn f(pattern: &str) -> Filter {
+        Filter::new(pattern).expect("test patterns compile")
+    }
+
     #[test]
     fn keep_matches_keeps_the_path_to_a_leaf() {
         let mut rows = filter_rows();
-        keep_rows(&mut rows, "firefox");
+        keep_rows(&mut rows, &f("firefox"));
         assert_eq!(names(&rows), ["Host", "alice", "Applications", "firefox"]);
     }
 
@@ -1045,14 +1077,61 @@ mod tests {
         // shallower than the match but sit on another branch, so they must not
         // survive as empty headers.
         let mut rows = filter_rows();
-        keep_rows(&mut rows, "vim");
+        keep_rows(&mut rows, &f("vim"));
         assert_eq!(names(&rows), ["Host", "bob", "Applications", "vim"]);
     }
 
     #[test]
     fn keep_matches_drops_children_of_a_matching_folder() {
         let mut rows = filter_rows();
-        keep_rows(&mut rows, "applications");
+        keep_rows(&mut rows, &f("applications"));
+        assert_eq!(
+            names(&rows),
+            ["Host", "alice", "Applications", "bob", "Applications"]
+        );
+    }
+
+    /// A bare substring has always matched regardless of case, and every saved
+    /// `view.json` was written against that, so the regex is case-insensitive
+    /// unless the pattern turns it off.
+    #[test]
+    fn a_filter_ignores_case_unless_the_pattern_says_otherwise() {
+        let mut rows = filter_rows();
+        keep_rows(&mut rows, &f("user services"));
+        assert_eq!(names(&rows), ["Host", "alice", "User Services"]);
+
+        let mut rows = filter_rows();
+        keep_rows(&mut rows, &f("Firefox"));
+        assert_eq!(names(&rows), ["Host", "alice", "Applications", "firefox"]);
+
+        let mut rows = filter_rows();
+        keep_rows(&mut rows, &f("(?-i)Firefox"));
+        assert!(rows.is_empty(), "(?-i) turns the default back off");
+    }
+
+    /// The reason for the engine at all: a substring cannot say "these two and
+    /// nothing else", and `--filter chrome` matching `chrome-sandbox` is the
+    /// case that made the column noisy.
+    #[test]
+    fn a_filter_can_anchor_and_alternate() {
+        let mut rows = filter_rows();
+        keep_rows(&mut rows, &f("^(firefox|vim)$"));
+        assert_eq!(
+            names(&rows),
+            [
+                "Host",
+                "alice",
+                "Applications",
+                "firefox",
+                "bob",
+                "Applications",
+                "vim"
+            ]
+        );
+
+        // An anchored name that only appears as a substring elsewhere.
+        let mut rows = filter_rows();
+        keep_rows(&mut rows, &f("^app"));
         assert_eq!(
             names(&rows),
             ["Host", "alice", "Applications", "bob", "Applications"]
@@ -1060,14 +1139,10 @@ mod tests {
     }
 
     #[test]
-    fn keep_matches_lowercases_the_name_but_not_the_filter() {
-        let mut rows = filter_rows();
-        keep_rows(&mut rows, "user services");
-        assert_eq!(names(&rows), ["Host", "alice", "User Services"]);
-        // Callers hand in an already-lowercased needle; a capital drops everything.
-        let mut rows = filter_rows();
-        keep_rows(&mut rows, "Firefox");
-        assert!(rows.is_empty());
+    fn an_unusable_pattern_compiles_to_nothing_rather_than_panicking() {
+        assert!(Filter::new("[").is_none());
+        assert!(Filter::new("a(").is_none());
+        assert!(Filter::new("").is_some(), "an empty pattern is legal");
     }
 
     fn ident(id: &str) -> IdentNode {
@@ -1100,7 +1175,7 @@ mod tests {
             system: vec![ident("kthread")],
             ..HostTree::default()
         };
-        let rows = flatten(&tree, &default_expand(), &View::default());
+        let rows = flatten(&tree, &default_expand(), &View::default(), None);
         let got: Vec<String> = rows.iter().map(|r| r.id.clone()).collect();
         assert_eq!(
             got,

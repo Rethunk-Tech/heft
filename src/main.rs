@@ -31,6 +31,7 @@ fn main() -> ExitCode {
         view.sort = check_sort(&label).to_string();
     }
     if let Some(filter) = cli.filter {
+        check_filter(&filter);
         view.filter = filter;
     }
     // Unlike `--filter`, this one applies to `--json` too: it prunes User
@@ -72,6 +73,21 @@ fn check_sort(label: &str) -> &str {
                 "invalid value '{label}' for '--sort <COLUMN>'\n  [possible values: {}]",
                 labels.join(", ")
             ),
+        )
+        .exit()
+}
+
+/// A pattern that does not compile is reported the way a bad `--sort` is: a
+/// saved view must not stop the monitor, but an argument just typed can still
+/// be corrected. The message is the engine's own, which names the offset.
+fn check_filter(pattern: &str) {
+    if heft::once::Filter::new(pattern).is_some() {
+        return;
+    }
+    Cli::command()
+        .error(
+            ErrorKind::InvalidValue,
+            format!("invalid value '{pattern}' for '--filter <REGEX>': not a valid regex"),
         )
         .exit()
 }

@@ -36,6 +36,18 @@
 
 ### Changed
 
+- `--filter` and the `/` key take a **regex** rather than a substring, so
+  `^(code|claude)$` picks exactly two rows where a substring also dragged in
+  every helper process beside them. Case-insensitive unless the pattern says
+  otherwise, so every filter anyone had saved keeps behaving as it did.
+  `regex-lite`, not `regex`: measured, the full engine takes the stripped
+  binary from 1.53 MB to 2.93 MB and pulls four more crates in for a SIMD
+  literal search that matches a few hundred process names once a tick, against
+  70 KB and one crate for the same syntax minus Unicode character classes. A
+  pattern that does not compile is a usage error when typed, a
+  warning-and-ignore from a saved `view.json`, and in the TUI a `?` in the
+  footer while the last working pattern keeps filtering.
+
 - The `/proc` walk is split across threads. Almost all of its wall clock was
   this process waiting on the kernel to build one small file at a time, so the
   pid list now goes to a `thread::scope`. Ten interleaved runs of

@@ -133,6 +133,15 @@ surfaces, so the Host row totals what survived; it is not `conflicts_with =
 `View::users` is `#[serde(skip)]` — it rides the existing plumbing without ever
 reaching `view.json`.
 
+`once::Filter` compiles the pattern once — `regex-lite`, not `regex`, measured:
+the full engine takes the stripped binary from 1.53 MB to 2.93 MB and adds four
+crates for a SIMD literal search that matches a few hundred names a tick.
+`(?i)` is prefixed so a saved substring filter keeps behaving as it did.
+`Filter::new` returns `None` rather than an error, and each caller decides what
+that means: clap `InvalidValue` for `--filter`, warn-and-ignore for a stale
+`view.json`, and in the TUI the last compiling pattern stays live behind a `?`
+in the footer.
+
 `once::keep_matches` is the one filter for every surface — the TUI over its
 flattened rows, `--once` over `once::table_rows`. Rows are built from the whole
 tree and filtered afterwards, so an ancestor row keeps the total it was built

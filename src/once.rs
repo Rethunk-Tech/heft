@@ -305,12 +305,41 @@ pub fn sort_labels() -> Vec<&'static str> {
 /// limits the walk to that chain: a shallower row on another branch is always
 /// preceded by the deeper rows of its own subtree, which do not match and do
 /// not lower `want`, so it never becomes an empty header.
-pub(crate) fn keep_matches<T>(rows: &mut Vec<T>, filter: &str, row: impl Fn(&T) -> (u16, &str)) {
+/// A compiled `--filter` pattern.
+///
+/// Case-insensitive by default, via a `(?i)` the pattern never sees: a bare
+/// `code` has always matched `Code`, and a regex that quietly became
+/// case-sensitive would break every filter anyone had saved. `(?-i)` turns it
+/// back off for whoever wants that.
+///
+/// `regex-lite` rather than `regex`, measured: the full engine takes the
+/// stripped release binary from 1.53 MB to 2.93 MB and pulls in four more
+/// crates for its SIMD literal search, which matches a few hundred process
+/// names once a tick and is not worth 92% of the binary. `regex-lite` costs
+/// 70 KB and one crate, and gives up only Unicode character classes.
+pub struct Filter(regex_lite::Regex);
+
+impl Filter {
+    /// `None` when the pattern does not compile. Every caller decides what
+    /// that means for it: a usage error on the command line, a warning for a
+    /// stale saved view, and nothing at all mid-keystroke in the TUI.
+    pub fn new(pattern: &str) -> Option<Self> {
+        regex_lite::Regex::new(&format!("(?i){pattern}"))
+            .ok()
+            .map(Filter)
+    }
+
+    fn is_match(&self, name: &str) -> bool {
+        self.0.is_match(name)
+    }
+}
+
+pub(crate) fn keep_matches<T>(rows: &mut Vec<T>, filter: &Filter, row: impl Fn(&T) -> (u16, &str)) {
     let mut want = 0;
     let mut keep = vec![false; rows.len()];
     for (i, r) in rows.iter().enumerate().rev() {
         let (d, name) = row(r);
-        if name.to_ascii_lowercase().contains(filter) || d < want {
+        if filter.is_match(name) || d < want {
             keep[i] = true;
             want = d;
         }
@@ -459,9 +488,17 @@ pub fn print_table(interval: Duration, view: &View) -> Result<(), Error> {
     sort_tree(&mut tree, Sort::from_label(&view.sort), view.desc);
     let mut rows = table_rows(&tree);
     if !view.filter.is_empty() {
-        keep_matches(&mut rows, &view.filter.to_ascii_lowercase(), |r| {
-            (r.depth, r.name.as_str())
-        });
+        // A saved view must not stop the monitor, so an unusable pattern warns
+        // and the table prints unfiltered — the same call `hide_columns` makes,
+        // and not `--filter`'s, which is an argument just typed.
+        match Filter::new(&view.filter) {
+            Some(f) => keep_matches(&mut rows, &f, |r| (r.depth, r.name.as_str())),
+            None => eprintln!(
+                "heft: ignoring unusable filter {:?} in {}",
+                view.filter,
+                crate::config::view_path().display()
+            ),
+        }
     }
     let mut out = io::stdout();
     writeln!(
@@ -946,7 +983,8 @@ mod tests {
         };
         let mut rows = table_rows(&tree);
         assert_eq!(rows[0].metrics.pss_bytes, Some(3072));
-        keep_matches(&mut rows, "firefox", |r| (r.depth, r.name.as_str()));
+        let filter = Filter::new("firefox").expect("test patterns compile");
+        keep_matches(&mut rows, &filter, |r| (r.depth, r.name.as_str()));
         let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
         assert_eq!(names, ["Host", "u (1000)", "Applications", "firefox"]);
         assert_eq!(rows[0].metrics.pss_bytes, Some(3072));

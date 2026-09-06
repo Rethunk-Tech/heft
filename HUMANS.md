@@ -52,7 +52,7 @@ heft --json               # one JSON tree on stdout
 heft --interval 0.5       # catch-all period (TUI tick and --once/--json gap)
 heft --pss-interval 5     # TUI only: how often to read smaps_rollup (default 5s)
 heft --sort rss           # start on this column instead of the saved one
-heft --once --filter code # keep rows whose name contains this, and their parents
+heft --once --filter '^(code|claude)$'  # keep rows matching this regex, and their parents
 heft --once --user 1000   # only this user's branch (name or uid, repeatable)
 ```
 
@@ -84,6 +84,16 @@ usage error, so a typo is told to you rather than quietly sorting by PSS the
 way a stale saved view does. `--filter` is the `/` key: it keeps matching rows
 **and their parents**, so the tree stays a tree, and a parent still shows the
 total it always did rather than the total of what survived.
+
+The pattern is a regex, so `--filter '^(code|claude)$'` picks exactly two rows
+where a substring would also drag in every `code-helper` beside them. It is
+case-insensitive unless you say otherwise — a bare `firefox` matches `Firefox`
+the way it always did, and `(?-i)` turns that off. Unicode character classes
+(`\p{Greek}`) are the one thing the engine leaves out. A pattern that does not
+compile is a usage error on the command line, a warning-and-ignore from a saved
+`view.json`, and in the TUI just a `?` in the footer: `/` recompiles as you
+type and keeps filtering with the last pattern that worked, rather than
+flashing the whole tree back between two keystrokes.
 
 `--user` takes a login name or a uid and can be repeated; other User nodes
 drop, while System and Host-level Containers stay, since those are the

@@ -44,6 +44,23 @@ pub(crate) const COLUMNS: &[Column] = &[
         fmt: |_, n, _| n.to_string(),
         key: Some(|n, _| Some(f64::from(n))),
     },
+    // `N` counts processes, so a thread leak was invisible: one process with
+    // 4000 threads and one with none rendered identically.
+    Column {
+        label: "threads",
+        header: "THR",
+        width: 5,
+        fmt: |_, _, m| m.threads.map(|t| t.to_string()).unwrap_or_default(),
+        key: Some(|_, m| opt_u(m.threads)),
+    },
+    // Oldest, not a sum — see `Metrics::age_secs`.
+    Column {
+        label: "age",
+        header: "AGE",
+        width: 5,
+        fmt: |_, _, m| fmt_age(m.age_secs),
+        key: Some(|_, m| opt_u(m.age_secs)),
+    },
     Column {
         label: "core",
         header: "%CORE",
@@ -437,6 +454,28 @@ pub(crate) fn fmt_rate(n: Option<f64>) -> String {
     })
     .unwrap_or_default()
 }
+/// One unit, largest that fits: `45s`, `12m`, `3h`, `9d`. A duration is read
+/// at a glance to place a process in time, so the coarse unit is the whole
+/// point — `2d` beats `191243s` and beats a start timestamp, which would make
+/// the reader do the subtraction.
+pub(crate) fn fmt_age(secs: Option<u64>) -> String {
+    let Some(s) = secs else {
+        return String::new();
+    };
+    const MIN: u64 = 60;
+    const HOUR: u64 = 60 * MIN;
+    const DAY: u64 = 24 * HOUR;
+    if s >= DAY {
+        format!("{}d", s / DAY)
+    } else if s >= HOUR {
+        format!("{}h", s / HOUR)
+    } else if s >= MIN {
+        format!("{}m", s / MIN)
+    } else {
+        format!("{s}s")
+    }
+}
+
 pub(crate) fn fmt_pct(v: f64) -> String {
     format!("{v:.1}")
 }
@@ -588,6 +627,8 @@ mod tests {
                 // A swapless host: the whole column is blank, not a column of
                 // zeros, which is the layout most machines print.
                 swap_bytes: None,
+                threads: Some(19),
+                age_secs: Some(3 * 3600 + 12),
                 disk_r_bps: Some(disk_r_bps),
                 disk_w_bps: None,
                 vram_bytes: Some(1024 * 1024),
@@ -615,14 +656,14 @@ mod tests {
         write_folder(&mut out, 1, "Applications", &[sample_ident(1536.0)]).unwrap();
         assert_eq!(
             String::from_utf8(out).unwrap(),
-            "NAME                            N   %CORE   %MACH      PSS      RSS   SWAP   DISK R   DISK W     VRAM      GTT   GFX   CMP NETNS RX NETNS TX\n  Applications                  7    12.2     1.5     1.5K     2.0K          1.5K/s              1.0M            3.0                        \n    an-identity-name-long-e\u{2026}    7    12.2     1.5     1.5K     2.0K          1.5K/s              1.0M            3.0                        \n"
+            "NAME                            N   THR   AGE   %CORE   %MACH      PSS      RSS   SWAP   DISK R   DISK W     VRAM      GTT   GFX   CMP NETNS RX NETNS TX\n  Applications                  7    19    3h    12.2     1.5     1.5K     2.0K          1.5K/s              1.0M            3.0                        \n    an-identity-name-long-e\u{2026}    7    19    3h    12.2     1.5     1.5K     2.0K          1.5K/s              1.0M            3.0                        \n"
         );
 
         let mut out = Vec::new();
         write_folder(&mut out, 1, "Applications", &[sample_ident(1_030_963.0)]).unwrap();
         assert_eq!(
             String::from_utf8(out).unwrap(),
-            "  Applications                  7    12.2     1.5     1.5K     2.0K        1006.8K/s              1.0M            3.0                        \n    an-identity-name-long-e\u{2026}    7    12.2     1.5     1.5K     2.0K        1006.8K/s              1.0M            3.0                        \n"
+            "  Applications                  7    19    3h    12.2     1.5     1.5K     2.0K        1006.8K/s              1.0M            3.0                        \n    an-identity-name-long-e\u{2026}    7    19    3h    12.2     1.5     1.5K     2.0K        1006.8K/s              1.0M            3.0                        \n"
         );
     }
 
@@ -640,5 +681,46 @@ mod tests {
         // the fraction survives instead of truncating through u64
         assert_eq!(fmt_rate(Some(1536.0)), "1.5K/s");
         assert_eq!(fmt_rate(Some(900.6)), "901/s");
+    }
+
+    #[test]
+    fn age_takes_the_largest_unit_that_fits() {
+        assert_eq!(fmt_age(None), "");
+        assert_eq!(fmt_age(Some(0)), "0s");
+        assert_eq!(fmt_age(Some(59)), "59s");
+        assert_eq!(fmt_age(Some(60)), "1m");
+        assert_eq!(fmt_age(Some(3599)), "59m");
+        assert_eq!(fmt_age(Some(3600)), "1h");
+        assert_eq!(fmt_age(Some(86_399)), "23h");
+        assert_eq!(fmt_age(Some(86_400)), "1d");
+        assert_eq!(fmt_age(Some(191_243)), "2d");
+    }
+
+    /// An identity row's age is the oldest process on it, and its threads are
+    /// every process's threads. Age must not behave like the summing columns
+    /// beside it: two hour-old processes make an hour-old row, not two.
+    #[test]
+    fn threads_sum_but_age_takes_the_oldest() {
+        let row = |threads, age| Metrics {
+            threads: Some(threads),
+            age_secs: Some(age),
+            pss_bytes: Some(10),
+            ..Metrics::default()
+        };
+        let mut m = row(4, 3600);
+        m.accumulate(&row(6, 3600));
+        assert_eq!(m.threads, Some(10));
+        assert_eq!(m.age_secs, Some(3600));
+
+        m.accumulate(&row(1, 90_000));
+        assert_eq!(m.threads, Some(11));
+        assert_eq!(m.age_secs, Some(90_000));
+
+        // A blank on either side stays out of the way of a real figure.
+        let mut blank = Metrics::default();
+        blank.accumulate(&row(3, 42));
+        assert_eq!((blank.threads, blank.age_secs), (Some(3), Some(42)));
+        blank.accumulate(&Metrics::default());
+        assert_eq!((blank.threads, blank.age_secs), (Some(3), Some(42)));
     }
 }

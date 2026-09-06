@@ -1,6 +1,8 @@
 use std::fs;
-use std::time::Duration;
+use std::sync::OnceLock;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use crate::proc::field_u64;
 use crate::types::{HostHeader, HostTree, Metrics, Process};
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -35,6 +37,22 @@ pub fn nproc() -> u32 {
         }
         Err(_) => 1,
     }
+}
+
+/// The epoch second the machine booted, which every `/proc/pid/stat`
+/// `starttime` is an offset from. Read from `/proc/stat` once per heft run and
+/// then pinned: it is a property of this boot, and re-reading it every sample
+/// would let an NTP step walk every age heft has already printed. 0 when the
+/// line is missing, which `age_secs` turns into a blank rather than a date in
+/// 1970.
+fn btime() -> u64 {
+    static BTIME: OnceLock<u64> = OnceLock::new();
+    *BTIME.get_or_init(|| {
+        fs::read_to_string("/proc/stat")
+            .ok()
+            .and_then(|t| t.lines().find_map(|l| field_u64(l, "btime")))
+            .unwrap_or(0)
+    })
 }
 
 pub fn clk_tck() -> u64 {
@@ -162,6 +180,8 @@ pub fn process_metrics(
         rss_bytes,
         pss_bytes,
         swap_bytes,
+        threads: cur.threads,
+        age_secs: age_secs(cur.starttime_ticks, consts.clk_tck, btime(), now_epoch()),
         disk_r_bps,
         disk_w_bps,
         vram_bytes: cur.gpu.vram_bytes,
@@ -175,6 +195,27 @@ pub fn process_metrics(
         net_rx_bps: None,
         net_tx_bps: None,
     }
+}
+
+/// Wall clock in epoch seconds. `SystemTime::now` is a vDSO read rather than a
+/// syscall, so paying it per process costs less than threading one timestamp
+/// through the metrics map.
+fn now_epoch() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
+}
+
+/// Seconds since a process started: `starttime` is ticks since boot, so it
+/// only becomes a wall-clock age against `btime`. Blank rather than 0 whenever
+/// a term is missing — a process that started in the future (a stepped clock)
+/// is 0 seconds old, not negative.
+fn age_secs(starttime_ticks: Option<u64>, clk_tck: u64, btime: u64, now: u64) -> Option<u64> {
+    if btime == 0 || clk_tck == 0 || now == 0 {
+        return None;
+    }
+    let started = btime.saturating_add(starttime_ticks? / clk_tck);
+    Some(now.saturating_sub(started))
 }
 
 fn rate(prev: Option<u64>, cur: Option<u64>, secs: f64) -> Option<f64> {
@@ -310,6 +351,23 @@ mod tests {
         ns_prev.gpu.gfx_ns = Some(0);
         let m = process_metrics(Some(&ns_prev), &ns, Duration::from_secs(1), &consts);
         assert!((m.gfx_pct.unwrap() - 50.0).abs() < 1e-9, "{:?}", m.gfx_pct);
+    }
+
+    /// The whole point of `btime`: `starttime` is ticks since boot, and
+    /// reading it as anything else dates every process to the epoch.
+    #[test]
+    fn age_is_starttime_against_boot_not_the_epoch() {
+        let boot = 1_000_000;
+        // 500 ticks at 100 Hz = 5s after boot, read 65s after boot.
+        assert_eq!(age_secs(Some(500), 100, boot, boot + 65), Some(60));
+        assert_eq!(age_secs(Some(0), 100, boot, boot + 60), Some(60));
+        // A blank is not an age of zero: without btime, a tick rate or a
+        // starttime there is no figure at all.
+        assert_eq!(age_secs(Some(500), 100, 0, boot), None);
+        assert_eq!(age_secs(Some(500), 0, boot, boot), None);
+        assert_eq!(age_secs(None, 100, boot, boot), None);
+        // A clock stepped backwards makes a process 0s old, never negative.
+        assert_eq!(age_secs(Some(6000), 100, boot, boot + 10), Some(0));
     }
 
     #[test]

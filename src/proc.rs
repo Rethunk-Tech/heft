@@ -69,6 +69,8 @@ fn read_pid(pid: u32, want_pss: bool, want_swap: bool, prev: Option<&Process>) -
         cgroup,
         utime: parsed.utime,
         stime: parsed.stime,
+        threads: parsed.threads,
+        starttime_ticks: parsed.starttime_ticks,
         rss_pages,
         pss_kb,
         swap_pss_kb,
@@ -116,6 +118,8 @@ struct StatFields {
     sid: i32,
     utime: u64,
     stime: u64,
+    threads: Option<u64>,
+    starttime_ticks: Option<u64>,
     kthread: bool,
 }
 
@@ -128,7 +132,8 @@ fn parse_stat(stat: &str) -> Option<StatFields> {
     let comm = stat[open + 1..close].to_string();
     let rest = stat[close + 1..].split_whitespace();
     let fields: Vec<&str> = rest.collect();
-    // after comm: state ppid pgrp session ... flags ... utime stime (0-based: 1,2,3,6,11,12)
+    // after comm: state ppid pgrp session ... flags ... utime stime ...
+    // num_threads ... starttime (0-based: 1,2,3,6,11,12,17,19)
     let ppid = fields.get(1)?.parse().ok()?;
     let pgrp = fields.get(2)?.parse().ok()?;
     let sid = fields.get(3)?.parse().ok()?;
@@ -136,6 +141,8 @@ fn parse_stat(stat: &str) -> Option<StatFields> {
     let flags: u32 = fields.get(6).and_then(|s| s.parse().ok()).unwrap_or(0);
     let utime = fields.get(11)?.parse().ok()?;
     let stime = fields.get(12)?.parse().ok()?;
+    // Optional, unlike the fields above: a truncated tail costs two columns,
+    // not the whole process, and a missing one is the blank cell either way.
     Some(StatFields {
         comm,
         ppid,
@@ -143,6 +150,8 @@ fn parse_stat(stat: &str) -> Option<StatFields> {
         sid,
         utime,
         stime,
+        threads: fields.get(17).and_then(|s| s.parse().ok()),
+        starttime_ticks: fields.get(19).and_then(|s| s.parse().ok()),
         kthread: flags & 0x0020_0000 != 0,
     })
 }
@@ -333,6 +342,24 @@ mod tests {
         assert_eq!(p.utime, 30);
         assert_eq!(p.stime, 40);
         assert!(!p.kthread);
+    }
+
+    /// `num_threads` and `starttime` are fields 20 and 22, five and seven
+    /// tokens past `stime`; an off-by-one here silently prints another
+    /// process's counter as a thread count.
+    #[test]
+    fn threads_and_starttime_come_from_their_own_fields() {
+        let stat =
+            "10 (bash) S 1 10 10 0 -1 4194304 91 0 0 0 30 40 0 0 25 5 17 0 221093059 236335104 474";
+        let p = parse_stat(stat).unwrap();
+        assert_eq!(p.utime, 30);
+        assert_eq!(p.threads, Some(17));
+        assert_eq!(p.starttime_ticks, Some(221_093_059));
+        // A truncated tail costs those two columns, not the process.
+        let short = parse_stat("10 (bash) S 1 10 10 0 -1 0 0 0 0 0 30 40").unwrap();
+        assert_eq!(short.utime, 30);
+        assert_eq!(short.threads, None);
+        assert_eq!(short.starttime_ticks, None);
     }
 
     #[test]

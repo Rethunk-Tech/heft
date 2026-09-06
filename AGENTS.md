@@ -134,6 +134,8 @@ stderr from `config::load_overrides` and grouping continues built-in.
 | PSS | `/proc/pid/smaps_rollup` — cadence in [HUMANS.md](HUMANS.md) |
 | SWAP | `SwapPss:` from that same rollup read, so it costs no extra file and shares the PSS cadence. `SwapPss`, never `Swap`: a shared swapped page must be apportioned or a summed tree reports it once per mapper. Blank on a `SwapTotal: 0` host |
 | Host swap | `SwapTotal` − `SwapFree` from `/proc/meminfo` (`SwapCached` is neither, so it is not subtracted) |
+| THR | `num_threads`, field 20 of the `/proc/pid/stat` already parsed for utime/stime. Sums up the tree the way `nproc` does |
+| AGE | `now - (btime + starttime / CLK_TCK)`; `starttime` is field 22 of that same `stat`, `btime` is read from `/proc/stat` once per run and pinned. Aggregates take the OLDEST, never a sum: a duration summed is meaningless, and a max cannot be read as a total |
 | Disk R/W | Δ `read_bytes` / `write_bytes` from `/proc/pid/io` |
 | GPU mem | prefer `drm-resident-*` over `drm-total-*`; regions `vram`/`gtt` (amdgpu), `local0`/`system0` (i915), `vram0`/`gtt` (xe) |
 | NETNS RX/TX | Δ non-`lo` bytes from `/proc/<container-scope-pid>/net/dev`; a new pid or a counter that went backwards discards the interval |
@@ -147,6 +149,7 @@ stderr from `config::load_overrides` and grouping continues built-in.
 | Swap | own tank against `SwapTotal`, never a MEM segment: swapped pages are not in RAM. Absent entirely when `SwapTotal` is 0, so a swapless host renders as it did before swap existed |
 | Layout | 2 unbordered header rows (extra tanks split the MEMORY row via `ui::tank_widths`, never add a third row); persistent rules: header↔tree and tree↔footer |
 | Disk R/W | table columns only (formatted rates change width every tick) |
+| THR / AGE | beside `N`, before the metric columns: all three say what the row *is* rather than what it is currently costing |
 | NETNS RX/TX | last two columns, named for the namespace and not the resource: a blank cell means the row owns no namespace, not that it moved no bytes |
 | Ordering | one comparator in `once.rs` for every level; a `None` metric sorts last in either direction, name breaks ties, stable over `group::proc_forest` pid order |
 

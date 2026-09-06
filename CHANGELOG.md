@@ -4,6 +4,19 @@
 
 ### Added
 
+- `THR` and `AGE` columns, both from the `/proc/<pid>/stat` heft already parses
+  for CPU, so neither adds a per-tick read. `N` counts processes, so a thread
+  leak was invisible: one process holding 4000 threads rendered identically to
+  one holding none. Threads sum up the tree the way `N` does. `AGE` is
+  `now - (btime + starttime / CLK_TCK)`, shown in the largest unit that fits
+  (`45s`, `12m`, `3h`, `9d`) rather than raw seconds or a start timestamp that
+  would leave the reader to do the subtraction. On a row covering several
+  processes it is the oldest of them, which is when the thing on that row first
+  appeared; it is deliberately not a sum, since summed durations mean nothing,
+  and a maximum cannot be misread as a total. `btime` is read from `/proc/stat`
+  once per run and pinned, so an NTP step cannot walk ages heft has already
+  printed.
+
 - A `SWAP` column and a host swap tank on the MEMORY header row. Both come from
   files heft already opens — `SwapPss:` from the `smaps_rollup` it reads for
   PSS, and `SwapTotal`/`SwapFree` from the `/proc/meminfo` it reads for the MEM

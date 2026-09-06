@@ -16,6 +16,10 @@ pub struct Process {
     pub cgroup: String,
     pub utime: u64,
     pub stime: u64,
+    /// `num_threads` and `starttime`, fields 20 and 22 of `/proc/pid/stat` —
+    /// the file already parsed for utime/stime, so neither costs a read.
+    pub threads: Option<u64>,
+    pub starttime_ticks: Option<u64>,
     pub rss_pages: Option<u64>,
     pub pss_kb: Option<u64>,
     /// `SwapPss:` from the same `smaps_rollup` read as `pss_kb`, so it costs no
@@ -65,6 +69,18 @@ pub(crate) struct Metrics {
     /// for swap too. Blank when the host has no swap configured.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) swap_bytes: Option<u64>,
+    /// Threads sum the way `nproc` does: heft's `N` is a process count, so a
+    /// process that spawned 4000 threads was indistinguishable from one that
+    /// spawned none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) threads: Option<u64>,
+    /// Seconds since the process started. On a row covering several processes
+    /// this is the OLDEST of them — when the thing on this row first appeared
+    /// — never a sum, which for a duration would be meaningless. `accumulate`
+    /// takes the max for that reason, and a max is why no roll-up assertion
+    /// can read it as a total.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) age_secs: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) disk_r_bps: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -94,6 +110,8 @@ impl Metrics {
         self.rss_bytes = sum_opt(self.rss_bytes, other.rss_bytes);
         self.pss_bytes = sum_opt(self.pss_bytes, other.pss_bytes);
         self.swap_bytes = sum_opt(self.swap_bytes, other.swap_bytes);
+        self.threads = sum_opt(self.threads, other.threads);
+        self.age_secs = self.age_secs.max(other.age_secs);
         self.disk_r_bps = sum_opt_f(self.disk_r_bps, other.disk_r_bps);
         self.disk_w_bps = sum_opt_f(self.disk_w_bps, other.disk_w_bps);
         self.vram_bytes = sum_opt(self.vram_bytes, other.vram_bytes);

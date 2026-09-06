@@ -124,6 +124,17 @@ contract, not a zero: with `SwapTotal: 0` there is no swap for a process to be
 paged out to, so no figure exists. On a machine that does swap, `0` means that
 process has nothing paged out.
 
+## THR / AGE
+
+`THR` is the thread count (`num_threads` from `/proc/<pid>/stat`), and it sums
+up the tree the way `N` does. `N` counts processes, so before this a browser
+with 40 processes holding 1400 threads looked the same as one holding 40.
+
+`AGE` is how long ago the process started, in the largest unit that fits: `45s`,
+`12m`, `3h`, `9d`. On a row that covers several processes it is the *oldest* of
+them — when the thing on that row first appeared — never a sum. Both come from
+the `/proc/<pid>/stat` heft already reads for CPU, so neither costs a read.
+
 ## NETNS RX / NETNS TX
 
 Network I/O is counted per network *namespace*, never per process. A container

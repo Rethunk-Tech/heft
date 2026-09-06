@@ -194,23 +194,7 @@ pub fn placeholder_tree() -> HostTree {
     let nproc = cpu::nproc();
     let cpu = cpu::HostCpu::default();
     let header = cpu::header_from(nproc, cpu::clk_tck(), cpu::page_size(), &cpu, &cpu);
-    HostTree {
-        nproc: header.nproc,
-        cpu_pct: header.cpu_pct,
-        cpu_user_pct: header.cpu_user_pct,
-        cpu_system_pct: header.cpu_system_pct,
-        cpu_wait_pct: header.cpu_wait_pct,
-        mem_used_bytes: header.mem_used_bytes,
-        mem_total_bytes: header.mem_total_bytes,
-        mem_buffers_bytes: header.mem_buffers_bytes,
-        mem_cached_bytes: header.mem_cached_bytes,
-        vram_used_bytes: header.vram_used_bytes,
-        vram_total_bytes: header.vram_total_bytes,
-        unified_memory: header.unified_memory,
-        users: Vec::new(),
-        containers: Vec::new(),
-        system: Vec::new(),
-    }
+    HostTree::from(&header)
 }
 
 struct Sampler {

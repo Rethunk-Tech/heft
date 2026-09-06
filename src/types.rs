@@ -126,6 +126,28 @@ pub struct HostTree {
     pub system: Vec<IdentNode>,
 }
 
+impl From<&HostHeader> for HostTree {
+    fn from(h: &HostHeader) -> Self {
+        Self {
+            nproc: h.nproc,
+            cpu_pct: h.cpu_pct,
+            cpu_user_pct: h.cpu_user_pct,
+            cpu_system_pct: h.cpu_system_pct,
+            cpu_wait_pct: h.cpu_wait_pct,
+            mem_used_bytes: h.mem_used_bytes,
+            mem_total_bytes: h.mem_total_bytes,
+            mem_buffers_bytes: h.mem_buffers_bytes,
+            mem_cached_bytes: h.mem_cached_bytes,
+            vram_used_bytes: h.vram_used_bytes,
+            vram_total_bytes: h.vram_total_bytes,
+            unified_memory: h.unified_memory,
+            users: Vec::new(),
+            containers: Vec::new(),
+            system: Vec::new(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct UserNode {
     pub uid: u32,

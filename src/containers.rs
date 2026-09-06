@@ -229,21 +229,19 @@ impl ContainerIndex {
 }
 
 pub(crate) fn helper_id(p: &Process) -> Option<String> {
-    let comm = p.comm.as_str();
-    let name = crate::classify::name_of(p);
-    let is_shim = comm.contains("containerd-shim") || name.contains("containerd-shim");
-    let is_runtime = matches!(comm, "conmon" | "runc" | "crun")
-        || matches!(name.as_str(), "conmon" | "runc" | "crun");
-    if is_shim || is_runtime {
-        if let Some(id) = crate::classify::cmdline_flag_value(&p.cmdline, "-id") {
-            return hex_id(id).map(str::to_ascii_lowercase);
-        }
-        return p
-            .cmdline
-            .iter()
-            .find_map(|arg| hex_id(arg).map(str::to_ascii_lowercase));
+    let names = crate::classify::names_of(p);
+    let runtime = crate::classify::names_match(&names, |n| {
+        n.contains("containerd-shim") || matches!(n, "conmon" | "runc" | "crun")
+    });
+    if !runtime {
+        return None;
     }
-    None
+    if let Some(id) = crate::classify::cmdline_flag_value(&p.cmdline, "-id") {
+        return hex_id(id).map(str::to_ascii_lowercase);
+    }
+    p.cmdline
+        .iter()
+        .find_map(|arg| hex_id(arg).map(str::to_ascii_lowercase))
 }
 pub(crate) fn project_identity(
     name: &str,
@@ -461,6 +459,26 @@ mod tests {
         assert!(!docker_get_path(&format!("/containers/{mid}/json")));
         assert!(docker_get_path("/containers/json"));
         assert!(docker_get_path("/containers/0123456789ab/json"));
+    }
+
+    #[test]
+    fn runtime_helpers_match_regardless_of_case() {
+        let hex = "0123456789abcdef";
+        for comm in ["RunC", "Conmon", "CRun", "Containerd-Shim-Runc-V2"] {
+            let p = Process {
+                comm: comm.into(),
+                cmdline: vec![comm.into(), "-id".into(), hex.into()],
+                ..Process::default()
+            };
+            assert_eq!(helper_id(&p).as_deref(), Some(hex), "comm {comm}");
+        }
+        let by_exe = Process {
+            comm: "n/a".into(),
+            exe: Some("/usr/bin/Conmon".into()),
+            cmdline: vec!["conmon".into(), "-id".into(), hex.into()],
+            ..Process::default()
+        };
+        assert_eq!(helper_id(&by_exe).as_deref(), Some(hex));
     }
 
     fn item(id: &str, state: Option<&str>) -> ListItem {

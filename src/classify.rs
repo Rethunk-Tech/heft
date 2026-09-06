@@ -201,7 +201,7 @@ fn ident(name: &str) -> (String, String) {
     (name.to_string(), name.to_string())
 }
 
-fn names_of(p: &Process) -> [String; 2] {
+pub(crate) fn names_of(p: &Process) -> [String; 2] {
     [norm(&p.comm), norm(&name_of(p))]
 }
 
@@ -227,7 +227,7 @@ fn gnome_shell_helper(names: &[String], p: &Process) -> bool {
     false
 }
 
-fn names_match(names: &[String], pred: impl Fn(&str) -> bool) -> bool {
+pub(crate) fn names_match(names: &[String], pred: impl Fn(&str) -> bool) -> bool {
     names.iter().any(|n| pred(n))
 }
 
@@ -366,8 +366,7 @@ pub fn absorbs_generic(parent: &Process) -> bool {
     {
         return false;
     }
-    let n = name_of(parent);
-    n != "systemd" && parent.comm != "systemd"
+    !names_match(&names_of(parent), |n| n == "systemd")
 }
 
 pub fn is_interactive_shell(p: &Process) -> bool {

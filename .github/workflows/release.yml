@@ -70,8 +70,16 @@ jobs:
       - name: Stage completions and the man page
         if: matrix.target == 'x86_64-unknown-linux-gnu'
         run: |
-          assets=$(find "target/${{ matrix.target }}/release/build" -type d -name assets | head -1)
+          # Newest, not first: rust-cache restores target/ between runs, so an
+          # assets dir from an earlier build of an earlier tag survives and
+          # `head -1` can hand back its stale completions and man page.
+          assets=$(find "target/${{ matrix.target }}/release/build" -type d -name assets \
+            -printf '%T@ %p\n' | sort -rn | head -1 | cut -d' ' -f2-)
           test -n "$assets" || { echo "build.rs produced no assets dir"; exit 1; }
+          # The invariant, without naming a flag that could be renamed: what
+          # build.rs generated must postdate the flag definitions it read.
+          test "$assets/heft.1" -nt src/cli.rs || {
+            echo "generated assets predate src/cli.rs: $assets"; exit 1; }
           for f in heft.bash _heft heft.fish heft.1; do
             test -s "$assets/$f" || { echo "missing generated asset: $f"; exit 1; }
           done

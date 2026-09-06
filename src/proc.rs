@@ -83,6 +83,7 @@ fn pss_kb_for(want_pss: bool, kthread: bool, prev: Option<u64>, pid: u32) -> Opt
 }
 
 /// Floor 0.05s; PSS cadence is at least the catch-all interval.
+#[must_use]
 pub fn clamp_intervals(interval_s: f64, pss_s: f64) -> (Duration, Duration) {
     let interval = Duration::from_secs_f64(interval_s.max(0.05));
     let pss = Duration::from_secs_f64(pss_s.max(0.05)).max(interval);
@@ -170,8 +171,7 @@ fn read_rss_pages(path: &str) -> Option<u64> {
     let text = fs::read_to_string(path).ok()?;
     text.split_whitespace().nth(1)?.parse().ok()
 }
-
-pub fn username(uid: u32) -> String {
+pub(crate) fn username(uid: u32) -> String {
     if let Ok(text) = fs::read_to_string("/etc/passwd") {
         for line in text.lines() {
             let mut it = line.split(':');
@@ -186,7 +186,7 @@ pub fn username(uid: u32) -> String {
 }
 
 /// Header totals from world-readable files only — no per-PID `/proc` walk.
-pub fn placeholder_tree() -> HostTree {
+pub(crate) fn placeholder_tree() -> HostTree {
     let nproc = cpu::nproc();
     let cpu = cpu::HostCpu::default();
     let header = cpu::header_from(nproc, cpu::clk_tck(), cpu::page_size(), &cpu, &cpu);
@@ -247,8 +247,7 @@ impl Sampler {
         tree
     }
 }
-
-pub fn sample_world(interval: Duration) -> HostTree {
+pub(crate) fn sample_world(interval: Duration) -> HostTree {
     let mut sampler = Sampler::prime(interval);
     thread::sleep(interval);
     sampler.tick(true)
@@ -259,7 +258,7 @@ pub fn sample_world(interval: Duration) -> HostTree {
 /// # Errors
 ///
 /// Returns an error if the sampler thread cannot be spawned.
-pub fn spawn_sampler(
+pub(crate) fn spawn_sampler(
     interval: Duration,
     pss_interval: Duration,
     slot: Arc<Mutex<Option<HostTree>>>,

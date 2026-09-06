@@ -165,11 +165,6 @@ pub fn is_session_bus(p: &Process) -> bool {
     names_of(p).iter().any(|n| n.starts_with("dbus-broker"))
 }
 
-/// GNOME session / D-Bus user-bus plumbing — never an Applications row.
-pub fn is_session_plumbing(p: &Process) -> bool {
-    session_helper_ident(p).is_some()
-}
-
 /// User Services identity for session helpers. PPID is usually user systemd.
 ///
 /// A logical group is a documented unit/package/D-Bus/architecture family,
@@ -541,23 +536,29 @@ mod tests {
             cmdline: vec!["npm".into(), "exec".into(), "@upstash/context7-mcp".into()],
             ..Process::default()
         }));
-        assert!(is_session_plumbing(&p(
-            "gnome-shell-calendar-server",
-            &["/usr/libexec/gnome-shell-calendar-server"]
-        )));
-        assert!(is_session_plumbing(&Process {
-            comm: "gdm-wayland-ses".into(),
-            exe: Some("/usr/libexec/gdm-wayland-session".into()),
-            ..Process::default()
-        }));
+        assert!(
+            session_helper_ident(&p(
+                "gnome-shell-calendar-server",
+                &["/usr/libexec/gnome-shell-calendar-server"]
+            ))
+            .is_some()
+        );
+        assert!(
+            session_helper_ident(&Process {
+                comm: "gdm-wayland-ses".into(),
+                exe: Some("/usr/libexec/gdm-wayland-session".into()),
+                ..Process::default()
+            })
+            .is_some()
+        );
         assert!(is_session_bus(&p(
             "dbus-broker-launch",
             &["dbus-broker-launch", "--scope", "user"]
         )));
-        assert!(!is_session_plumbing(&p("vivaldi-bin", &["vivaldi-bin"])));
-        assert!(!is_session_plumbing(&p("claude", &["claude"])));
-        assert!(!is_session_plumbing(&p("cursor", &["cursor"])));
-        assert!(!is_session_plumbing(&p("vesktop.bin", &["vesktop.bin"])));
+        assert!(session_helper_ident(&p("vivaldi-bin", &["vivaldi-bin"])).is_none());
+        assert!(session_helper_ident(&p("claude", &["claude"])).is_none());
+        assert!(session_helper_ident(&p("cursor", &["cursor"])).is_none());
+        assert!(session_helper_ident(&p("vesktop.bin", &["vesktop.bin"])).is_none());
         assert_eq!(
             session_helper_ident(&Process {
                 comm: "gjs".into(),
@@ -801,7 +802,7 @@ mod tests {
             .map(|(k, _)| k.as_str()),
             Some("abrt-applet")
         );
-        assert!(!is_session_plumbing(&p("gnome-abrt", &["gnome-abrt"])));
+        assert!(session_helper_ident(&p("gnome-abrt", &["gnome-abrt"])).is_none());
         assert!(is_worker(&Process {
             comm: "crashhelper".into(),
             exe: Some("/usr/lib64/firefox/crashhelper".into()),

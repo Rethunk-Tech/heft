@@ -20,7 +20,7 @@ struct Place {
     instance: String,
     member: Option<String>,
 }
-
+#[must_use]
 pub fn build_tree(
     prev: &HashMap<u32, Process>,
     curr: &HashMap<u32, Process>,

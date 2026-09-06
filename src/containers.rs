@@ -42,17 +42,17 @@ fn path_owner(path: &Path) -> Option<u32> {
 }
 
 #[derive(Clone, Debug)]
-pub struct ContainerInfo {
-    pub id: String,
-    pub name: String,
-    pub ident_key: String,
-    pub ident_title: String,
-    pub member_name: Option<String>,
-    pub owner_uid: Option<u32>,
+pub(crate) struct ContainerInfo {
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) ident_key: String,
+    pub(crate) ident_title: String,
+    pub(crate) member_name: Option<String>,
+    pub(crate) owner_uid: Option<u32>,
 }
 
 #[derive(Default)]
-pub struct InspectCache {
+pub(crate) struct InspectCache {
     ids: Vec<String>,
     inspects: HashMap<String, Inspect>,
 }
@@ -76,11 +76,11 @@ impl InspectCache {
 pub struct ContainerIndex {
     by_id: HashMap<String, ContainerInfo>,
     by_ip: HashMap<String, String>,
-    pub engined_uid: Option<u32>,
+    pub(crate) engined_uid: Option<u32>,
 }
 
 impl ContainerIndex {
-    pub fn load(cache: &mut InspectCache) -> Self {
+    pub(crate) fn load(cache: &mut InspectCache) -> Self {
         let mut idx = Self::default();
         let Some(sock) = docker_sock() else {
             cache.refresh(Vec::new(), |_| None);
@@ -109,7 +109,7 @@ impl ContainerIndex {
         }
         idx
     }
-
+    #[must_use]
     pub fn from_list(
         items: &[ListItem],
         inspects: &HashMap<String, Inspect>,
@@ -203,8 +203,7 @@ impl ContainerIndex {
             self.by_id.insert(short.to_ascii_lowercase(), info.clone());
         }
     }
-
-    pub fn get(&self, raw: &str) -> Option<&ContainerInfo> {
+    pub(crate) fn get(&self, raw: &str) -> Option<&ContainerInfo> {
         let id = hex_id(raw)?.to_ascii_lowercase();
         self.by_id
             .get(&id)
@@ -215,12 +214,10 @@ impl ContainerIndex {
                     .find(|c| c.id.starts_with(&id) || id.starts_with(&c.id))
             })
     }
-
-    pub fn by_ip(&self, ip: &str) -> Option<&ContainerInfo> {
+    pub(crate) fn by_ip(&self, ip: &str) -> Option<&ContainerInfo> {
         self.by_ip.get(ip).and_then(|id| self.get(id))
     }
-
-    pub fn lookup_process(&self, p: &Process) -> Option<&ContainerInfo> {
+    pub(crate) fn lookup_process(&self, p: &Process) -> Option<&ContainerInfo> {
         if let Some(id) = docker_scope_id(&p.cgroup) {
             return self.get(&id);
         }
@@ -230,7 +227,7 @@ impl ContainerIndex {
         })
     }
 
-    pub fn apply_engined_uid(&mut self, uid: Option<u32>) {
+    pub(crate) fn apply_engined_uid(&mut self, uid: Option<u32>) {
         self.engined_uid = uid;
         for info in self.by_id.values_mut() {
             if info.owner_uid.is_none()
@@ -242,7 +239,7 @@ impl ContainerIndex {
     }
 }
 
-pub fn helper_id(p: &Process) -> Option<String> {
+pub(crate) fn helper_id(p: &Process) -> Option<String> {
     let comm = p.comm.as_str();
     let name = crate::classify::name_of(p);
     let is_shim = comm.contains("containerd-shim") || name.contains("containerd-shim");
@@ -259,8 +256,7 @@ pub fn helper_id(p: &Process) -> Option<String> {
     }
     None
 }
-
-pub fn project_identity(
+pub(crate) fn project_identity(
     name: &str,
     labels: &HashMap<String, String>,
 ) -> (String, String, Option<String>) {
@@ -283,8 +279,7 @@ pub fn project_identity(
     }
     (name.to_string(), name.to_string(), None)
 }
-
-pub fn supabase_project_from_name(name: &str) -> Option<&str> {
+pub(crate) fn supabase_project_from_name(name: &str) -> Option<&str> {
     let rest = name.strip_prefix("supabase_")?;
     let (_, proj) = rest.rsplit_once('_')?;
     if proj.is_empty() { None } else { Some(proj) }
@@ -331,6 +326,7 @@ fn http_2xx(head: &[u8]) -> bool {
 }
 
 fn unix_get(sock: &Path, path: &str) -> Result<Vec<u8>, crate::types::Error> {
+    const MAX: usize = 4 * 1024 * 1024;
     if !docker_get_path(path) {
         return Err(crate::types::Error("invalid docker path".into()));
     }
@@ -338,7 +334,6 @@ fn unix_get(sock: &Path, path: &str) -> Result<Vec<u8>, crate::types::Error> {
     s.set_read_timeout(Some(Duration::from_secs(2)))?;
     s.set_write_timeout(Some(Duration::from_secs(2)))?;
     write!(s, "GET {path} HTTP/1.0\r\nHost: localhost\r\n\r\n")?;
-    const MAX: usize = 4 * 1024 * 1024;
     let mut buf = Vec::new();
     s.take(MAX as u64 + 1).read_to_end(&mut buf)?;
     if buf.len() > MAX {
@@ -357,35 +352,35 @@ fn unix_get(sock: &Path, path: &str) -> Result<Vec<u8>, crate::types::Error> {
 #[derive(Clone, Debug, Deserialize)]
 pub struct ListItem {
     #[serde(rename = "Id", default)]
-    pub id: String,
+    pub(crate) id: String,
     #[serde(rename = "Names", default)]
-    pub names: Vec<String>,
+    pub(crate) names: Vec<String>,
     #[serde(rename = "Labels")]
-    pub labels: Option<HashMap<String, String>>,
+    pub(crate) labels: Option<HashMap<String, String>>,
     #[serde(rename = "State")]
-    pub state: Option<String>,
+    pub(crate) state: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Default)]
 pub struct Inspect {
     #[serde(rename = "State")]
-    pub state: Option<InspectState>,
+    pub(crate) state: Option<InspectState>,
     #[serde(rename = "NetworkSettings")]
-    pub network: Option<NetworkSettings>,
+    pub(crate) network: Option<NetworkSettings>,
 }
 
 #[derive(Clone, Debug, Deserialize, Default)]
-pub struct InspectState {
+pub(crate) struct InspectState {
     #[serde(rename = "Running")]
-    pub running: Option<bool>,
+    pub(crate) running: Option<bool>,
 }
 
 #[derive(Clone, Debug, Deserialize, Default)]
-pub struct NetworkSettings {
+pub(crate) struct NetworkSettings {
     #[serde(rename = "IPAddress")]
-    pub ip: Option<String>,
+    pub(crate) ip: Option<String>,
     #[serde(rename = "Networks")]
-    pub networks: Option<HashMap<String, Value>>,
+    pub(crate) networks: Option<HashMap<String, Value>>,
 }
 
 impl Inspect {

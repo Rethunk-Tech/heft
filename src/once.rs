@@ -126,12 +126,11 @@ fn trunc(s: &str, width: usize) -> String {
     }
     s.chars().take(width.saturating_sub(1)).collect::<String>() + "…"
 }
-
-pub fn fmt_bytes(n: Option<u64>) -> String {
+pub(crate) fn fmt_bytes(n: Option<u64>) -> String {
+    const K: f64 = 1024.0;
     let Some(b) = n else {
         return String::new();
     };
-    const K: f64 = 1024.0;
     let x = b as f64;
     if x >= K * K * K {
         format!("{:.1}G", x / (K * K * K))
@@ -143,8 +142,7 @@ pub fn fmt_bytes(n: Option<u64>) -> String {
         format!("{b}")
     }
 }
-
-pub fn fmt_rate(n: Option<f64>) -> String {
+pub(crate) fn fmt_rate(n: Option<f64>) -> String {
     n.map(|v| {
         if v <= 0.0 {
             "0".into()
@@ -154,11 +152,10 @@ pub fn fmt_rate(n: Option<f64>) -> String {
     })
     .unwrap_or_default()
 }
-
-pub fn fmt_pct(v: f64) -> String {
+pub(crate) fn fmt_pct(v: f64) -> String {
     format!("{v:.1}")
 }
 
-pub fn fmt_opt_pct(v: Option<f64>) -> String {
+pub(crate) fn fmt_opt_pct(v: Option<f64>) -> String {
     v.map(fmt_pct).unwrap_or_default()
 }

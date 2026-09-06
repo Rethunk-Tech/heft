@@ -22,10 +22,10 @@ pub struct Process {
 
 #[derive(Clone, Debug, Default)]
 pub struct GpuCounters {
-    pub vram_bytes: Option<u64>,
-    pub gtt_bytes: Option<u64>,
-    pub gfx_ns: Option<u64>,
-    pub compute_ns: Option<u64>,
+    pub(crate) vram_bytes: Option<u64>,
+    pub(crate) gtt_bytes: Option<u64>,
+    pub(crate) gfx_ns: Option<u64>,
+    pub(crate) compute_ns: Option<u64>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -47,29 +47,29 @@ pub struct HostHeader {
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
-pub struct Metrics {
-    pub cpu_core_pct: f64,
-    pub cpu_machine_pct: f64,
+pub(crate) struct Metrics {
+    pub(crate) cpu_core_pct: f64,
+    pub(crate) cpu_machine_pct: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub rss_bytes: Option<u64>,
+    pub(crate) rss_bytes: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub pss_bytes: Option<u64>,
+    pub(crate) pss_bytes: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub disk_r_bps: Option<f64>,
+    pub(crate) disk_r_bps: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub disk_w_bps: Option<f64>,
+    pub(crate) disk_w_bps: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub vram_bytes: Option<u64>,
+    pub(crate) vram_bytes: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub gtt_bytes: Option<u64>,
+    pub(crate) gtt_bytes: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub gfx_pct: Option<f64>,
+    pub(crate) gfx_pct: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub compute_pct: Option<f64>,
+    pub(crate) compute_pct: Option<f64>,
 }
 
 impl Metrics {
-    pub fn accumulate(&mut self, other: &Metrics) {
+    pub(crate) fn accumulate(&mut self, other: &Metrics) {
         self.cpu_core_pct += other.cpu_core_pct;
         self.cpu_machine_pct += other.cpu_machine_pct;
         self.rss_bytes = sum_opt(self.rss_bytes, other.rss_bytes);
@@ -98,7 +98,7 @@ fn sum_opt_f(a: Option<f64>, b: Option<f64>) -> Option<f64> {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Folder {
+pub(crate) enum Folder {
     Applications,
     UserServices,
     Containers,
@@ -107,22 +107,22 @@ pub enum Folder {
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct HostTree {
-    pub nproc: u32,
-    pub cpu_pct: f64,
-    pub cpu_user_pct: f64,
-    pub cpu_system_pct: f64,
-    pub cpu_wait_pct: f64,
-    pub mem_used_bytes: u64,
-    pub mem_total_bytes: u64,
-    pub mem_buffers_bytes: u64,
-    pub mem_cached_bytes: u64,
+    pub(crate) nproc: u32,
+    pub(crate) cpu_pct: f64,
+    pub(crate) cpu_user_pct: f64,
+    pub(crate) cpu_system_pct: f64,
+    pub(crate) cpu_wait_pct: f64,
+    pub(crate) mem_used_bytes: u64,
+    pub(crate) mem_total_bytes: u64,
+    pub(crate) mem_buffers_bytes: u64,
+    pub(crate) mem_cached_bytes: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub vram_used_bytes: Option<u64>,
+    pub(crate) vram_used_bytes: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub vram_total_bytes: Option<u64>,
-    pub unified_memory: bool,
+    pub(crate) vram_total_bytes: Option<u64>,
+    pub(crate) unified_memory: bool,
     pub users: Vec<UserNode>,
-    pub containers: Vec<IdentNode>,
+    pub(crate) containers: Vec<IdentNode>,
     pub system: Vec<IdentNode>,
 }
 
@@ -151,7 +151,7 @@ impl From<&HostHeader> for HostTree {
 #[derive(Clone, Debug, Serialize)]
 pub struct UserNode {
     pub uid: u32,
-    pub name: String,
+    pub(crate) name: String,
     pub applications: Vec<IdentNode>,
     pub user_services: Vec<IdentNode>,
     pub containers: Vec<IdentNode>,
@@ -161,9 +161,9 @@ pub struct UserNode {
 pub struct IdentNode {
     pub id: String,
     pub title: String,
-    pub nproc: u32,
+    pub(crate) nproc: u32,
     #[serde(flatten)]
-    pub metrics: Metrics,
+    pub(crate) metrics: Metrics,
     pub instances: Vec<InstanceNode>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub containers: Vec<MemberContainer>,
@@ -171,29 +171,29 @@ pub struct IdentNode {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct MemberContainer {
-    pub id: String,
-    pub title: String,
-    pub nproc: u32,
+    pub(crate) id: String,
+    pub(crate) title: String,
+    pub(crate) nproc: u32,
     #[serde(flatten)]
-    pub metrics: Metrics,
-    pub processes: Vec<ProcNode>,
+    pub(crate) metrics: Metrics,
+    pub(crate) processes: Vec<ProcNode>,
 }
 
 #[derive(Clone, Debug, Serialize)]
 pub struct InstanceNode {
-    pub key: String,
-    pub nproc: u32,
+    pub(crate) key: String,
+    pub(crate) nproc: u32,
     #[serde(flatten)]
-    pub metrics: Metrics,
+    pub(crate) metrics: Metrics,
     pub processes: Vec<ProcNode>,
 }
 
 #[derive(Clone, Debug, Serialize)]
 pub struct ProcNode {
-    pub pid: u32,
+    pub(crate) pid: u32,
     pub name: String,
     #[serde(flatten)]
-    pub metrics: Metrics,
+    pub(crate) metrics: Metrics,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub children: Vec<ProcNode>,
 }

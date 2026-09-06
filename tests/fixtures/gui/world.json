@@ -5,43 +5,43 @@
   "workdir_uids": {
     "/usr/local/src/com.github/PeleOs-LLC/caldera": 1000,
     "/etc/localtime": 0,
-    "/var/lib/docker/volumes/engined-cache/_data": 1001,
-    "/home/u/.local/share/engined-models/whisper": 1000,
-    "/home/u/.local/share/engined/engines/whisper": 1000,
-    "/home/u/.local/share/engined-models/llm": 1000,
-    "/home/u/.local/state/engined/llama/preset.ini": 1000,
-    "/home/u/.local/share/engined-models/kokoro": 1000,
+    "/var/lib/docker/volumes/acme-cache/_data": 1001,
+    "/home/u/.local/share/acme/models/encoder": 1000,
+    "/home/u/.local/share/acme/engines/encoder": 1000,
+    "/home/u/.local/share/acme/models/index": 1000,
+    "/home/u/.local/state/acme/indexer/preset.ini": 1000,
+    "/home/u/.local/share/acme/models/thumbs": 1000,
     "/home/u/.local/share/spec-runner/7": 1000
   },
   "containers": [
     {
       "Id": "31c4735b8670a5b31ca1894f141c5cff4a2f5ed814214c9ccd4dc2a3ec0cc94c",
       "Names": [
-        "/engined-whisper"
+        "/acme-encoder"
       ],
       "State": "running",
       "Labels": {
-        "engined.spec": "w"
+        "acme.spec": "e"
       }
     },
     {
       "Id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "Names": [
-        "/engined-llama"
+        "/acme-indexer"
       ],
       "State": "running",
       "Labels": {
-        "engined.spec": "l"
+        "acme.spec": "i"
       }
     },
     {
       "Id": "e0d5a2f8001315a5594211e149ca69da6d1e0ccc36487bfd87ade594f16f5deb",
       "Names": [
-        "/engined-kokoro"
+        "/acme-thumbnailer"
       ],
       "State": "running",
       "Labels": {
-        "engined.spec": "k"
+        "acme.spec": "t"
       }
     },
     {
@@ -75,7 +75,7 @@
       ],
       "State": "running",
       "Labels": {
-        "engined.spec": "s"
+        "acme.spec": "s"
       }
     }
   ],
@@ -84,7 +84,7 @@
       "Mounts": [
         {
           "Type": "volume",
-          "Source": "/var/lib/docker/volumes/engined-cache/_data"
+          "Source": "/var/lib/docker/volumes/acme-cache/_data"
         },
         {
           "Type": "bind",
@@ -92,11 +92,11 @@
         },
         {
           "Type": "bind",
-          "Source": "/home/u/.local/share/engined-models/whisper"
+          "Source": "/home/u/.local/share/acme/models/encoder"
         },
         {
           "Type": "bind",
-          "Source": "/home/u/.local/share/engined/engines/whisper"
+          "Source": "/home/u/.local/share/acme/engines/encoder"
         }
       ]
     },
@@ -104,11 +104,11 @@
       "Mounts": [
         {
           "Type": "bind",
-          "Source": "/home/u/.local/share/engined-models/llm"
+          "Source": "/home/u/.local/share/acme/models/index"
         },
         {
           "Type": "bind",
-          "Source": "/home/u/.local/state/engined/llama/preset.ini"
+          "Source": "/home/u/.local/state/acme/indexer/preset.ini"
         }
       ]
     },
@@ -116,7 +116,7 @@
       "Mounts": [
         {
           "Type": "bind",
-          "Source": "/home/u/.local/share/engined-models/kokoro"
+          "Source": "/home/u/.local/share/acme/models/thumbs"
         }
       ]
     },
@@ -318,7 +318,7 @@
       "cmdline": [
         "python3",
         "-u",
-        "/spec/whisper_app.py"
+        "/app/encoder.py"
       ],
       "cgroup": "0::/system.slice/docker-31c4735b8670a5b31ca1894f141c5cff4a2f5ed814214c9ccd4dc2a3ec0cc94c.scope",
       "utime": 10,
@@ -330,10 +330,10 @@
       "pgrp": 201,
       "sid": 201,
       "uid": 0,
-      "comm": "llama-server",
+      "comm": "indexer",
       "exe": null,
       "cmdline": [
-        "/app/llama-server"
+        "/app/indexer"
       ],
       "cgroup": "0::/system.slice/docker-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.scope",
       "utime": 10,
@@ -438,13 +438,13 @@
       "pgrp": 302,
       "sid": 302,
       "uid": 1000,
-      "comm": "bun",
-      "exe": "/home/u/.bun/bin/bun",
+      "comm": "node",
+      "exe": "/usr/bin/node",
       "cmdline": [
-        "/home/u/.bun/bin/bun",
-        "/home/u/.local/share/earshot/main.js"
+        "/usr/bin/node",
+        "/usr/lib/node_modules/node-red/red.js"
       ],
-      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/earshotd.service",
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/node-red.service",
       "utime": 10,
       "stime": 1
     },
@@ -454,13 +454,13 @@
       "pgrp": 303,
       "sid": 303,
       "uid": 1000,
-      "comm": "bun",
-      "exe": "/home/u/.bun/bin/bun",
+      "comm": "node",
+      "exe": "/usr/bin/node",
       "cmdline": [
-        "/home/u/.bun/bin/bun",
-        "/home/u/.local/share/engined/main.js"
+        "/usr/bin/node",
+        "/usr/lib/node_modules/homebridge/bin/homebridge"
       ],
-      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/engined.service",
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/homebridge.service",
       "utime": 10,
       "stime": 1
     },
@@ -1183,13 +1183,10 @@
       "cmdline": [
         "/usr/bin/bwrap",
         "--die-with-parent",
-        "--unshare-pid",
         "--",
-        "/tmp/majordomo-turns/turn/majordomo",
-        "lead",
-        "get",
-        "--lead-id",
-        "c7031d70-21cf-4bf9-bc87-53498f35fa9d"
+        "/usr/bin/htop",
+        "-u",
+        "1000"
       ],
       "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-ghostty-surface-transient-184518.scope",
       "utime": 10,
@@ -1360,10 +1357,11 @@
       "pgrp": 600,
       "sid": 600,
       "uid": 1000,
-      "comm": "minecraft-launc",
-      "exe": "/home/u/Apps/minecraft-launcher",
+      "comm": "soffice.bin",
+      "exe": "/usr/lib64/libreoffice/program/soffice.bin",
       "cmdline": [
-        "/home/u/Apps/minecraft-launcher"
+        "/usr/lib64/libreoffice/program/soffice.bin",
+        "--writer"
       ],
       "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/dbus-:1.2-org.gnome.Nautilus@250.service",
       "utime": 10,
@@ -1376,11 +1374,12 @@
       "sid": 601,
       "uid": 1000,
       "comm": "java",
-      "exe": "/home/u/.minecraft/runtime/java",
+      "exe": "/usr/lib/jvm/jre-21-openjdk/bin/java",
       "cmdline": [
-        "/home/u/.minecraft/runtime/java",
-        "-jar",
-        "game.jar"
+        "/usr/lib/jvm/jre-21-openjdk/bin/java",
+        "-classpath",
+        "/usr/lib64/libreoffice/program/classes/hsqldb.jar",
+        "org.hsqldb.Server"
       ],
       "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/dbus-:1.2-org.gnome.Nautilus@250.service",
       "utime": 10,
@@ -1424,12 +1423,12 @@
       "pgrp": 710,
       "sid": 710,
       "uid": 1000,
-      "comm": "signal-desktop",
-      "exe": "/snap/signal-desktop/opt/Signal/signal-desktop",
+      "comm": "chrome",
+      "exe": "/snap/chromium/current/usr/lib/chromium-browser/chrome",
       "cmdline": [
-        "/snap/signal-desktop/opt/Signal/signal-desktop"
+        "/snap/chromium/current/usr/lib/chromium-browser/chrome"
       ],
-      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/snap.signal-desktop.signal-desktop-x.scope",
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/snap.chromium.chromium-x.scope",
       "utime": 10,
       "stime": 1
     },
@@ -1439,13 +1438,13 @@
       "pgrp": 711,
       "sid": 711,
       "uid": 1000,
-      "comm": "signal-desktop",
-      "exe": "/snap/signal-desktop/opt/Signal/signal-desktop",
+      "comm": "chrome",
+      "exe": "/snap/chromium/current/usr/lib/chromium-browser/chrome",
       "cmdline": [
-        "/snap/signal-desktop/opt/Signal/signal-desktop",
+        "/snap/chromium/current/usr/lib/chromium-browser/chrome",
         "--type=renderer"
       ],
-      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/snap.signal-desktop.signal-desktop-x.scope",
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/snap.chromium.chromium-x.scope",
       "utime": 10,
       "stime": 1
     },
@@ -1492,9 +1491,9 @@
       "cmdline": [
         "/usr/bin/bwrap",
         "--",
-        "startvesktop"
+        "/app/bin/zypak-wrapper"
       ],
-      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-flatpak-dev.vencord.Vesktop-1.scope",
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-flatpak-com.visualstudio.code-1.scope",
       "utime": 10,
       "stime": 1
     },
@@ -1508,9 +1507,10 @@
       "exe": "/usr/bin/bash",
       "cmdline": [
         "bash",
-        "/app/bin/startvesktop"
+        "/app/bin/zypak-wrapper",
+        "/app/extra/vscode/code"
       ],
-      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-flatpak-dev.vencord.Vesktop-1.scope",
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-flatpak-com.visualstudio.code-1.scope",
       "utime": 10,
       "stime": 1
     },
@@ -1520,12 +1520,12 @@
       "pgrp": 732,
       "sid": 732,
       "uid": 1000,
-      "comm": "vesktop.bin",
-      "exe": "/app/bin/vesktop/vesktop.bin",
+      "comm": "code",
+      "exe": "/app/extra/vscode/code",
       "cmdline": [
-        "/app/bin/vesktop/vesktop.bin"
+        "/app/extra/vscode/code"
       ],
-      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-flatpak-dev.vencord.Vesktop-1.scope",
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-flatpak-com.visualstudio.code-1.scope",
       "utime": 10,
       "stime": 1
     },
@@ -1540,7 +1540,7 @@
       "cmdline": [
         "cat"
       ],
-      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-flatpak-dev.vencord.Vesktop-1.scope",
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-flatpak-com.visualstudio.code-1.scope",
       "utime": 1,
       "stime": 0
     },
@@ -1555,7 +1555,7 @@
       "cmdline": [
         "cat"
       ],
-      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-flatpak-dev.vencord.Vesktop-1.scope",
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-flatpak-com.visualstudio.code-1.scope",
       "utime": 1,
       "stime": 0
     },
@@ -1571,7 +1571,7 @@
         "/usr/bin/xdg-dbus-proxy",
         "--args=76"
       ],
-      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-flatpak-dev.vencord.Vesktop-1.scope",
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-flatpak-com.visualstudio.code-1.scope",
       "utime": 1,
       "stime": 0
     },
@@ -1591,10 +1591,10 @@
         "/app/bin/zypak-helper",
         "child",
         "-",
-        "/app/bin/vesktop/vesktop.bin",
+        "/app/extra/vscode/code",
         "--type=zygote"
       ],
-      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-flatpak-dev.vencord.Vesktop-1.scope",
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-flatpak-com.visualstudio.code-1.scope",
       "utime": 1,
       "stime": 0
     },
@@ -1604,13 +1604,13 @@
       "pgrp": 736,
       "sid": 736,
       "uid": 1000,
-      "comm": "vesktop.bin",
-      "exe": "/app/bin/vesktop/vesktop.bin",
+      "comm": "code",
+      "exe": "/app/extra/vscode/code",
       "cmdline": [
-        "/app/bin/vesktop/vesktop.bin",
+        "/app/extra/vscode/code",
         "--type=zygote"
       ],
-      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-flatpak-dev.vencord.Vesktop-1.scope",
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-flatpak-com.visualstudio.code-1.scope",
       "utime": 10,
       "stime": 1
     },

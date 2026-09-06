@@ -120,13 +120,13 @@ fn gui_and_docker_fixture() {
     for name in [
         "ghostty",
         "bash",
+        "chrome",
         "claude",
+        "code",
         "cursor",
         "easyeffects",
-        "minecraft-launcher",
-        "signal-desktop",
+        "soffice.bin",
         "spotify",
-        "vesktop.bin",
         "vivaldi-bin",
     ] {
         assert!(
@@ -144,8 +144,8 @@ fn gui_and_docker_fixture() {
         "bwrap must bill to payload"
     );
     assert!(
-        !has(&user.applications, "startvesktop"),
-        "startvesktop is a launcher: {:?}",
+        !has(&user.applications, "zypak-wrapper"),
+        "the flatpak zypak wrapper script is a launcher: {:?}",
         titles(&user.applications)
     );
     assert!(
@@ -160,7 +160,12 @@ fn gui_and_docker_fixture() {
     );
     assert!(
         !has(&user.applications, "nautilus"),
-        "minecraft must not become nautilus"
+        "an app in another app's dbus scope keeps its own name"
+    );
+    assert!(
+        !has(&user.applications, "java"),
+        "a JVM child bills to the app that spawned it: {:?}",
+        titles(&user.applications)
     );
     assert!(!has(&user.applications, "cursor.appimage"));
     assert!(
@@ -239,8 +244,8 @@ fn gui_and_docker_fixture() {
         "context7-mcp process must remain visible under claude: {claude_procs:?}"
     );
 
-    assert!(has(&user.user_services, "earshotd"));
-    assert!(has(&user.user_services, "engined"));
+    assert!(has(&user.user_services, "node-red"));
+    assert!(has(&user.user_services, "homebridge"));
     assert!(has(&user.user_services, "gnome-shell"));
     assert!(has(&user.user_services, "dbus-broker"));
     assert!(has(&user.user_services, "ibus-daemon"));
@@ -292,7 +297,7 @@ fn gui_and_docker_fixture() {
     assert!(
         !has(&user.user_services, "vivaldi-bin")
             && !has(&user.user_services, "claude")
-            && !has(&user.user_services, "vesktop.bin"),
+            && !has(&user.user_services, "code"),
         "independent apps must not fold into User Services: {:?}",
         titles(&user.user_services)
     );
@@ -442,17 +447,22 @@ fn gui_and_docker_fixture() {
         "pipewire-pulse bills to pipewire (exe basename): {:?}",
         proc_names(pw)
     );
-    assert!(has(&user.applications, "majordomo"));
-    assert!(!has(&user.user_services, "majordomo"));
-    let vesktop = user
+    assert!(has(&user.applications, "htop"));
+    assert!(!has(&user.user_services, "htop"));
+    let code = user
         .applications
         .iter()
-        .find(|n| n.id == "vesktop.bin" || n.title == "vesktop.bin")
-        .expect("vesktop.bin");
+        .find(|n| n.id == "code" || n.title == "code")
+        .expect("code");
     assert!(
-        proc_names(vesktop).iter().any(|n| n == "xdg-dbus-proxy"),
-        "app-bound xdg-dbus-proxy bills to vesktop: {:?}",
-        proc_names(vesktop)
+        proc_names(code).iter().any(|n| n == "xdg-dbus-proxy"),
+        "app-bound xdg-dbus-proxy bills to the flatpak app: {:?}",
+        proc_names(code)
+    );
+    assert!(
+        proc_names(code).iter().filter(|n| *n == "cat").count() == 2,
+        "pipe helpers under the flatpak launcher bill to the payload: {:?}",
+        proc_names(code)
     );
     let cursor = user
         .applications
@@ -482,12 +492,12 @@ fn gui_and_docker_fixture() {
     );
 
     assert!(has(&user.containers, "supabase:caldera"));
-    assert!(has(&user.containers, "engined-whisper"));
-    assert!(has(&user.containers, "engined-llama"));
-    assert!(has(&user.containers, "engined-kokoro"));
+    assert!(has(&user.containers, "acme-encoder"));
+    assert!(has(&user.containers, "acme-indexer"));
+    assert!(has(&user.containers, "acme-thumbnailer"));
     assert!(
         has(&user.containers, "spec-runner-7"),
-        "a container named nothing like engined must bill to its bind-mount owner: {:?}",
+        "a container named nothing like its siblings bills to its bind-mount owner: {:?}",
         titles(&user.containers)
     );
     assert!(
@@ -495,7 +505,7 @@ fn gui_and_docker_fixture() {
         "an attributed container must not also sit on Host: {:?}",
         titles(&tree.containers)
     );
-    assert!(!has(&user.containers, "engined"));
+    assert!(!has(&user.containers, "acme"));
     assert!(!has(&user.containers, "dockerd"));
     assert!(!has(&user.containers, "containerd"));
 
@@ -518,7 +528,7 @@ fn gui_and_docker_fixture() {
     );
     assert!(has(&tree.system, "dockerd"));
     assert!(has(&tree.system, "containerd"));
-    assert!(!has(&tree.system, "engined-whisper"));
+    assert!(!has(&tree.system, "acme-encoder"));
     assert!(!has(&tree.system, "supabase:caldera"));
     assert!(!tree.system.iter().any(|n| n.title.starts_with("docker-")));
 }

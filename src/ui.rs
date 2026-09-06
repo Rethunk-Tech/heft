@@ -311,6 +311,17 @@ fn handle_key(
     mods: KeyModifiers,
     rows: &[Flat],
 ) -> Result<bool, Error> {
+    // Raw mode turns ISIG off, so the terminal never raises SIGINT and heft
+    // has to answer Ctrl-C itself. Before this guard every modified key fell
+    // through to its bare binding, which was not a near miss: Ctrl-C cycled
+    // the sort column, Ctrl-D reversed the direction, and Ctrl-S wrote
+    // view.json without the user ever pressing `s`. One guard rather than a
+    // check per arm, so a binding added later cannot reintroduce it.
+    //
+    // SHIFT is deliberately not here: a capital is how you type one.
+    if mods.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER) {
+        return Ok(mods.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('c'));
+    }
     if app.filter_edit {
         let before = app.view.filter.clone();
         match code {
@@ -322,7 +333,7 @@ fn handle_key(
             KeyCode::Backspace => {
                 app.view.filter.pop();
             }
-            KeyCode::Char(c) if !mods.contains(KeyModifiers::CONTROL) => {
+            KeyCode::Char(c) => {
                 app.view.filter.push(c);
             }
             _ => {}
@@ -1037,6 +1048,69 @@ mod tests {
             metrics: Metrics::default(),
             expandable: false,
         }
+    }
+
+    fn test_app() -> App {
+        let view = View::default();
+        App {
+            cols: Columns::from_view(&view),
+            filter_re: Filter::new(&view.filter),
+            tree: HostTree::default(),
+            cursor: 0,
+            row_off: 0,
+            row_vis: 10,
+            expand: HashSet::new(),
+            view,
+            filter_edit: false,
+            col_off: 0,
+            status: String::new(),
+            help: false,
+        }
+    }
+
+    /// Reproduced against the real binary in a pty before this existed: from a
+    /// default view, one Ctrl-C moved the sort pss -> rss and a second moved it
+    /// to swap, exactly as pressing `c` twice would; Ctrl-D flipped `desc`; and
+    /// Ctrl-S wrote view.json with no `s` ever pressed. Raw mode turns ISIG
+    /// off, so nothing else was ever going to catch these.
+    #[test]
+    fn a_modified_key_never_reaches_its_bare_binding() {
+        let ctrl = KeyModifiers::CONTROL;
+        let rows = filter_rows();
+
+        for (key, what) in [
+            ('c', "sort cycle"),
+            ('d', "sort direction"),
+            ('s', "view save"),
+        ] {
+            let mut app = test_app();
+            let before = (app.view.sort.clone(), app.view.desc);
+            let quit = handle_key(&mut app, KeyCode::Char(key), ctrl, &rows).unwrap();
+            assert_eq!(
+                (app.view.sort.clone(), app.view.desc),
+                before,
+                "ctrl-{key} reached the {what} binding"
+            );
+            // Ctrl-C is the one that means something, and it means quit.
+            assert_eq!(quit, key == 'c', "ctrl-{key} quit = {quit}");
+        }
+
+        // Alt and Super are dropped outright; neither quits nor acts.
+        let mut app = test_app();
+        assert!(!handle_key(&mut app, KeyCode::Char('c'), KeyModifiers::ALT, &rows).unwrap());
+        assert_eq!(app.view.sort, View::default().sort);
+
+        // A capital is how you type one: SHIFT must still reach the bindings.
+        let mut app = test_app();
+        app.filter_edit = true;
+        handle_key(&mut app, KeyCode::Char('A'), KeyModifiers::SHIFT, &rows).unwrap();
+        assert_eq!(app.view.filter, "A");
+
+        // And Ctrl-C quits out of the filter editor too, rather than typing.
+        let mut app = test_app();
+        app.filter_edit = true;
+        assert!(handle_key(&mut app, KeyCode::Char('c'), ctrl, &rows).unwrap());
+        assert!(app.view.filter.is_empty(), "ctrl-c must not type a `c`");
     }
 
     fn names(rows: &[Flat]) -> Vec<&str> {

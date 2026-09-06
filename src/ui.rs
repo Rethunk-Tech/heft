@@ -19,7 +19,7 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph, Row, Table};
 use crate::config::{self, View};
 use crate::cpu;
 use crate::mem::{self, MemParts};
-use crate::once::{Columns, Sort, fmt_bytes, fmt_pct, sort_tree};
+use crate::once::{Columns, Sort, fmt_bytes, fmt_pct, keep_matches, sort_tree};
 use crate::proc;
 use crate::types::{
     Error, HostTree, IdentNode, Metrics, ProcNode, folder_nproc, host_metrics, sum_idents,
@@ -196,28 +196,13 @@ fn flatten(tree: &HostTree, expand: &HashSet<String>, view: &View) -> Vec<Flat> 
         }
     }
     if !filter.is_empty() {
-        keep_matches(&mut rows, &filter);
+        keep_rows(&mut rows, &filter);
     }
     rows
 }
 
-fn keep_matches(rows: &mut Vec<Flat>, filter: &str) {
-    // `want` is the depth still needed to complete the ancestor chain of the
-    // nearest match below. Tightening it to each kept row's own depth is what
-    // limits the walk to that chain: a shallower row on another branch is
-    // always preceded by the deeper rows of its own subtree, which do not
-    // match and do not lower `want`, so it never becomes an empty header.
-    let mut want = 0;
-    let mut keep = vec![false; rows.len()];
-    for (i, row) in rows.iter().enumerate().rev() {
-        let d = row.depth;
-        if row.name.to_ascii_lowercase().contains(filter) || d < want {
-            keep[i] = true;
-            want = d;
-        }
-    }
-    let mut flags = keep.into_iter();
-    rows.retain(|_| flags.next() == Some(true));
+fn keep_rows(rows: &mut Vec<Flat>, filter: &str) {
+    keep_matches(rows, filter, |r| (r.depth, r.name.as_str()));
 }
 
 struct FolderPush<'a> {
@@ -1016,7 +1001,7 @@ mod tests {
     #[test]
     fn keep_matches_keeps_the_path_to_a_leaf() {
         let mut rows = filter_rows();
-        keep_matches(&mut rows, "firefox");
+        keep_rows(&mut rows, "firefox");
         assert_eq!(names(&rows), ["Host", "alice", "Applications", "firefox"]);
     }
 
@@ -1026,14 +1011,14 @@ mod tests {
         // shallower than the match but sit on another branch, so they must not
         // survive as empty headers.
         let mut rows = filter_rows();
-        keep_matches(&mut rows, "vim");
+        keep_rows(&mut rows, "vim");
         assert_eq!(names(&rows), ["Host", "bob", "Applications", "vim"]);
     }
 
     #[test]
     fn keep_matches_drops_children_of_a_matching_folder() {
         let mut rows = filter_rows();
-        keep_matches(&mut rows, "applications");
+        keep_rows(&mut rows, "applications");
         assert_eq!(
             names(&rows),
             ["Host", "alice", "Applications", "bob", "Applications"]
@@ -1043,11 +1028,11 @@ mod tests {
     #[test]
     fn keep_matches_lowercases_the_name_but_not_the_filter() {
         let mut rows = filter_rows();
-        keep_matches(&mut rows, "user services");
+        keep_rows(&mut rows, "user services");
         assert_eq!(names(&rows), ["Host", "alice", "User Services"]);
         // Callers hand in an already-lowercased needle; a capital drops everything.
         let mut rows = filter_rows();
-        keep_matches(&mut rows, "Firefox");
+        keep_rows(&mut rows, "Firefox");
         assert!(rows.is_empty());
     }
 

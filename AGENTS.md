@@ -104,6 +104,31 @@ checked, not assumed, so replacing them is not pending work.
   `Metrics::accumulate` never sums the pair, so a folder, User or Host row
   stays blank rather than reporting one namespace as its own.
 
+## Surfaces and flags
+
+`main` resolves one `View` and hands it to whichever surface runs, so
+precedence lives in one place: `--sort` / `--filter` overwrite whatever the
+saved view held. `--once` starts from `config::load_view()`; `--json` starts
+from `View::default()` and never reads the file, because a human's saved
+preference must not reshape a documented contract. `--filter` is
+`conflicts_with = "json"`: the JSON tree has no folder rows, so "keep the
+ancestors" has nothing to mean there.
+
+An unknown `--sort` label is a clap `InvalidValue` exit, not
+`Sort::from_label`'s fallback — a stale `view.json` must not stop the monitor,
+an argument just typed can still be corrected. `once::sort_labels` feeds that
+error; `src/cli.rs` cannot reach `COLUMNS` because `build.rs` includes it
+standalone to generate the completions and man page.
+
+`main` rejects a non-terminal stdout before sampling: the TUI cannot open a
+terminal it has not got, and reporting that after a `/proc` walk would burn an
+`--interval` first. Non-zero, and never a silent fall back to `--once`.
+
+`once::keep_matches` is the one filter for every surface — the TUI over its
+flattened rows, `--once` over `once::table_rows`. Rows are built from the whole
+tree and filtered afterwards, so an ancestor row keeps the total it was built
+with rather than the total of what survived.
+
 ## Columns
 
 `once::COLUMNS` is the one column model; `once::Columns` is that list with

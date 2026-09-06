@@ -4,6 +4,21 @@
 
 ### Added
 
+- `--sort <column>` and `--filter <text>`, so a script gets the top rows
+  without piping through `sort` and losing the indentation that makes the tree
+  readable. `--sort` takes the same labels the `c` key cycles and `view.json`
+  saves, so all three name a column the same way, and an unknown one is a usage
+  error rather than a fallback: a stale saved view must not stop the monitor,
+  but a name just typed can still be corrected. `--filter` is the `/` key and
+  runs through the same `keep_matches`, so it keeps the ancestors of a match —
+  a filter that dropped them would print an orphaned tree — and those ancestors
+  keep the totals they were built with rather than the totals of what survived.
+  An explicit flag beats a saved `view.json`. `--once` otherwise starts from
+  that saved view; `--json` never reads it, because its shape is a documented
+  contract and a human's TUI preference is not part of it, and `--filter` is
+  refused with `--json` since the JSON tree has no folder rows for "keep the
+  ancestors" to mean anything there.
+
 - `hide_columns` in `view.json`: a list of column labels the table leaves out.
   Seventeen columns no longer fit a terminal, which is why `[` and `]` exist,
   and scrolling past a column every tick is not the same as never wanting it.
@@ -60,6 +75,15 @@
   `--network=host` container stays blank, since its counters are the
   machine's, and a restart drops one interval instead of reporting a negative
   rate.
+
+### Changed
+
+- Running the TUI without a terminal on stdout now says so and names `--once`
+  and `--json`, instead of `No such device or address (os error 6)`. The check
+  runs before the first `/proc` walk, since surfacing it afterwards would burn
+  a whole `--interval` first. Still non-zero — it is a usage error — and
+  deliberately not a quiet fall back to `--once`, which would surprise anyone
+  piping heft expecting a TUI.
 
 ### Fixed
 

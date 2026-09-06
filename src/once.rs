@@ -258,6 +258,40 @@ impl Sort {
     }
 }
 
+/// Every sort label, so `--sort` can name the valid ones in its usage error.
+#[must_use]
+pub fn sort_labels() -> Vec<&'static str> {
+    COLUMNS.iter().map(|c| c.label).collect()
+}
+
+/// Keeps a row when its own name contains `filter`, or when it is an ancestor
+/// of a row below that does. `filter` is already lowercased; the name is
+/// lowercased here.
+///
+/// One definition for every surface: the TUI reads it over the flattened rows
+/// it draws, `--once` over the rows it prints. Ancestor rows keep the metrics
+/// they were built with, so a filtered Host line still totals the machine
+/// rather than the match.
+///
+/// `want` is the depth still needed to complete the ancestor chain of the
+/// nearest match below. Tightening it to each kept row's own depth is what
+/// limits the walk to that chain: a shallower row on another branch is always
+/// preceded by the deeper rows of its own subtree, which do not match and do
+/// not lower `want`, so it never becomes an empty header.
+pub(crate) fn keep_matches<T>(rows: &mut Vec<T>, filter: &str, row: impl Fn(&T) -> (u16, &str)) {
+    let mut want = 0;
+    let mut keep = vec![false; rows.len()];
+    for (i, r) in rows.iter().enumerate().rev() {
+        let (d, name) = row(r);
+        if name.to_ascii_lowercase().contains(filter) || d < want {
+            keep[i] = true;
+            want = d;
+        }
+    }
+    let mut flags = keep.into_iter();
+    rows.retain(|_| flags.next() == Some(true));
+}
+
 fn cmp_row(a: Row<'_>, b: Row<'_>, sort: Sort, desc: bool) -> Ordering {
     let Some(key) = COLUMNS[sort.0].key else {
         let ord = a.0.cmp(b.0);
@@ -373,7 +407,14 @@ fn layout(cols: &Columns, cell: impl Fn(&Column) -> String) -> String {
 /// Returns an error if writing the table to stdout fails.
 pub fn print_table(interval: Duration, view: &View) -> Result<(), Error> {
     let cols = Columns::from_view(view);
-    let tree = proc::sample_world(interval);
+    let mut tree = proc::sample_world(interval);
+    sort_tree(&mut tree, Sort::from_label(&view.sort), view.desc);
+    let mut rows = table_rows(&tree);
+    if !view.filter.is_empty() {
+        keep_matches(&mut rows, &view.filter.to_ascii_lowercase(), |r| {
+            (r.depth, r.name.as_str())
+        });
+    }
     let mut out = io::stdout();
     writeln!(
         out,
@@ -388,30 +429,65 @@ pub fn print_table(interval: Duration, view: &View) -> Result<(), Error> {
         tree.nproc
     )?;
     write_header(&mut out, &cols)?;
-    emit_row(
-        &mut out,
-        &cols,
-        0,
-        "Host",
-        tree_host_nproc(&tree),
-        &host_metrics(&tree),
-    )?;
-    for user in &tree.users {
-        emit_row(
-            &mut out,
-            &cols,
-            1,
-            &format!("{} ({})", user.name, user.uid),
-            user_nproc(user),
-            &user_metrics(user),
-        )?;
-        write_folder(&mut out, &cols, 2, "Applications", &user.applications)?;
-        write_folder(&mut out, &cols, 2, "User Services", &user.user_services)?;
-        write_folder(&mut out, &cols, 2, "Containers", &user.containers)?;
-    }
-    write_folder(&mut out, &cols, 1, "Containers", &tree.containers)?;
-    write_folder(&mut out, &cols, 1, "System", &tree.system)?;
+    write_rows(&mut out, &cols, &rows)?;
     Ok(())
+}
+
+/// One `--once` line before it is formatted, in the depth-and-name shape
+/// `keep_matches` reads, so `--filter` means the same thing here and in the TUI.
+struct TableRow {
+    depth: u16,
+    name: String,
+    nproc: u32,
+    metrics: Metrics,
+}
+
+fn table_rows(tree: &HostTree) -> Vec<TableRow> {
+    let mut rows = vec![TableRow {
+        depth: 0,
+        name: "Host".into(),
+        nproc: tree_host_nproc(tree),
+        metrics: host_metrics(tree),
+    }];
+    for user in &tree.users {
+        rows.push(TableRow {
+            depth: 1,
+            name: format!("{} ({})", user.name, user.uid),
+            nproc: user_nproc(user),
+            metrics: user_metrics(user),
+        });
+        push_folder(&mut rows, 2, "Applications", &user.applications);
+        push_folder(&mut rows, 2, "User Services", &user.user_services);
+        push_folder(&mut rows, 2, "Containers", &user.containers);
+    }
+    push_folder(&mut rows, 1, "Containers", &tree.containers);
+    push_folder(&mut rows, 1, "System", &tree.system);
+    rows
+}
+
+fn push_folder(rows: &mut Vec<TableRow>, depth: u16, name: &str, idents: &[IdentNode]) {
+    rows.push(TableRow {
+        depth,
+        name: name.into(),
+        nproc: folder_nproc(idents),
+        metrics: sum_idents(idents),
+    });
+    for ident in idents {
+        rows.push(TableRow {
+            depth: depth + 1,
+            name: ident.title.clone(),
+            nproc: ident.nproc,
+            metrics: ident.metrics.clone(),
+        });
+        for member in &ident.containers {
+            rows.push(TableRow {
+                depth: depth + 2,
+                name: member.title.clone(),
+                nproc: member.nproc,
+                metrics: member.metrics.clone(),
+            });
+        }
+    }
 }
 
 /// `  swap used / total`, or nothing at all on a machine with no swap: an
@@ -431,8 +507,9 @@ fn host_swap(tree: &HostTree) -> String {
 /// # Errors
 ///
 /// Returns an error if the tree cannot be serialized or stdout cannot be written.
-pub fn print_json(interval: Duration) -> Result<(), Error> {
-    let tree = proc::sample_world(interval);
+pub fn print_json(interval: Duration, view: &View) -> Result<(), Error> {
+    let mut tree = proc::sample_world(interval);
+    sort_tree(&mut tree, Sort::from_label(&view.sort), view.desc);
     let doc = serde_json::json!({ "host": tree });
     // `println!` panics when the reader closes, and the release profile is
     // `panic = abort`, so `heft --json | head` would abort. Serialize first,
@@ -448,63 +525,22 @@ fn write_header(out: &mut impl Write, cols: &Columns) -> io::Result<()> {
     writeln!(out, "{}", layout(cols, |c| c.header.to_string()))
 }
 
-fn write_folder(
-    out: &mut impl Write,
-    cols: &Columns,
-    depth: usize,
-    name: &str,
-    idents: &[IdentNode],
-) -> io::Result<()> {
-    if idents.is_empty() {
-        emit_row(out, cols, depth, name, 0, &Metrics::default())?;
-        return Ok(());
-    }
-    emit_row(
-        out,
-        cols,
-        depth,
-        name,
-        folder_nproc(idents),
-        &sum_idents(idents),
-    )?;
-    for ident in idents {
-        emit_ident(out, cols, depth + 1, ident)?;
-    }
-    Ok(())
-}
-
-fn emit_ident(
-    out: &mut impl Write,
-    cols: &Columns,
-    depth: usize,
-    ident: &IdentNode,
-) -> io::Result<()> {
-    emit_row(out, cols, depth, &ident.title, ident.nproc, &ident.metrics)?;
-    for member in &ident.containers {
-        emit_row(
+fn write_rows(out: &mut impl Write, cols: &Columns, rows: &[TableRow]) -> io::Result<()> {
+    for r in rows {
+        let indent = "  ".repeat(usize::from(r.depth));
+        // The name column pads but never clips, so the label is cut to fit
+        // first.
+        let label = trunc(
+            &format!("{indent}{}", r.name),
+            usize::from(COLUMNS[0].width),
+        );
+        writeln!(
             out,
-            cols,
-            depth + 1,
-            &member.title,
-            member.nproc,
-            &member.metrics,
+            "{}",
+            layout(cols, |c| (c.fmt)(&label, r.nproc, &r.metrics))
         )?;
     }
     Ok(())
-}
-
-fn emit_row(
-    out: &mut impl Write,
-    cols: &Columns,
-    depth: usize,
-    name: &str,
-    n: u32,
-    m: &Metrics,
-) -> io::Result<()> {
-    let indent = "  ".repeat(depth);
-    // The name column pads but never clips, so the label is cut to fit first.
-    let label = trunc(&format!("{indent}{name}"), usize::from(COLUMNS[0].width));
-    writeln!(out, "{}", layout(cols, |c| (c.fmt)(&label, n, m)))
 }
 
 fn trunc(s: &str, width: usize) -> String {
@@ -750,7 +786,7 @@ mod tests {
             "nproc", "threads", "age", "diskr", "diskw", "gfx", "compute", "netns_rx", "netns_tx",
         ]);
         write_header(&mut out, &cols).unwrap();
-        write_folder(&mut out, &cols, 1, "Applications", &[sample_ident(1536.0)]).unwrap();
+        write_rows(&mut out, &cols, &folder_rows(1536.0)).unwrap();
         assert_eq!(
             String::from_utf8(out).unwrap(),
             "NAME                           %CORE   %MACH      PSS      RSS   SWAP     VRAM      GTT\n  Applications                  12.2     1.5     1.5K     2.0K            1.0M         \n    an-identity-name-long-e\u{2026}    12.2     1.5     1.5K     2.0K            1.0M         \n"
@@ -799,6 +835,40 @@ mod tests {
         }
     }
 
+    /// `--once` shares the TUI's filter, so the table keeps the ancestors of a
+    /// match and drops the siblings — and an ancestor keeps the total it was
+    /// built with, not the total of whatever survived, exactly as the TUI's
+    /// Host line does under `/`.
+    #[test]
+    fn once_filter_keeps_ancestors_and_their_totals() {
+        let named = |title: &str| IdentNode {
+            title: title.into(),
+            ..sample_ident(1536.0)
+        };
+        let tree = HostTree {
+            users: vec![UserNode {
+                uid: 1000,
+                name: "u".into(),
+                applications: vec![named("firefox"), named("vim")],
+                user_services: Vec::new(),
+                containers: Vec::new(),
+            }],
+            ..HostTree::default()
+        };
+        let mut rows = table_rows(&tree);
+        assert_eq!(rows[0].metrics.pss_bytes, Some(3072));
+        keep_matches(&mut rows, "firefox", |r| (r.depth, r.name.as_str()));
+        let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(names, ["Host", "u (1000)", "Applications", "firefox"]);
+        assert_eq!(rows[0].metrics.pss_bytes, Some(3072));
+    }
+
+    fn folder_rows(disk_r_bps: f64) -> Vec<TableRow> {
+        let mut rows = Vec::new();
+        push_folder(&mut rows, 1, "Applications", &[sample_ident(disk_r_bps)]);
+        rows
+    }
+
     /// `--once` is a fixed-width table other tools slice by column, so the
     /// exact byte layout is the contract, not just the values. The second case
     /// is a cell wider than its column: it pushes the line out rather than
@@ -808,21 +878,14 @@ mod tests {
         let mut out = Vec::new();
         let cols = every_column();
         write_header(&mut out, &cols).unwrap();
-        write_folder(&mut out, &cols, 1, "Applications", &[sample_ident(1536.0)]).unwrap();
+        write_rows(&mut out, &cols, &folder_rows(1536.0)).unwrap();
         assert_eq!(
             String::from_utf8(out).unwrap(),
             "NAME                            N   THR   AGE   %CORE   %MACH      PSS      RSS   SWAP   DISK R   DISK W     VRAM      GTT   GFX   CMP NETNS RX NETNS TX\n  Applications                  7    19    3h    12.2     1.5     1.5K     2.0K          1.5K/s              1.0M            3.0                        \n    an-identity-name-long-e\u{2026}    7    19    3h    12.2     1.5     1.5K     2.0K          1.5K/s              1.0M            3.0                        \n"
         );
 
         let mut out = Vec::new();
-        write_folder(
-            &mut out,
-            &cols,
-            1,
-            "Applications",
-            &[sample_ident(1_030_963.0)],
-        )
-        .unwrap();
+        write_rows(&mut out, &cols, &folder_rows(1_030_963.0)).unwrap();
         assert_eq!(
             String::from_utf8(out).unwrap(),
             "  Applications                  7    19    3h    12.2     1.5     1.5K     2.0K        1006.8K/s              1.0M            3.0                        \n    an-identity-name-long-e\u{2026}    7    19    3h    12.2     1.5     1.5K     2.0K        1006.8K/s              1.0M            3.0                        \n"

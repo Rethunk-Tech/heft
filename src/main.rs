@@ -1,6 +1,7 @@
+use std::io::IsTerminal;
 use std::process::ExitCode;
 
-use clap::Parser;
+use clap::{CommandFactory, Parser, error::ErrorKind};
 
 mod cli;
 
@@ -8,10 +9,32 @@ use cli::Cli;
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+    // Before sampling, not after: the TUI cannot open a terminal it has not
+    // got, and surfacing that at the end of a `/proc` walk would burn a whole
+    // `--interval` first. Non-zero, and no quiet fall back to `--once`, which
+    // would surprise anyone piping heft expecting a TUI.
+    if !cli.once && !cli.json && !std::io::stdout().is_terminal() {
+        eprintln!(
+            "heft: the TUI needs a terminal on stdout. Use --once for one table, or --json for one JSON document."
+        );
+        return ExitCode::FAILURE;
+    }
     let (interval, pss_interval) = heft::proc::clamp_intervals(cli.interval, cli.pss_interval);
-    let view = heft::config::load_view();
+    // A saved view is a human's TUI preference. `--json` is a documented
+    // contract, so only an explicit flag reshapes it.
+    let mut view = if cli.json {
+        heft::config::View::default()
+    } else {
+        heft::config::load_view()
+    };
+    if let Some(label) = cli.sort {
+        view.sort = check_sort(&label).to_string();
+    }
+    if let Some(filter) = cli.filter {
+        view.filter = filter;
+    }
     let result = if cli.json {
-        heft::once::print_json(interval)
+        heft::once::print_json(interval, &view)
     } else if cli.once {
         heft::once::print_table(interval, &view)
     } else {
@@ -28,6 +51,25 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// A typo on the command line is told to the user, where `Sort::from_label`
+/// silently falls back for a saved view: a stale `view.json` must not stop the
+/// monitor, but an argument just typed can still be corrected.
+fn check_sort(label: &str) -> &str {
+    let labels = heft::once::sort_labels();
+    if labels.contains(&label) {
+        return label;
+    }
+    Cli::command()
+        .error(
+            ErrorKind::InvalidValue,
+            format!(
+                "invalid value '{label}' for '--sort <COLUMN>'\n  [possible values: {}]",
+                labels.join(", ")
+            ),
+        )
+        .exit()
 }
 
 fn is_broken_pipe(e: &(dyn std::error::Error + 'static)) -> bool {

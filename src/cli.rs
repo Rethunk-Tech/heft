@@ -19,4 +19,10 @@ pub struct Cli {
     /// TUI seconds between PSS (`smaps_rollup`) reads (≥ `--interval`). `--once` / `--json` always read PSS
     #[arg(long, default_value_t = 5.0)]
     pub pss_interval: f64,
+    /// Sort by this column label: the labels `c` cycles and `view.json` saves; a bad one lists them all
+    #[arg(long, value_name = "COLUMN")]
+    pub sort: Option<String>,
+    /// Keep only rows whose name contains this text, and their parents
+    #[arg(long, value_name = "TEXT", conflicts_with = "json")]
+    pub filter: Option<String>,
 }

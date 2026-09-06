@@ -42,7 +42,12 @@ heft --once               # one table on stdout
 heft --json               # one JSON tree on stdout
 heft --interval 0.5       # catch-all period (TUI tick and --once/--json gap)
 heft --pss-interval 5     # TUI only: how often to read smaps_rollup (default 5s)
+heft --sort rss           # start on this column instead of the saved one
+heft --once --filter code # keep rows whose name contains this, and their parents
 ```
+
+The TUI needs a terminal. `heft > file`, or heft in a script, says so and
+exits non-zero rather than falling back to `--once` behind your back.
 
 `--interval` is the catch-all (default 1s, floor 0.05s): `/proc` walk, RSS,
 io, GPU, grouping, and CPU/disk/GPU rates. The TUI sleeps `--interval` minus
@@ -54,6 +59,18 @@ rollup.
 `--json` / `--once` take two `/proc` walks separated by `--interval` so rates
 exist, and always read PSS on the published sample (`--pss-interval` is
 ignored).
+
+`--sort` takes the labels the `c` key cycles and `view.json` saves (listed
+under [Hiding columns](#hiding-columns)); a name that is not one of them is a
+usage error, so a typo is told to you rather than quietly sorting by PSS the
+way a stale saved view does. `--filter` is the `/` key: it keeps matching rows
+**and their parents**, so the tree stays a tree, and a parent still shows the
+total it always did rather than the total of what survived.
+
+Both flags beat a saved `view.json`. `--once` otherwise starts from that saved
+view; `--json` never does — its shape is a contract, so only an explicit flag
+reshapes it, and `--filter` is refused there because the JSON tree has no
+folder rows for "keep the parents" to mean anything (filter it with `jq`).
 
 ## TUI keys
 

@@ -47,11 +47,8 @@ ignored).
 | `s` | save the current sort and filter to `$XDG_CONFIG_HOME/heft/view.json` |
 | `?` / `F1` | toggle the key help overlay |
 
-`c` and `d` reorder every level of the tree, not just the top rows: identity
-rows, their instances and member containers, and the process forests under both.
-
-Sort and filter last only for this session until you press `s`. Starting heft
-again loads that file if it exists.
+Sorting applies to every level of the tree. Sort and filter last only for this
+session until you press `s`; starting heft again loads that file if it exists.
 
 Default expand: Host, your user, Applications, and that user's Containers.
 Other users, User Services, Host-level Containers, and System start collapsed.
@@ -93,10 +90,9 @@ container title is `docker-<12hex>`. Stopped containers (no PID) do not appear.
 | --- | --- | --- |
 | config | `$XDG_CONFIG_HOME/heft/view.json` (default `~/.config/heft/view.json`) | saved sort + filter, only after `s` |
 
-Config is created only when you save a view. v1 does not create
-`$XDG_STATE_HOME/heft` or `$XDG_CACHE_HOME/heft`. Heft may write that config
-directory and the TTY alternate screen. It does not write `/proc`, sysfs, or
-cgroup files.
+v1 creates no `$XDG_STATE_HOME/heft` or `$XDG_CACHE_HOME/heft`. Heft writes
+only that config directory and the TTY alternate screen — never `/proc`,
+sysfs, or cgroup files.
 
 ## Verify
 

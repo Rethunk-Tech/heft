@@ -25,11 +25,12 @@ pub fn build_tree(
     prev: &HashMap<u32, Process>,
     curr: &HashMap<u32, Process>,
     elapsed: Duration,
-    header: &HostHeader,
+    consts: &HostHeader,
+    header: HostTree,
     containers: &ContainerIndex,
 ) -> HostTree {
     let places = resolve(curr, containers);
-    let metrics = metrics_map(prev, curr, elapsed, header);
+    let metrics = metrics_map(prev, curr, elapsed, consts);
     assemble(curr, &places, &metrics, header)
 }
 
@@ -37,7 +38,7 @@ fn metrics_map(
     prev: &HashMap<u32, Process>,
     curr: &HashMap<u32, Process>,
     elapsed: Duration,
-    header: &HostHeader,
+    consts: &HostHeader,
 ) -> HashMap<u32, Metrics> {
     curr.iter()
         .map(|(pid, p)| {
@@ -47,9 +48,9 @@ fn metrics_map(
                     prev.get(pid),
                     p,
                     elapsed,
-                    header.nproc,
-                    header.clk_tck,
-                    header.page_size,
+                    consts.nproc,
+                    consts.clk_tck,
+                    consts.page_size,
                 ),
             )
         })
@@ -352,7 +353,7 @@ fn assemble(
     curr: &HashMap<u32, Process>,
     places: &HashMap<u32, Place>,
     metrics: &HashMap<u32, Metrics>,
-    header: &HostHeader,
+    mut header: HostTree,
 ) -> HostTree {
     #[derive(Default)]
     struct Bucket {
@@ -427,12 +428,10 @@ fn assemble(
     sort_idents(&mut host_containers);
     sort_idents(&mut system);
 
-    HostTree {
-        users: user_list,
-        containers: host_containers,
-        system,
-        ..HostTree::from(header)
-    }
+    header.users = user_list;
+    header.containers = host_containers;
+    header.system = system;
+    header
 }
 
 fn ident_node(

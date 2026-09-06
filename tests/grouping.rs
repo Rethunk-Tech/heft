@@ -2,10 +2,10 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use heft::HostHeader;
 use heft::containers::{ContainerIndex, Inspect, ListItem};
 use heft::group::build_tree;
 use heft::types::Process;
+use heft::{HostHeader, HostTree};
 
 #[derive(serde::Deserialize)]
 struct Fixture {
@@ -79,7 +79,6 @@ fn load(path: &str) -> (HashMap<u32, Process>, ContainerIndex, HostHeader) {
         nproc: fix.nproc,
         clk_tck: fix.clk_tck,
         page_size: fix.page_size,
-        ..HostHeader::default()
     };
     (curr, idx, header)
 }
@@ -111,7 +110,14 @@ fn proc_names(n: &heft::IdentNode) -> Vec<String> {
 #[test]
 fn gui_and_docker_fixture() {
     let (curr, idx, header) = load("tests/fixtures/gui/world.json");
-    let tree = build_tree(&curr, &curr, Duration::from_secs(1), &header, &idx);
+    let tree = build_tree(
+        &curr,
+        &curr,
+        Duration::from_secs(1),
+        &header,
+        HostTree::default(),
+        &idx,
+    );
     let user = tree.users.iter().find(|u| u.uid == 1000).expect("uid 1000");
 
     for name in [
@@ -486,6 +492,11 @@ fn gui_and_docker_fixture() {
         has(&user.containers, "spec-runner-7"),
         "engined.spec without an engined- name prefix must bill to the engined uid: {:?}",
         titles(&user.containers)
+    );
+    assert!(
+        !has(&tree.containers, "spec-runner-7"),
+        "an attributed container must not also sit on Host: {:?}",
+        titles(&tree.containers)
     );
     assert!(!has(&user.containers, "engined"));
     assert!(!has(&user.containers, "dockerd"));

@@ -9,7 +9,7 @@ use crate::containers::{ContainerIndex, InspectCache};
 use crate::cpu;
 use crate::group;
 use crate::identity;
-use crate::types::{GpuCounters, HostTree, Process};
+use crate::types::{GpuCounters, HostHeader, HostTree, Process};
 use crate::{gpu, io as pio};
 
 fn collect(want_pss: bool, prev: Option<&HashMap<u32, Process>>) -> HashMap<u32, Process> {
@@ -186,10 +186,8 @@ pub(crate) fn username(uid: u32) -> String {
 
 /// Header totals from world-readable files only — no per-PID `/proc` walk.
 pub(crate) fn placeholder_tree() -> HostTree {
-    let nproc = cpu::nproc();
     let cpu = cpu::HostCpu::default();
-    let header = cpu::header_from(nproc, cpu::clk_tck(), cpu::page_size(), &cpu, &cpu);
-    HostTree::from(&header)
+    cpu::header_from(&cpu::host_consts(), &cpu, &cpu)
 }
 
 struct Sampler {
@@ -198,9 +196,7 @@ struct Sampler {
     t0: Instant,
     last_pss: Option<Instant>,
     pss_interval: Duration,
-    nproc: u32,
-    clk: u64,
-    page: u64,
+    consts: HostHeader,
     inspect_cache: InspectCache,
 }
 
@@ -208,9 +204,7 @@ impl Sampler {
     fn prime(pss_interval: Duration) -> Self {
         let t0 = Instant::now();
         Self {
-            nproc: cpu::nproc(),
-            clk: cpu::clk_tck(),
-            page: cpu::page_size(),
+            consts: cpu::host_consts(),
             cpu0: cpu::read_host(),
             prev: collect(false, None),
             t0,
@@ -238,8 +232,15 @@ impl Sampler {
             self.last_pss = Some(t1);
         }
         let elapsed = t1.duration_since(self.t0);
-        let header = cpu::header_from(self.nproc, self.clk, self.page, &self.cpu0, &cpu1);
-        let tree = group::build_tree(&self.prev, &curr, elapsed, &header, &containers);
+        let header = cpu::header_from(&self.consts, &self.cpu0, &cpu1);
+        let tree = group::build_tree(
+            &self.prev,
+            &curr,
+            elapsed,
+            &self.consts,
+            header,
+            &containers,
+        );
         self.prev = curr;
         self.cpu0 = cpu1;
         self.t0 = t1;

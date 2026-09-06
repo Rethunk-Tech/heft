@@ -28,22 +28,13 @@ pub struct GpuCounters {
     pub(crate) compute_ns: Option<u64>,
 }
 
-#[derive(Clone, Debug, Default)]
+/// Kernel constants every per-PID rate divides by. Read once at startup;
+/// they never change while heft runs.
+#[derive(Clone, Copy, Debug, Default)]
 pub struct HostHeader {
     pub nproc: u32,
     pub clk_tck: u64,
     pub page_size: u64,
-    pub cpu_pct: f64,
-    pub cpu_user_pct: f64,
-    pub cpu_system_pct: f64,
-    pub cpu_wait_pct: f64,
-    pub mem_used_bytes: u64,
-    pub mem_total_bytes: u64,
-    pub mem_buffers_bytes: u64,
-    pub mem_cached_bytes: u64,
-    pub vram_used_bytes: Option<u64>,
-    pub vram_total_bytes: Option<u64>,
-    pub unified_memory: bool,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -122,30 +113,8 @@ pub struct HostTree {
     pub(crate) vram_total_bytes: Option<u64>,
     pub(crate) unified_memory: bool,
     pub users: Vec<UserNode>,
-    pub(crate) containers: Vec<IdentNode>,
+    pub containers: Vec<IdentNode>,
     pub system: Vec<IdentNode>,
-}
-
-impl From<&HostHeader> for HostTree {
-    fn from(h: &HostHeader) -> Self {
-        Self {
-            nproc: h.nproc,
-            cpu_pct: h.cpu_pct,
-            cpu_user_pct: h.cpu_user_pct,
-            cpu_system_pct: h.cpu_system_pct,
-            cpu_wait_pct: h.cpu_wait_pct,
-            mem_used_bytes: h.mem_used_bytes,
-            mem_total_bytes: h.mem_total_bytes,
-            mem_buffers_bytes: h.mem_buffers_bytes,
-            mem_cached_bytes: h.mem_cached_bytes,
-            vram_used_bytes: h.vram_used_bytes,
-            vram_total_bytes: h.vram_total_bytes,
-            unified_memory: h.unified_memory,
-            users: Vec::new(),
-            containers: Vec::new(),
-            system: Vec::new(),
-        }
-    }
 }
 
 #[derive(Clone, Debug, Serialize)]

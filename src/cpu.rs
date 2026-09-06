@@ -1,7 +1,7 @@
 use std::fs;
 use std::time::Duration;
 
-use crate::types::{HostHeader, Metrics, Process};
+use crate::types::{HostHeader, HostTree, Metrics, Process};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct HostCpu {
@@ -165,14 +165,21 @@ fn engine_pct(prev: Option<u64>, cur: Option<u64>, secs: f64) -> Option<f64> {
     Some((dns / (secs * 1_000_000_000.0) * 100.0).clamp(0.0, 100.0))
 }
 
-pub fn header_from(nproc: u32, clk: u64, page: u64, a: &HostCpu, b: &HostCpu) -> HostHeader {
+pub fn host_consts() -> HostHeader {
+    HostHeader {
+        nproc: nproc(),
+        clk_tck: clk_tck(),
+        page_size: page_size(),
+    }
+}
+
+/// The header half of the published tree; `group::build_tree` fills the rest.
+pub fn header_from(c: &HostHeader, a: &HostCpu, b: &HostCpu) -> HostTree {
     let ram = crate::mem::read_ram();
     let gpu = crate::mem::read_gpu();
     let split = host_split(a, b);
-    HostHeader {
-        nproc,
-        clk_tck: clk,
-        page_size: page,
+    HostTree {
+        nproc: c.nproc,
         cpu_pct: split.busy,
         cpu_user_pct: split.user,
         cpu_system_pct: split.system,
@@ -184,6 +191,7 @@ pub fn header_from(nproc: u32, clk: u64, page: u64, a: &HostCpu, b: &HostCpu) ->
         vram_used_bytes: gpu.vram_used,
         vram_total_bytes: gpu.vram_total,
         unified_memory: crate::mem::is_unified(ram.total_bytes, &gpu),
+        ..HostTree::default()
     }
 }
 

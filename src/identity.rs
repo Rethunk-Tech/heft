@@ -100,8 +100,10 @@ pub fn unit_stem(unit: &str) -> String {
     }
 }
 
+/// `/proc/pid/stat` comm carries no brackets — the `[kworker]` form is a ps/top
+/// display convention, so only the kthreadd lineage identifies a kernel thread.
 pub fn is_kernel(p: &Process) -> bool {
-    p.uid == 0 && (p.ppid == 2 || p.pid == 2 || p.comm.starts_with('[') || p.comm == "kthreadd")
+    p.uid == 0 && (p.ppid == 2 || p.pid == 2 || p.comm == "kthreadd")
 }
 
 pub fn generic_fallback(p: &Process, unit: Option<&str>) -> String {
@@ -157,5 +159,24 @@ mod tests {
         assert!(is_user_service_unit("earshotd.service"));
         assert!(!is_user_service_unit("app-com.mitchellh.ghostty.service"));
         assert!(is_user_service_unit("org.gnome.Shell@user.service"));
+    }
+
+    #[test]
+    fn kernel_is_the_kthreadd_lineage_only() {
+        let kworker = Process {
+            pid: 3,
+            ppid: 2,
+            comm: "kworker/0:0".to_string(),
+            ..Process::default()
+        };
+        assert!(is_kernel(&kworker));
+        let bracketed = Process {
+            pid: 900,
+            ppid: 1,
+            uid: 1000,
+            comm: "[not a kthread]".to_string(),
+            ..Process::default()
+        };
+        assert!(!is_kernel(&bracketed));
     }
 }

@@ -2,7 +2,7 @@
 name = "heft"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.98"
 license = "Apache-2.0"
 publish = false
 description = "Read-only Linux TUI for application-weight process accounting"
@@ -25,3 +25,8 @@ lto = true
 codegen-units = 1
 strip = true
 panic = "abort"
+
+[build-dependencies]
+clap = { version = "4", features = ["derive"] }
+clap_complete = "4.6.9"
+clap_mangen = "0.3.3"

@@ -4,6 +4,12 @@
 
 ### Added
 
+- Shell completions (bash, zsh, fish) and a `heft.1` man page, generated at
+  build time from the same clap definition the binary parses, so they cannot
+  drift from the real flags. `clap_complete` and `clap_mangen` are
+  build-dependencies only; the shipped binary gains nothing. Install paths:
+  [HUMANS.md](HUMANS.md).
+
 - Optional grouping overrides in `$XDG_CONFIG_HOME/heft/grouping.json`, so a
   local daemon, worker, or container no longer needs a patch to heft's compiled
   tables. `applications` / `user_services` pin an identity to a folder, `fold`

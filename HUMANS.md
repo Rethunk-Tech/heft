@@ -8,6 +8,17 @@ cargo build --release
 install -Dm755 target/release/heft ~/.local/bin/heft
 ```
 
+`cargo build` also generates shell completions and a man page from the same
+flag definitions the binary uses, under a hashed `OUT_DIR`:
+
+```sh
+assets=$(find target/release/build -type d -name assets | head -1)
+install -Dm644 "$assets/heft.bash" ~/.local/share/bash-completion/completions/heft
+install -Dm644 "$assets/_heft"     ~/.local/share/zsh/site-functions/_heft
+install -Dm644 "$assets/heft.fish" ~/.config/fish/completions/heft.fish
+install -Dm644 "$assets/heft.1"    ~/.local/share/man/man1/heft.1
+```
+
 Linux only. The binary reads `/proc`, `/sys/class/drm`, and (when reachable)
 the Docker or Podman API over a unix socket. It never uses `sudo`.
 

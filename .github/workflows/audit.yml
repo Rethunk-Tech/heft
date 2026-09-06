@@ -1,0 +1,32 @@
+name: audit
+# The per-push gate only sees the lockfile at that commit. This catches an
+# advisory filed later against a dependency nothing has touched, on its own
+# trigger so it never blocks an unrelated pull request.
+on:
+  schedule:
+    - cron: "0 7 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  deny:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master
+        with:
+          toolchain: stable
+      - uses: cargo-bins/cargo-binstall@b874e25ea559687bec77e281e9b271aa1367b624 # v1.22.0
+        with:
+          version: "1.22.0"
+      - run: cargo binstall --no-confirm cargo-deny
+      - run: cargo deny --locked check

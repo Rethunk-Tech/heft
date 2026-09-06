@@ -363,6 +363,10 @@ pub fn absorbs_generic(parent: &Process) -> bool {
     {
         return false;
     }
+    // The raw parent process's names, deliberately not the resolved Place `key`
+    // that `group::compute_place` tests: this runs before the parent is placed,
+    // so a process whose identity later folds elsewhere is still judged here by
+    // what it actually is.
     !names_match(&names_of(parent), |n| n == "systemd")
 }
 

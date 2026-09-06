@@ -88,6 +88,11 @@ fn compute_place(
     if classify::is_worker(p)
         && let Some(parent) = resolve_one(p.ppid, curr, containers, memo, walking)
         && parent.folder != Folder::System
+        // `key` is the ppid's RESOLVED Place identity, not its process name, and
+        // the two disagree both ways: a `systemd` that resolved into a container
+        // is a legal fold target here, while a non-systemd process that folded
+        // onto the user-manager row is not. Not interchangeable with the raw-name
+        // check in `classify::absorbs_generic`.
         && parent.key != "systemd"
     {
         return Place {

@@ -15,8 +15,6 @@
   machine's, and a restart drops one interval instead of reporting a negative
   rate.
 
-## Unreleased
-
 ### Fixed
 
 - `heft --once | head` and `heft --json | head` exit quietly instead of

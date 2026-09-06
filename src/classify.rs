@@ -9,7 +9,6 @@ const LAUNCHERS: &[&str] = &[
     "bunx",
     "npx",
     "AppRun",
-    "apprun",
     "firejail",
     "xdg-dbus-proxy",
     "zypak-sandbox",
@@ -63,7 +62,6 @@ const COMPOSITORS: &[&str] = &[
     "kwin_x11",
     "kwin",
     "sway",
-    "hyprland",
     "Hyprland",
     "weston",
     "labwc",
@@ -92,12 +90,8 @@ fn norm(s: &str) -> String {
 }
 
 pub fn is_launcher(p: &Process) -> bool {
-    let named = name_of(p);
-    let names = [p.comm.as_str(), named.as_str()];
-    for n in names {
-        if is_launcher_name(n) {
-            return true;
-        }
+    if names_match(&names_of(p), is_launcher_name) {
+        return true;
     }
     // `bash /app/bin/startvesktop`: comm is the shell, payload is argv.
     for arg in p.cmdline.iter().skip(1) {
@@ -113,54 +107,40 @@ pub fn is_launcher(p: &Process) -> bool {
 }
 
 pub fn is_session_noise(p: &Process) -> bool {
-    let l = norm(&name_of(p));
-    l == "cat" || norm(&p.comm) == "cat"
+    names_match(&names_of(p), |n| n == "cat")
 }
 
 pub fn is_generic(p: &Process) -> bool {
-    let named = name_of(p);
-    let names = [p.comm.as_str(), named.as_str()];
-    for n in names {
-        let l = norm(n);
-        if GENERICS.iter().any(|x| norm(x) == l) {
-            return true;
-        }
-        if l.starts_with("python") || l.starts_with("node-") || l.starts_with("npm ") {
-            return true;
-        }
-    }
-    false
+    names_match(&names_of(p), |n| {
+        GENERICS.iter().any(|x| x.eq_ignore_ascii_case(n))
+            || n.starts_with("python")
+            || n.starts_with("node-")
+            || n.starts_with("npm ")
+    })
 }
 
 pub fn is_shell_name(name: &str) -> bool {
-    let l = norm(name);
-    SHELLS.iter().any(|s| norm(s) == l)
+    SHELLS.iter().any(|s| s.eq_ignore_ascii_case(name))
 }
 
 pub fn is_shell(p: &Process) -> bool {
-    is_shell_name(&p.comm) || is_shell_name(&name_of(p))
+    names_match(&names_of(p), is_shell_name)
 }
 
 pub fn is_terminal(p: &Process) -> bool {
-    let named = name_of(p);
-    let names = [p.comm.as_str(), named.as_str()];
-    names.iter().any(|n| {
-        let l = norm(n);
-        TERMINALS.iter().any(|t| norm(t) == l)
+    names_match(&names_of(p), |n| {
+        TERMINALS.iter().any(|t| t.eq_ignore_ascii_case(n))
     })
 }
 
 pub fn is_compositor(p: &Process) -> bool {
-    let named = name_of(p);
-    let names = [p.comm.as_str(), named.as_str()];
-    names.iter().any(|n| {
-        let l = norm(n);
-        COMPOSITORS.iter().any(|t| norm(t) == l)
+    names_match(&names_of(p), |n| {
+        COMPOSITORS.iter().any(|t| t.eq_ignore_ascii_case(n))
     })
 }
 
-pub fn is_session_bus(p: &Process) -> bool {
-    names_of(p).iter().any(|n| n.starts_with("dbus-broker"))
+fn is_session_bus(n: &[String]) -> bool {
+    n.iter().any(|x| x.starts_with("dbus-broker"))
 }
 
 /// User Services identity for session helpers. PPID is usually user systemd.
@@ -168,49 +148,50 @@ pub fn is_session_bus(p: &Process) -> bool {
 /// A logical group is a documented unit/package/D-Bus/architecture family,
 /// not a comm prefix. Prefix-only lookalikes with a different product stay out.
 pub fn session_helper_ident(p: &Process) -> Option<(String, String)> {
-    if is_session_bus(p) {
+    let n = names_of(p);
+    if is_session_bus(&n) {
         return Some(ident("dbus-broker"));
     }
-    if gnome_shell_helper(p) {
+    if gnome_shell_helper(&n, p) {
         return Some(ident("gnome-shell"));
     }
-    if ibus_family(p) {
+    if ibus_family(&n) {
         return Some(ident("ibus-daemon"));
     }
-    if is_atspi_registry(p) {
+    if is_atspi_registry(&n) {
         return Some(ident("at-spi-bus-launcher"));
     }
-    if is_goa_helper(p) {
+    if is_goa_helper(&n) {
         return Some(ident("goa-daemon"));
     }
-    if names_match(p, |n| n.starts_with("p11-kit")) {
+    if names_match(&n, |x| x.starts_with("p11-kit")) {
         return Some(ident("p11-kit"));
     }
-    if is_gsd_disk_utility_notify(p) {
+    if is_gsd_disk_utility_notify(&n, p) {
         return Some(ident("gsd-disk-utility-notify"));
     }
-    if is_gsd_plugin(p) {
+    if is_gsd_plugin(&n) {
         return Some(ident("gnome-settings-daemon"));
     }
-    if is_gvfs_stack(p) {
+    if is_gvfs_stack(&n, p) {
         return Some(ident("gvfs"));
     }
-    if is_flatpak_session_infra(p) {
+    if is_flatpak_session_infra(&n, p) {
         return Some(ident("flatpak"));
     }
-    if is_xdg_desktop_portal_family(p) {
+    if is_xdg_desktop_portal_family(&n, p) {
         return Some(ident("xdg-desktop-portal"));
     }
-    if is_evolution_data_server(p) {
+    if is_evolution_data_server(&n, p) {
         return Some(ident("evolution-data-server"));
     }
-    if is_pipewire(p) {
+    if is_pipewire(&n) {
         return Some(ident("pipewire"));
     }
-    if is_gcr_ssh_agent(p) {
+    if is_gcr_ssh_agent(&n, p) {
         return Some(ident("gcr-ssh-agent"));
     }
-    if names_match(p, |n| n == "abrt-applet") {
+    if names_match(&n, |x| x == "abrt-applet") {
         return Some(ident("abrt-applet"));
     }
     None
@@ -224,8 +205,8 @@ fn names_of(p: &Process) -> [String; 2] {
     [norm(&p.comm), norm(&name_of(p))]
 }
 
-fn gnome_shell_helper(p: &Process) -> bool {
-    for n in names_of(p) {
+fn gnome_shell_helper(names: &[String], p: &Process) -> bool {
+    for n in names {
         if n.starts_with("gdm-")
             || n.starts_with("gnome-session")
             || n.starts_with("gnome-keyring")
@@ -237,7 +218,7 @@ fn gnome_shell_helper(p: &Process) -> bool {
             return true;
         }
     }
-    if names_of(p).iter().any(|n| n == "gjs" || n == "gjs-console") {
+    if names_match(names, |n| n == "gjs" || n == "gjs-console") {
         return p.cmdline.iter().any(|a| {
             let al = a.to_ascii_lowercase();
             al.contains("gnome-shell") || al.contains("org.gnome.shell")
@@ -246,12 +227,12 @@ fn gnome_shell_helper(p: &Process) -> bool {
     false
 }
 
-fn names_match(p: &Process, pred: impl Fn(&str) -> bool) -> bool {
-    names_of(p).iter().any(|n| pred(n))
+fn names_match(names: &[String], pred: impl Fn(&str) -> bool) -> bool {
+    names.iter().any(|n| pred(n))
 }
 
-fn ibus_family(p: &Process) -> bool {
-    names_match(p, |n| {
+fn ibus_family(names: &[String]) -> bool {
+    names_match(names, |n| {
         n == "ibus-daemon"
             || n == "ibus-portal"
             || n == "ibus-dconf"
@@ -262,49 +243,49 @@ fn ibus_family(p: &Process) -> bool {
     })
 }
 
-fn is_atspi_registry(p: &Process) -> bool {
-    names_match(p, |n| n.starts_with("at-spi2-registr"))
+fn is_atspi_registry(names: &[String]) -> bool {
+    names_match(names, |n| n.starts_with("at-spi2-registr"))
 }
 
-fn is_goa_helper(p: &Process) -> bool {
+fn is_goa_helper(names: &[String]) -> bool {
     // gvfs-goa-volume-monitor is GVFS, not GOA.
-    names_match(p, |n| n.starts_with("goa-"))
+    names_match(names, |n| n.starts_with("goa-"))
 }
 
-fn is_gsd_disk_utility_notify(p: &Process) -> bool {
-    names_match(p, |n| n.starts_with("gsd-disk-utilit"))
+fn is_gsd_disk_utility_notify(names: &[String], p: &Process) -> bool {
+    names_match(names, |n| n.starts_with("gsd-disk-utilit"))
         || p.exe
             .as_deref()
             .is_some_and(|e| e.contains("gsd-disk-utility-notify"))
         || p.cgroup.contains("DiskUtilityNotify")
 }
 
-fn is_gsd_plugin(p: &Process) -> bool {
-    names_match(p, |n| n.starts_with("gsd-"))
+fn is_gsd_plugin(names: &[String]) -> bool {
+    names_match(names, |n| n.starts_with("gsd-"))
 }
 
-fn is_gvfs_stack(p: &Process) -> bool {
-    if names_match(p, |n| {
+fn is_gvfs_stack(names: &[String], p: &Process) -> bool {
+    if names_match(names, |n| {
         n == "gvfsd" || n.starts_with("gvfsd-") || n.starts_with("gvfs-")
     }) {
         return true;
     }
     // wsdd is a separate RPM; fold only when the gvfs daemon unit spawned it.
-    names_match(p, |n| n == "wsdd") && p.cgroup.contains("gvfs-")
+    names_match(names, |n| n == "wsdd") && p.cgroup.contains("gvfs-")
 }
 
-fn is_flatpak_session_infra(p: &Process) -> bool {
-    if names_match(p, |n| {
+fn is_flatpak_session_infra(names: &[String], p: &Process) -> bool {
+    if names_match(names, |n| {
         n.starts_with("flatpak-session") || n == "flatpak-portal"
     }) {
         return true;
     }
     // App-bound proxy already bills to that Flatpak app via launcher folding.
-    names_match(p, |n| n == "xdg-dbus-proxy") && !p.cgroup.contains("app-flatpak-")
+    names_match(names, |n| n == "xdg-dbus-proxy") && !p.cgroup.contains("app-flatpak-")
 }
 
-fn is_xdg_desktop_portal_family(p: &Process) -> bool {
-    if names_match(p, |n| {
+fn is_xdg_desktop_portal_family(names: &[String], p: &Process) -> bool {
+    if names_match(names, |n| {
         n == "xdg-desktop-portal"
             || n.starts_with("xdg-desktop-portal-")
             || n == "xdg-document-portal"
@@ -312,11 +293,11 @@ fn is_xdg_desktop_portal_family(p: &Process) -> bool {
     }) {
         return true;
     }
-    names_match(p, |n| n.starts_with("fusermount")) && p.cgroup.contains("xdg-document-portal")
+    names_match(names, |n| n.starts_with("fusermount")) && p.cgroup.contains("xdg-document-portal")
 }
 
-fn is_evolution_data_server(p: &Process) -> bool {
-    names_match(p, |n| {
+fn is_evolution_data_server(names: &[String], p: &Process) -> bool {
+    names_match(names, |n| {
         n.starts_with("evolution-addressbook")
             || n.starts_with("evolution-calendar")
             || n.starts_with("evolution-source")
@@ -328,20 +309,20 @@ fn is_evolution_data_server(p: &Process) -> bool {
         .is_some_and(|e| e.contains("/evolution-data-server/"))
 }
 
-fn is_pipewire(p: &Process) -> bool {
-    names_match(p, |n| n == "pipewire" || n == "pipewire-pulse")
+fn is_pipewire(names: &[String]) -> bool {
+    names_match(names, |n| n == "pipewire" || n == "pipewire-pulse")
 }
 
-fn is_gcr_ssh_agent(p: &Process) -> bool {
-    if names_match(p, |n| n.starts_with("gcr-ssh-agent")) {
+fn is_gcr_ssh_agent(names: &[String], p: &Process) -> bool {
+    if names_match(names, |n| n.starts_with("gcr-ssh-agent")) {
         return true;
     }
-    names_match(p, |n| n == "ssh-agent") && p.cgroup.contains("gcr-ssh-agent")
+    names_match(names, |n| n == "ssh-agent") && p.cgroup.contains("gcr-ssh-agent")
 }
 
 /// Firefox/Chromium crash helper whose parent is often user systemd.
 pub fn crash_helper_app(p: &Process) -> Option<String> {
-    if !names_of(p).iter().any(|n| is_crash_helper_name(n)) {
+    if !names_match(&names_of(p), is_crash_helper_name) {
         return None;
     }
     for s in p.exe.iter().chain(p.cmdline.iter()) {
@@ -407,7 +388,8 @@ pub fn is_interactive_shell(p: &Process) -> bool {
 }
 
 pub fn is_worker(p: &Process) -> bool {
-    names_match(p, is_crash_helper_name) || p.cmdline.iter().any(|a| a.starts_with("--type="))
+    names_match(&names_of(p), is_crash_helper_name)
+        || p.cmdline.iter().any(|a| a.starts_with("--type="))
 }
 
 pub fn is_foldable_helper(p: &Process) -> bool {
@@ -415,8 +397,7 @@ pub fn is_foldable_helper(p: &Process) -> bool {
 }
 
 pub fn is_launcher_name(name: &str) -> bool {
-    let l = norm(name);
-    LAUNCHERS.iter().any(|x| norm(x) == l) || l.ends_with(".appimage")
+    LAUNCHERS.iter().any(|x| x.eq_ignore_ascii_case(name)) || norm(name).ends_with(".appimage")
 }
 
 pub fn launcher_payload_hint(p: &Process) -> Option<String> {
@@ -442,8 +423,7 @@ pub fn launcher_payload_hint(p: &Process) -> Option<String> {
 }
 
 fn is_hint_skip(name: &str) -> bool {
-    let l = norm(name);
-    HINT_SKIP.iter().any(|x| norm(x) == l)
+    HINT_SKIP.iter().any(|x| x.eq_ignore_ascii_case(name))
 }
 
 pub fn looks_script(arg: &str) -> bool {
@@ -543,10 +523,10 @@ mod tests {
             })
             .is_some()
         );
-        assert!(is_session_bus(&p(
+        assert!(is_session_bus(&names_of(&p(
             "dbus-broker-launch",
             &["dbus-broker-launch", "--scope", "user"]
-        )));
+        ))));
         assert!(session_helper_ident(&p("vivaldi-bin", &["vivaldi-bin"])).is_none());
         assert!(session_helper_ident(&p("claude", &["claude"])).is_none());
         assert!(session_helper_ident(&p("cursor", &["cursor"])).is_none());

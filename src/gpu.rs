@@ -85,14 +85,6 @@ fn push_drm_text(texts: &mut Vec<String>, path: impl AsRef<Path>) {
     }
 }
 
-struct Client {
-    id: u64,
-    vram: Option<u64>,
-    gtt: Option<u64>,
-    gfx_ns: Option<u64>,
-    compute_ns: Option<u64>,
-}
-
 pub fn parse_fdinfo(text: &str) -> Option<ClientView> {
     let mut driver_ok = false;
     let mut id = None;
@@ -132,26 +124,10 @@ pub struct ClientView {
     pub compute_ns: Option<u64>,
 }
 
-impl From<ClientView> for Client {
-    fn from(c: ClientView) -> Self {
-        Self {
-            id: c.id,
-            vram: c.vram,
-            gtt: c.gtt,
-            gfx_ns: c.gfx_ns,
-            compute_ns: c.compute_ns,
-        }
-    }
-}
-
-fn merge_one(text: &str) -> Option<Client> {
-    parse_fdinfo(text).map(Client::from)
-}
-
 pub fn merge_fdinfo_texts(texts: &[String]) -> GpuCounters {
-    let mut by_client: HashMap<u64, Client> = HashMap::new();
+    let mut by_client: HashMap<u64, ClientView> = HashMap::new();
     for text in texts {
-        if let Some(c) = merge_one(text) {
+        if let Some(c) = parse_fdinfo(text) {
             by_client.entry(c.id).or_insert(c);
         }
     }

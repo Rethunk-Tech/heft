@@ -310,7 +310,7 @@ fn http_2xx(head: &[u8]) -> bool {
 fn unix_get(sock: &Path, path: &str) -> Result<Vec<u8>, crate::types::Error> {
     const MAX: usize = 4 * 1024 * 1024;
     if !docker_get_path(path) {
-        return Err(crate::types::Error("invalid docker path".into()));
+        return Err("invalid docker path".into());
     }
     let mut s = UnixStream::connect(sock)?;
     s.set_read_timeout(Some(Duration::from_secs(2)))?;
@@ -319,14 +319,14 @@ fn unix_get(sock: &Path, path: &str) -> Result<Vec<u8>, crate::types::Error> {
     let mut buf = Vec::new();
     s.take(MAX as u64 + 1).read_to_end(&mut buf)?;
     if buf.len() > MAX {
-        return Err(crate::types::Error("docker response too large".into()));
+        return Err("docker response too large".into());
     }
     let sep = buf
         .windows(4)
         .position(|w| w == b"\r\n\r\n")
-        .ok_or_else(|| crate::types::Error("short docker response".into()))?;
+        .ok_or("short docker response")?;
     if !http_2xx(&buf[..sep]) {
-        return Err(crate::types::Error("docker HTTP error".into()));
+        return Err("docker HTTP error".into());
     }
     Ok(buf[sep + 4..].to_vec())
 }

@@ -58,6 +58,7 @@ fn read_pid(pid: u32, want_pss: bool, prev: Option<&Process>) -> Option<Process>
         pgrp: parsed.pgrp,
         sid: parsed.sid,
         uid,
+        kthread: parsed.kthread,
         comm: parsed.comm,
         exe,
         cmdline,

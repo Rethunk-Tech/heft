@@ -7,6 +7,9 @@ pub struct Process {
     pub pgrp: i32,
     pub sid: i32,
     pub uid: u32,
+    /// `PF_KTHREAD` from `/proc/pid/stat` flags. Also gates the io/fdinfo/PSS
+    /// reads a kernel thread has no files for.
+    pub kthread: bool,
     pub comm: String,
     pub exe: Option<String>,
     pub cmdline: Vec<String>,

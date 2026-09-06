@@ -31,6 +31,8 @@ struct ProcFix {
     #[serde(default)]
     sid: i32,
     uid: u32,
+    #[serde(default)]
+    kthread: bool,
     comm: String,
     exe: Option<String>,
     #[serde(default)]
@@ -59,6 +61,7 @@ fn load(path: &str) -> (HashMap<u32, Process>, ContainerIndex, HostHeader) {
                 },
                 sid: p.sid,
                 uid: p.uid,
+                kthread: p.kthread,
                 comm: p.comm,
                 exe: p.exe,
                 cmdline: p.cmdline,
@@ -512,6 +515,13 @@ fn gui_and_docker_fixture() {
         "project should expand to member containers"
     );
 
+    // Kernel threads sit on cgroup `0::/`, in neither slice, so System is
+    // reachable for them only through the PF_KTHREAD flag.
+    assert!(
+        has(&tree.system, "kernel"),
+        "kthreadd and kworker must bucket to System: {:?}",
+        titles(&tree.system)
+    );
     assert!(has(&tree.system, "dockerd"));
     assert!(has(&tree.system, "containerd"));
     assert!(!has(&tree.system, "engined-whisper"));

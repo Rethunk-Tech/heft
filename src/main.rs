@@ -9,12 +9,13 @@ use cli::Cli;
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let (interval, pss_interval) = heft::proc::clamp_intervals(cli.interval, cli.pss_interval);
+    let view = heft::config::load_view();
     let result = if cli.json {
         heft::once::print_json(interval)
     } else if cli.once {
-        heft::once::print_table(interval)
+        heft::once::print_table(interval, &view)
     } else {
-        heft::ui::run(interval, pss_interval)
+        heft::ui::run(interval, pss_interval, view)
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

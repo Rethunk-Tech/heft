@@ -24,7 +24,7 @@ src/classify.rs      launcher / worker / shell / terminal / compositor tables
 src/identity.rs      cgroup parse, merge key + display name
 src/containers.rs    GET-only docker/podman; project vs per-container
 src/group.rs         Host → User → Applications | User Services | Containers, System
-src/config.rs        XDG view.json (write on save) and grouping.json (read-only)
+src/config.rs        XDG view.json (sort, filter, hide_columns; write on save) and grouping.json (read-only)
 src/once.rs          columns, tree ordering, table and JSON
 src/ui.rs            ratatui header + tree table
 tests/grouping.rs    integration tests over tests/fixtures/
@@ -103,6 +103,23 @@ checked, not assumed, so replacing them is not pending work.
   absent (`Inspect::owns_netns`), because that namespace is the machine's.
   `Metrics::accumulate` never sums the pair, so a folder, User or Host row
   stays blank rather than reporting one namespace as its own.
+
+## Columns
+
+`once::COLUMNS` is the one column model; `once::Columns` is that list with
+`view.hide_columns` applied, resolved once per surface and passed into every
+render site so none of them branches on visibility. `name` is refused and an
+unknown label warns (`config::view_path()` named), unlike `Sort::from_label`,
+which falls back silently — a mistyped sort still prints a usable table, a
+mistyped hide entry would do nothing and say nothing. `Sort::next` cycles over
+the visible list only.
+
+Visibility is a **view** preference, so it lives in `view.json` beside sort and
+filter, never in the read-only `grouping.json`, which is about identity. It
+never reaches sampling: heft reads `/proc` files, not columns, so the roll-up
+invariants in `tests/live_proc.rs` and `tests/reconcile.rs` are untouched.
+`--json` ignores it — a consumer parsing the tree did not ask for a human's
+column preference, and the JSON shape is a contract.
 
 ## Grouping overrides
 

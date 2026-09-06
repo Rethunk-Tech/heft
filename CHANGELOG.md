@@ -4,6 +4,24 @@
 
 ### Added
 
+- `hide_columns` in `view.json`: a list of column labels the table leaves out.
+  Seventeen columns no longer fit a terminal, which is why `[` and `]` exist,
+  and scrolling past a column every tick is not the same as never wanting it.
+  It is a hide list rather than a show list because heft keeps growing columns
+  and a show list would silently withhold every one added after the file was
+  written. It sits in `view.json` beside the sort and filter the `s` key
+  already saves, not in `grouping.json`, which is read-only and about identity
+  rather than presentation. Absent file or absent key renders exactly as
+  before. `name` is refused, since a table of numbers with no labels is
+  unreadable, and an unknown label warns on stderr and is ignored the way a
+  malformed `grouping.json` does — not `Sort::from_label`'s silent fallback,
+  because a mistyped sort still prints a usable table while a mistyped hide
+  entry would do nothing and say nothing. Hiding reaches presentation only:
+  the same `/proc` files are read either way, so every roll-up invariant still
+  holds, the `c` cycle skips what it cannot show rather than moving the sort
+  somewhere invisible, and `--json` ignores the list entirely — a consumer
+  parsing the tree did not ask for a human's column preference.
+
 - `THR` and `AGE` columns, both from the `/proc/<pid>/stat` heft already parses
   for CPU, so neither adds a per-tick read. `N` counts processes, so a thread
   leak was invisible: one process holding 4000 threads rendered identically to

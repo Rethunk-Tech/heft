@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::io::{self, Write};
 use std::time::Duration;
 
-use crate::config::View;
+use crate::config::{self, View};
 use crate::proc;
 use crate::types::{
     Error, HostTree, IdentNode, Metrics, ProcNode, folder_nproc, host_metrics, sum_idents,
@@ -168,6 +168,56 @@ fn opt_u(v: Option<u64>) -> Option<f64> {
     v.map(|x| x as f64)
 }
 
+/// The columns one surface renders, as indices into `COLUMNS` in table order.
+///
+/// Visibility is resolved once, here, so no render site branches on it — and
+/// nothing about it reaches sampling: heft reads `/proc` files, not columns, so
+/// a hidden column costs exactly the same walk and the roll-up invariants still
+/// hold over every metric.
+pub(crate) struct Columns(Vec<usize>);
+
+impl Columns {
+    /// `view.hide_columns` applied to `COLUMNS`.
+    ///
+    /// An unknown label warns and is ignored, the way a malformed
+    /// `grouping.json` warns and leaves grouping alone: a monitor that refuses
+    /// to start over a stale config entry is worse than one with no config.
+    /// This is deliberately not `Sort::from_label`'s silent fallback — a
+    /// mistyped sort still produces a usable table, a mistyped hide entry would
+    /// hide nothing and say nothing.
+    pub(crate) fn from_view(view: &View) -> Self {
+        let mut hidden: Vec<&str> = Vec::new();
+        for label in &view.hide_columns {
+            if label == COLUMNS[0].label {
+                eprintln!(
+                    "heft: {} cannot be hidden; a table of numbers with no labels is unreadable",
+                    COLUMNS[0].label
+                );
+            } else if let Some(c) = COLUMNS.iter().find(|c| c.label == label.as_str()) {
+                hidden.push(c.label);
+            } else {
+                eprintln!(
+                    "heft: ignoring unknown column {label:?} in {}",
+                    config::view_path().display()
+                );
+            }
+        }
+        Self(
+            (0..COLUMNS.len())
+                .filter(|&i| !hidden.contains(&COLUMNS[i].label))
+                .collect(),
+        )
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub(crate) fn iter(&self) -> impl Iterator<Item = &'static Column> + '_ {
+        self.0.iter().map(|&i| &COLUMNS[i])
+    }
+}
+
 /// Index into `COLUMNS`; the saved view stores that column's label.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Sort(usize);
@@ -184,15 +234,27 @@ impl Sort {
         COLUMNS[self.0].label
     }
 
-    pub(crate) fn from_label(s: &str) -> Self {
-        let find = |l: &str| COLUMNS.iter().position(|c| c.label == l);
-        // An unknown label means a saved view from another column set; PSS is
-        // the documented default.
-        Sort(find(s).or_else(|| find("pss")).unwrap_or(0))
+    fn exact(s: &str) -> Option<Self> {
+        COLUMNS.iter().position(|c| c.label == s).map(Sort)
     }
 
-    pub(crate) fn next(self) -> Self {
-        Sort((self.0 + 1) % COLUMNS.len())
+    pub(crate) fn from_label(s: &str) -> Self {
+        // An unknown label means a saved view from another column set; PSS is
+        // the documented default.
+        Self::exact(s)
+            .or_else(|| Self::exact("pss"))
+            .unwrap_or(Sort(0))
+    }
+
+    /// The next visible column, wrapping. Cycling onto a hidden one would move
+    /// the sort somewhere the reader cannot watch it happen.
+    pub(crate) fn next(self, cols: &Columns) -> Self {
+        let Some(p) = cols.0.iter().position(|&i| i == self.0) else {
+            // A saved view may legally sort by a column it also hides; the
+            // cycle then restarts at the first visible one.
+            return Sort(cols.0[0]);
+        };
+        Sort(cols.0[(p + 1) % cols.0.len()])
     }
 }
 
@@ -287,17 +349,20 @@ fn sort_procs(procs: &mut [ProcNode], sort: Sort, desc: bool) {
 
 /// The fixed-width layout: name left-aligned, every other column right, one
 /// space between. Header and body share it so they cannot drift apart.
-fn layout(cells: impl IntoIterator<Item = String>) -> String {
+fn layout(cols: &Columns, cell: impl Fn(&Column) -> String) -> String {
     let mut line = String::new();
-    for (i, (col, cell)) in COLUMNS.iter().zip(cells).enumerate() {
+    for (i, col) in cols.iter().enumerate() {
         if i > 0 {
             line.push(' ');
         }
         let w = usize::from(col.width);
+        let text = cell(col);
+        // The name column is the only left-aligned one, and it cannot be
+        // hidden, so the first rendered column is always it.
         line.push_str(&if i == 0 {
-            format!("{cell:<w$}")
+            format!("{text:<w$}")
         } else {
-            format!("{cell:>w$}")
+            format!("{text:>w$}")
         });
     }
     line
@@ -306,7 +371,8 @@ fn layout(cells: impl IntoIterator<Item = String>) -> String {
 /// # Errors
 ///
 /// Returns an error if writing the table to stdout fails.
-pub fn print_table(interval: Duration) -> Result<(), Error> {
+pub fn print_table(interval: Duration, view: &View) -> Result<(), Error> {
+    let cols = Columns::from_view(view);
     let tree = proc::sample_world(interval);
     let mut out = io::stdout();
     writeln!(
@@ -321,9 +387,10 @@ pub fn print_table(interval: Duration) -> Result<(), Error> {
         host_swap(&tree),
         tree.nproc
     )?;
-    write_header(&mut out)?;
+    write_header(&mut out, &cols)?;
     emit_row(
         &mut out,
+        &cols,
         0,
         "Host",
         tree_host_nproc(&tree),
@@ -332,17 +399,18 @@ pub fn print_table(interval: Duration) -> Result<(), Error> {
     for user in &tree.users {
         emit_row(
             &mut out,
+            &cols,
             1,
             &format!("{} ({})", user.name, user.uid),
             user_nproc(user),
             &user_metrics(user),
         )?;
-        write_folder(&mut out, 2, "Applications", &user.applications)?;
-        write_folder(&mut out, 2, "User Services", &user.user_services)?;
-        write_folder(&mut out, 2, "Containers", &user.containers)?;
+        write_folder(&mut out, &cols, 2, "Applications", &user.applications)?;
+        write_folder(&mut out, &cols, 2, "User Services", &user.user_services)?;
+        write_folder(&mut out, &cols, 2, "Containers", &user.containers)?;
     }
-    write_folder(&mut out, 1, "Containers", &tree.containers)?;
-    write_folder(&mut out, 1, "System", &tree.system)?;
+    write_folder(&mut out, &cols, 1, "Containers", &tree.containers)?;
+    write_folder(&mut out, &cols, 1, "System", &tree.system)?;
     Ok(())
 }
 
@@ -376,44 +444,67 @@ pub fn print_json(interval: Duration) -> Result<(), Error> {
     Ok(())
 }
 
-fn write_header(out: &mut impl Write) -> io::Result<()> {
-    writeln!(out, "{}", layout(COLUMNS.iter().map(|c| c.header.into())))
+fn write_header(out: &mut impl Write, cols: &Columns) -> io::Result<()> {
+    writeln!(out, "{}", layout(cols, |c| c.header.to_string()))
 }
 
 fn write_folder(
     out: &mut impl Write,
+    cols: &Columns,
     depth: usize,
     name: &str,
     idents: &[IdentNode],
 ) -> io::Result<()> {
     if idents.is_empty() {
-        emit_row(out, depth, name, 0, &Metrics::default())?;
+        emit_row(out, cols, depth, name, 0, &Metrics::default())?;
         return Ok(());
     }
-    emit_row(out, depth, name, folder_nproc(idents), &sum_idents(idents))?;
+    emit_row(
+        out,
+        cols,
+        depth,
+        name,
+        folder_nproc(idents),
+        &sum_idents(idents),
+    )?;
     for ident in idents {
-        emit_ident(out, depth + 1, ident)?;
+        emit_ident(out, cols, depth + 1, ident)?;
     }
     Ok(())
 }
 
-fn emit_ident(out: &mut impl Write, depth: usize, ident: &IdentNode) -> io::Result<()> {
-    emit_row(out, depth, &ident.title, ident.nproc, &ident.metrics)?;
+fn emit_ident(
+    out: &mut impl Write,
+    cols: &Columns,
+    depth: usize,
+    ident: &IdentNode,
+) -> io::Result<()> {
+    emit_row(out, cols, depth, &ident.title, ident.nproc, &ident.metrics)?;
     for member in &ident.containers {
-        emit_row(out, depth + 1, &member.title, member.nproc, &member.metrics)?;
+        emit_row(
+            out,
+            cols,
+            depth + 1,
+            &member.title,
+            member.nproc,
+            &member.metrics,
+        )?;
     }
     Ok(())
 }
 
-fn emit_row(out: &mut impl Write, depth: usize, name: &str, n: u32, m: &Metrics) -> io::Result<()> {
+fn emit_row(
+    out: &mut impl Write,
+    cols: &Columns,
+    depth: usize,
+    name: &str,
+    n: u32,
+    m: &Metrics,
+) -> io::Result<()> {
     let indent = "  ".repeat(depth);
     // The name column pads but never clips, so the label is cut to fit first.
     let label = trunc(&format!("{indent}{name}"), usize::from(COLUMNS[0].width));
-    writeln!(
-        out,
-        "{}",
-        layout(COLUMNS.iter().map(|c| (c.fmt)(&label, n, m)))
-    )
+    writeln!(out, "{}", layout(cols, |c| (c.fmt)(&label, n, m)))
 }
 
 fn trunc(s: &str, width: usize) -> String {
@@ -600,18 +691,81 @@ mod tests {
         }
     }
 
+    fn every_column() -> Columns {
+        Columns::from_view(&View::default())
+    }
+
     #[test]
     fn sort_next_cycles_every_variant() {
         let all = Sort::all();
+        let cols = every_column();
         let mut s = all[0];
         let mut seen = Vec::new();
         for _ in 0..all.len() {
-            s = s.next();
+            s = s.next(&cols);
             seen.push(s);
         }
         let mut expect: Vec<Sort> = all[1..].to_vec();
         expect.push(all[0]);
         assert_eq!(seen, expect);
+    }
+
+    fn labels(cols: &Columns) -> Vec<&'static str> {
+        cols.iter().map(|c| c.label).collect()
+    }
+
+    fn all_labels() -> Vec<&'static str> {
+        COLUMNS.iter().map(|c| c.label).collect()
+    }
+
+    fn hiding(hide: &[&str]) -> Columns {
+        Columns::from_view(&View {
+            hide_columns: hide.iter().map(|s| (*s).to_string()).collect(),
+            ..View::default()
+        })
+    }
+
+    /// A default view shows the whole set, a stale or malicious entry cannot
+    /// take the labels away, and an unknown one leaves the table alone.
+    #[test]
+    fn hidden_columns_leave_the_rest_in_table_order() {
+        assert_eq!(labels(&every_column()), all_labels());
+        assert_eq!(
+            labels(&hiding(&["gtt", "vram", "netns_rx", "netns_tx"])),
+            [
+                "name", "nproc", "threads", "age", "core", "machine", "pss", "rss", "swap",
+                "diskr", "diskw", "gfx", "compute"
+            ]
+        );
+        assert_eq!(labels(&hiding(&["name"])), all_labels());
+        assert_eq!(labels(&hiding(&["cpu", ""])), all_labels());
+    }
+
+    /// Hiding is presentation: the cells disappear, the widths of what is left
+    /// do not move, and nothing about the metrics behind them changes.
+    #[test]
+    fn hiding_a_column_only_removes_its_cells() {
+        let mut out = Vec::new();
+        let cols = hiding(&[
+            "nproc", "threads", "age", "diskr", "diskw", "gfx", "compute", "netns_rx", "netns_tx",
+        ]);
+        write_header(&mut out, &cols).unwrap();
+        write_folder(&mut out, &cols, 1, "Applications", &[sample_ident(1536.0)]).unwrap();
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            "NAME                           %CORE   %MACH      PSS      RSS   SWAP     VRAM      GTT\n  Applications                  12.2     1.5     1.5K     2.0K            1.0M         \n    an-identity-name-long-e\u{2026}    12.2     1.5     1.5K     2.0K            1.0M         \n"
+        );
+    }
+
+    /// The cycle has to skip what it cannot show, or `c` moves the sort to a
+    /// column the reader has no way to see.
+    #[test]
+    fn sort_cycle_skips_hidden_columns() {
+        let cols = hiding(&["nproc", "threads"]);
+        assert_eq!(Sort::from_label("name").next(&cols).label(), "age");
+        // A saved view may sort by a column it also hides; the cycle restarts
+        // rather than stalling on it.
+        assert_eq!(Sort::from_label("nproc").next(&cols).label(), "name");
     }
 
     fn sample_ident(disk_r_bps: f64) -> IdentNode {
@@ -652,15 +806,23 @@ mod tests {
     #[test]
     fn once_rows_keep_their_byte_layout() {
         let mut out = Vec::new();
-        write_header(&mut out).unwrap();
-        write_folder(&mut out, 1, "Applications", &[sample_ident(1536.0)]).unwrap();
+        let cols = every_column();
+        write_header(&mut out, &cols).unwrap();
+        write_folder(&mut out, &cols, 1, "Applications", &[sample_ident(1536.0)]).unwrap();
         assert_eq!(
             String::from_utf8(out).unwrap(),
             "NAME                            N   THR   AGE   %CORE   %MACH      PSS      RSS   SWAP   DISK R   DISK W     VRAM      GTT   GFX   CMP NETNS RX NETNS TX\n  Applications                  7    19    3h    12.2     1.5     1.5K     2.0K          1.5K/s              1.0M            3.0                        \n    an-identity-name-long-e\u{2026}    7    19    3h    12.2     1.5     1.5K     2.0K          1.5K/s              1.0M            3.0                        \n"
         );
 
         let mut out = Vec::new();
-        write_folder(&mut out, 1, "Applications", &[sample_ident(1_030_963.0)]).unwrap();
+        write_folder(
+            &mut out,
+            &cols,
+            1,
+            "Applications",
+            &[sample_ident(1_030_963.0)],
+        )
+        .unwrap();
         assert_eq!(
             String::from_utf8(out).unwrap(),
             "  Applications                  7    19    3h    12.2     1.5     1.5K     2.0K        1006.8K/s              1.0M            3.0                        \n    an-identity-name-long-e\u{2026}    7    19    3h    12.2     1.5     1.5K     2.0K        1006.8K/s              1.0M            3.0                        \n"

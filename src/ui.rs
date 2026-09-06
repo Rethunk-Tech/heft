@@ -19,7 +19,7 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph, Row, Table};
 use crate::config::{self, View};
 use crate::cpu;
 use crate::mem::{self, MemParts};
-use crate::once::{COLUMNS, Sort, fmt_bytes, fmt_pct, sort_tree};
+use crate::once::{Columns, Sort, fmt_bytes, fmt_pct, sort_tree};
 use crate::proc;
 use crate::types::{
     Error, HostTree, IdentNode, Metrics, ProcNode, folder_nproc, host_metrics, sum_idents,
@@ -35,6 +35,7 @@ struct App {
     row_vis: usize,
     expand: HashSet<String>,
     view: View,
+    cols: Columns,
     filter_edit: bool,
     col_off: u16,
     status: String,
@@ -45,13 +46,16 @@ struct App {
 ///
 /// Returns an error if the terminal cannot enter or leave raw mode, the sampler
 /// thread cannot be spawned, a frame cannot be drawn, or a view save fails.
-pub fn run(interval: Duration, pss_interval: Duration) -> Result<(), Error> {
+pub fn run(interval: Duration, pss_interval: Duration, view: View) -> Result<(), Error> {
+    // Resolve columns before the alternate screen: a warning about a stale
+    // hide entry printed after it would be wiped on the first frame.
+    let cols = Columns::from_view(&view);
     enable_raw_mode()?;
     let mut out = stdout();
     execute!(out, EnterAlternateScreen, Hide)?;
     let backend = CrosstermBackend::new(out);
     let mut terminal = Terminal::new(backend)?;
-    let result = run_loop(&mut terminal, interval, pss_interval);
+    let result = run_loop(&mut terminal, interval, pss_interval, view, cols);
     disable_raw_mode()?;
     execute!(io::stdout(), LeaveAlternateScreen, Show)?;
     result
@@ -61,8 +65,9 @@ fn run_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     interval: Duration,
     pss_interval: Duration,
+    view: View,
+    cols: Columns,
 ) -> Result<(), Error> {
-    let view = config::load_view();
     let slot = Arc::new(Mutex::new(None));
     let _sampler = proc::spawn_sampler(interval, pss_interval, slot.clone())?;
     let tree = proc::placeholder_tree();
@@ -73,6 +78,7 @@ fn run_loop(
         row_off: 0,
         row_vis: 1,
         view,
+        cols,
         filter_edit: false,
         col_off: 0,
         status: String::new(),
@@ -340,7 +346,7 @@ fn handle_key(
             app.status = format!("saved {}", config::view_path().display());
         }
         KeyCode::Char('c') => {
-            let next = Sort::from_label(&app.view.sort).next();
+            let next = Sort::from_label(&app.view.sort).next(&app.cols);
             app.view.sort = next.label().into();
         }
         KeyCode::Char('d') => app.view.desc = !app.view.desc,
@@ -388,8 +394,8 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &App, rows: &[Flat]) {
     draw_header(f, chunks[0], app);
     render_rule(f, chunks[1]);
 
-    let skip = (app.col_off as usize).min(COLUMNS.len().saturating_sub(1));
-    let shown: Vec<&str> = COLUMNS.iter().map(|c| c.header).skip(skip).collect();
+    let skip = (app.col_off as usize).min(app.cols.len().saturating_sub(1));
+    let shown: Vec<&str> = app.cols.iter().map(|c| c.header).skip(skip).collect();
     let start = app.row_off.min(rows.len());
     let end = start.saturating_add(app.row_vis.max(1)).min(rows.len());
     let mut table_rows = Vec::new();
@@ -404,7 +410,8 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &App, rows: &[Flat]) {
             "  "
         };
         let name = format!("{}{}{}", "  ".repeat(r.depth as usize), mark, r.name);
-        let cells: Vec<String> = COLUMNS
+        let cells: Vec<String> = app
+            .cols
             .iter()
             .map(|c| (c.fmt)(&name, r.nproc, &r.metrics))
             .skip(skip)
@@ -419,7 +426,7 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &App, rows: &[Flat]) {
     // Only the unscrolled view keeps the declared widths; once the name column
     // is off-screen every remaining column is numeric and shares one width.
     let widths: Vec<Constraint> = if skip == 0 {
-        COLUMNS
+        app.cols
             .iter()
             .enumerate()
             .map(|(i, c)| {

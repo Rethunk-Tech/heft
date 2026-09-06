@@ -171,12 +171,30 @@ container title is `docker-<12hex>`. Stopped containers (no PID) do not appear.
 
 | tree | path | what |
 | --- | --- | --- |
-| config | `$XDG_CONFIG_HOME/heft/view.json` (default `~/.config/heft/view.json`) | saved sort + filter, only after `s` |
+| config | `$XDG_CONFIG_HOME/heft/view.json` (default `~/.config/heft/view.json`) | saved sort + filter (after `s`), plus `hide_columns` if you write one |
 | config | `$XDG_CONFIG_HOME/heft/grouping.json` | your grouping overrides, if you write one |
 
 v1 creates no `$XDG_STATE_HOME/heft` or `$XDG_CACHE_HOME/heft`. Heft writes
 only that config directory and the TTY alternate screen — never `/proc`,
 sysfs, or cgroup files.
+
+### Hiding columns
+
+The table has seventeen columns and most terminals cannot hold them. Add
+`hide_columns` to `view.json` by hand; `s` keeps whatever is already there.
+
+```json
+{ "sort": "pss", "desc": true, "hide_columns": ["vram", "gtt", "gfx", "compute"] }
+```
+
+Labels are the ones `c` cycles and `--sort` takes: `name`, `nproc`, `threads`,
+`age`, `core`, `machine`, `pss`, `rss`, `swap`, `diskr`, `diskw`, `vram`,
+`gtt`, `gfx`, `compute`, `netns_rx`, `netns_tx`. No file, or no key, shows
+every column. An unknown label warns on stderr and is ignored, and `name` is
+refused — a table of numbers with no labels is unreadable.
+
+Hiding is presentation only: heft reads the same `/proc` files either way, `c`
+skips over what it cannot show, and `--json` ignores the list entirely.
 
 ## Grouping overrides
 

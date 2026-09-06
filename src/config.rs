@@ -14,6 +14,11 @@ pub struct View {
     pub desc: bool,
     #[serde(default)]
     pub filter: String,
+    /// Column labels left out of the table. A hide list rather than a show
+    /// list: heft grows columns, and a show list would silently withhold every
+    /// column added after the file was written.
+    #[serde(default)]
+    pub hide_columns: Vec<String>,
 }
 
 impl Default for View {
@@ -22,6 +27,7 @@ impl Default for View {
             sort: "pss".into(),
             desc: true,
             filter: String::new(),
+            hide_columns: Vec::new(),
         }
     }
 }

@@ -57,16 +57,19 @@ Other users, User Services, Host-level Containers, and System start collapsed.
 
 - **Host** is the machine. The header is two unbordered rows: stacked CPU
   (usr/sys/wait from `/proc/stat`) and one MEMORY bar whose width is MemTotal.
-  On this APU, VRAM and GTT are slices of that same pool (not a second tank).
-  The Host row sums only the PIDs heft can see, so it can sit below the header.
+  Where memory is unified, VRAM and GTT are carve-outs of that same pool, not
+  a second tank. The Host row sums only the PIDs heft can see, so it can sit
+  below the header.
 - **User** is a unix uid. Terminals, shells, and the compositor live under that
   user — not as Host.
 - **Applications** vs **User Services**: a user-instance `*.service` whose name
-  does not start with `app-` is a user service (`earshotd.service`,
-  `engined.service`, `org.gnome.Shell@user.service`). Known compositors and
-  session plumbing sit in User Services even when D-Bus used an `app-` or
-  `dbus:` unit. Everything else under the user is an application. Merge
-  identities: [AGENTS.md](AGENTS.md).
+  does not start with `app-` is a user service (`syncthing.service`,
+  `org.gnome.Shell@user.service`). Known compositors and session plumbing sit
+  in User Services even when D-Bus used an `app-` or `dbus:` unit. Everything
+  else under the user is an application. Merge identities:
+  [AGENTS.md](AGENTS.md). Those merge families are GNOME-weighted, so a KDE or
+  sway session lands in the right buckets but merges more coarsely under User
+  Services.
 - **Containers** under a user are workloads heft can attribute: the owner of
   the container's workdir label, else the owner of the first bind mount it
   has under a user's paths. Unattributed running containers sit on

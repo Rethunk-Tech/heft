@@ -711,8 +711,8 @@ mod tests {
             "ssh-agent outside gcr-ssh-agent is not that service"
         );
         assert!(
-            session_helper_ident(&p("majordomo", &["majordomo", "lead", "get"])).is_none(),
-            "majordomo CLI is not a user service"
+            session_helper_ident(&p("htop", &["htop", "-u", "1000"])).is_none(),
+            "an arbitrary user CLI is not a user service"
         );
         assert_eq!(
             session_helper_ident(&p(

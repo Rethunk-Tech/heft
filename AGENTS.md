@@ -62,7 +62,7 @@ Never read `/proc/pid/mem`. Never ptrace.
   `classify::session_helper_ident`. Exceptions: prefix lookalikes with a
   different product stay out (`gsd-disk-utility-notify`, independent `wsdd`,
   `wireplumber`); independent apps never fold into gnome-shell or these
-  service identities; a CLI such as `majordomo` is Applications;
+  service identities; an arbitrary user CLI is Applications;
   `p11-kit` must not fold into `flatpak-session-helper` (Cursor shares that
   cgroup); user-session `dbus-broker` is User Services, never Applications
   (`lying_unit` matches `dbus:` activation, not `dbus-broker.service`);
@@ -74,12 +74,12 @@ Never read `/proc/pid/mem`. Never ptrace.
   a distinctive script basename (`identity::generic_fallback`) so they do not
   collapse into one interpreter row. Non-distinctive script basenames live in
   that function.
-- Containers: never System, never `dockerd`/`containerd`/`engined` the user
-  service. Project key is `com.supabase.cli.project` → `supabase:<name>`, else
+- Containers: never System, never `dockerd`/`containerd`. Project key is
+  `com.supabase.cli.project` → `supabase:<name>`, else
   `supabase_<role>_<project>` names, else `com.docker.compose.project`. No
-  project → one row per container name. A vendor label such as `engined.spec`
-  is not a merge key. `containerd-shim-runc-v2 -id`, `docker-proxy
-  -container-ip`, `conmon`, `runc`/`crun` bill to that container. Owner:
+  project → one row per container name; a vendor-specific label is not a merge
+  key. `containerd-shim-runc-v2 -id`, `docker-proxy -container-ip`, `conmon`,
+  `runc`/`crun` bill to that container. Owner:
   workdir path uid, else the first non-root uid owning an `Inspect.Mounts`
   bind source (named volumes are root-owned and skipped), else Host →
   Containers.

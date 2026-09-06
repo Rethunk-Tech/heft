@@ -157,7 +157,7 @@ mod tests {
         assert!(lying_unit("flatpak-session-helper.service"));
         assert!(lying_unit("dbus-:1.2-org.gnome.Nautilus@250.service"));
         assert!(!lying_unit("dbus-broker.service"));
-        assert!(is_user_service_unit("earshotd.service"));
+        assert!(is_user_service_unit("syncthing.service"));
         assert!(!is_user_service_unit("app-com.mitchellh.ghostty.service"));
         assert!(is_user_service_unit("org.gnome.Shell@user.service"));
     }

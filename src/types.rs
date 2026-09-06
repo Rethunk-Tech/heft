@@ -176,6 +176,50 @@ pub struct ProcNode {
     pub children: Vec<ProcNode>,
 }
 
+pub(crate) fn folder_nproc(idents: &[IdentNode]) -> u32 {
+    idents.iter().map(|i| i.nproc).sum()
+}
+
+pub(crate) fn sum_idents(idents: &[IdentNode]) -> Metrics {
+    let mut m = Metrics::default();
+    for i in idents {
+        m.accumulate(&i.metrics);
+    }
+    m
+}
+
+pub(crate) fn sum_lists<const N: usize>(lists: [&[IdentNode]; N]) -> Metrics {
+    let mut m = Metrics::default();
+    for list in lists {
+        m.accumulate(&sum_idents(list));
+    }
+    m
+}
+
+pub(crate) fn user_nproc(user: &UserNode) -> u32 {
+    folder_nproc(&user.applications)
+        + folder_nproc(&user.user_services)
+        + folder_nproc(&user.containers)
+}
+
+pub(crate) fn tree_host_nproc(tree: &HostTree) -> u32 {
+    tree.users.iter().map(user_nproc).sum::<u32>()
+        + folder_nproc(&tree.containers)
+        + folder_nproc(&tree.system)
+}
+
+pub(crate) fn host_metrics(tree: &HostTree) -> Metrics {
+    let mut m = sum_lists([&tree.containers, &tree.system]);
+    for u in &tree.users {
+        m.accumulate(&sum_lists([
+            &u.applications,
+            &u.user_services,
+            &u.containers,
+        ]));
+    }
+    m
+}
+
 #[derive(Debug)]
 pub struct Error(pub String);
 

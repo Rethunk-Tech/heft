@@ -2,7 +2,10 @@ use std::io::{self, Write};
 use std::time::Duration;
 
 use crate::proc;
-use crate::types::{Error, HostTree, IdentNode, Metrics};
+use crate::types::{
+    Error, IdentNode, Metrics, folder_nproc, host_metrics, sum_idents, sum_lists, tree_host_nproc,
+    user_nproc,
+};
 
 pub fn print_table(interval: Duration) -> Result<(), Error> {
     let tree = proc::sample_world(interval);
@@ -152,48 +155,4 @@ pub fn fmt_pct(v: f64) -> String {
 
 pub fn fmt_opt_pct(v: Option<f64>) -> String {
     v.map(fmt_pct).unwrap_or_default()
-}
-
-fn folder_nproc(idents: &[IdentNode]) -> u32 {
-    idents.iter().map(|i| i.nproc).sum()
-}
-
-fn sum_idents(idents: &[IdentNode]) -> Metrics {
-    let mut m = Metrics::default();
-    for i in idents {
-        m.accumulate(&i.metrics);
-    }
-    m
-}
-
-fn sum_lists<const N: usize>(lists: [&[IdentNode]; N]) -> Metrics {
-    let mut m = Metrics::default();
-    for list in lists {
-        m.accumulate(&sum_idents(list));
-    }
-    m
-}
-
-fn user_nproc(user: &crate::types::UserNode) -> u32 {
-    folder_nproc(&user.applications)
-        + folder_nproc(&user.user_services)
-        + folder_nproc(&user.containers)
-}
-
-fn tree_host_nproc(tree: &HostTree) -> u32 {
-    tree.users.iter().map(user_nproc).sum::<u32>()
-        + folder_nproc(&tree.containers)
-        + folder_nproc(&tree.system)
-}
-
-fn host_metrics(tree: &HostTree) -> Metrics {
-    let mut m = sum_lists([&tree.containers, &tree.system]);
-    for u in &tree.users {
-        m.accumulate(&sum_lists([
-            &u.applications,
-            &u.user_services,
-            &u.containers,
-        ]));
-    }
-    m
 }

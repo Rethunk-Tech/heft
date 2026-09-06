@@ -21,7 +21,10 @@ use crate::cpu;
 use crate::mem::{self, MemParts};
 use crate::once::{fmt_bytes, fmt_opt_pct, fmt_pct, fmt_rate};
 use crate::proc;
-use crate::types::{Error, HostTree, IdentNode, Metrics, ProcNode};
+use crate::types::{
+    Error, HostTree, IdentNode, Metrics, ProcNode, folder_nproc, host_metrics, sum_idents,
+    sum_lists, tree_host_nproc, user_nproc,
+};
 
 const HEADER_ROWS: u16 = 2;
 
@@ -188,15 +191,13 @@ fn flatten(tree: &HostTree, expand: &HashSet<String>, view: &View) -> Vec<Flat> 
     let filter = view.filter.to_ascii_lowercase();
     let sort = Sort::from_label(&view.sort);
     let mut rows = Vec::new();
-    let host_n = tree.users.iter().map(user_n).sum::<u32>()
-        + folder_n(&tree.containers)
-        + folder_n(&tree.system);
+    let host_n = tree_host_nproc(tree);
     rows.push(Flat {
         id: "host".into(),
         depth: 0,
         name: "Host".into(),
         nproc: host_n,
-        metrics: host_m(tree),
+        metrics: host_metrics(tree),
         expandable: true,
     });
     if expand.contains("host") {
@@ -209,7 +210,7 @@ fn flatten(tree: &HostTree, expand: &HashSet<String>, view: &View) -> Vec<Flat> 
                     id: id.clone(),
                     depth: 1,
                     name: format!("{} ({uid})", user.name),
-                    nproc: user_n(user),
+                    nproc: user_nproc(user),
                     metrics: sum_lists([&user.applications, &user.user_services, &user.containers]),
                     expandable: true,
                 },
@@ -333,7 +334,7 @@ fn push_folder(rows: &mut Vec<Flat>, p: FolderPush<'_>) {
         id: p.id.to_string(),
         depth: p.depth,
         name: p.title.to_string(),
-        nproc: folder_n(p.idents),
+        nproc: folder_nproc(p.idents),
         metrics: sum_idents(p.idents),
         expandable: true,
     });
@@ -655,7 +656,7 @@ fn cpu_header_line(tree: &HostTree, width: usize) -> Line<'static> {
 }
 
 fn mem_header_line(tree: &HostTree, width: usize) -> Line<'static> {
-    let host = host_m(tree);
+    let host = host_metrics(tree);
     let (vram, gtt) = if tree.unified_memory {
         (host.vram_bytes.unwrap_or(0), host.gtt_bytes.unwrap_or(0))
     } else {
@@ -813,38 +814,6 @@ fn follow_viewport(selected: usize, offset: usize, visible: usize, n: usize) -> 
     } else {
         offset.min(max_off)
     }
-}
-
-fn folder_n(idents: &[IdentNode]) -> u32 {
-    idents.iter().map(|i| i.nproc).sum()
-}
-fn sum_idents(idents: &[IdentNode]) -> Metrics {
-    let mut m = Metrics::default();
-    for i in idents {
-        m.accumulate(&i.metrics);
-    }
-    m
-}
-fn sum_lists<const N: usize>(lists: [&[IdentNode]; N]) -> Metrics {
-    let mut m = Metrics::default();
-    for list in lists {
-        m.accumulate(&sum_idents(list));
-    }
-    m
-}
-fn user_n(user: &crate::types::UserNode) -> u32 {
-    folder_n(&user.applications) + folder_n(&user.user_services) + folder_n(&user.containers)
-}
-fn host_m(tree: &HostTree) -> Metrics {
-    let mut m = sum_lists([&tree.containers, &tree.system]);
-    for u in &tree.users {
-        m.accumulate(&sum_lists([
-            &u.applications,
-            &u.user_services,
-            &u.containers,
-        ]));
-    }
-    m
 }
 
 #[cfg(test)]

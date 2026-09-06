@@ -284,31 +284,22 @@ fn flatten(tree: &HostTree, expand: &HashSet<String>, view: &View) -> Vec<Flat> 
 }
 
 fn keep_matches(rows: &mut Vec<Flat>, filter: &str) {
+    // `want` is the depth a match reaches back for. It only ever widens, and
+    // resets at a depth-0 row, so a match retains every earlier row shallower
+    // than itself back to its host -- the whole shallower prefix, not just the
+    // ancestor chain. Widening rather than tightening is what makes this one
+    // reverse pass equal to a backward walk per match.
+    let mut want = 0;
     let mut keep = vec![false; rows.len()];
-    for i in 0..rows.len() {
-        if rows[i].name.to_ascii_lowercase().contains(filter) {
+    for (i, row) in rows.iter().enumerate().rev() {
+        let d = row.depth;
+        if row.name.to_ascii_lowercase().contains(filter) || d < want {
             keep[i] = true;
-            let d = rows[i].depth;
-            let mut j = i;
-            while j > 0 {
-                j -= 1;
-                if rows[j].depth < d {
-                    keep[j] = true;
-                    let d2 = rows[j].depth;
-                    if d2 == 0 {
-                        break;
-                    }
-                }
-            }
+            want = if d == 0 { 0 } else { want.max(d) };
         }
     }
-    let mut out = Vec::new();
-    for (i, row) in rows.drain(..).enumerate() {
-        if keep[i] {
-            out.push(row);
-        }
-    }
-    *rows = out;
+    let mut flags = keep.into_iter();
+    rows.retain(|_| flags.next() == Some(true));
 }
 
 struct FolderPush<'a> {

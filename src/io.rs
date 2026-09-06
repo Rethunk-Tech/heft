@@ -1,10 +1,8 @@
 use std::fs;
-use std::io;
 
 pub fn read_io(pid: u32) -> (Option<u64>, Option<u64>) {
     match fs::read_to_string(format!("/proc/{pid}/io")) {
         Ok(text) => parse_io(&text),
-        Err(e) if e.kind() == io::ErrorKind::PermissionDenied => (None, None),
         Err(_) => (None, None),
     }
 }

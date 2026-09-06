@@ -3,7 +3,7 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
-use crate::types::GpuCounters;
+use crate::types::{GpuCounters, sum_opt};
 
 /// `full_scan` is the PSS / `--once` published pass. Prime and TUI catch-all
 /// ticks pass false: dri/drm symlink names are enough, and a first sighting
@@ -132,19 +132,12 @@ pub fn merge_fdinfo_texts(texts: &[String]) -> GpuCounters {
     }
     let mut out = GpuCounters::default();
     for c in by_client.into_values() {
-        out.vram_bytes = add(out.vram_bytes, c.vram);
-        out.gtt_bytes = add(out.gtt_bytes, c.gtt);
-        out.gfx_ns = add(out.gfx_ns, c.gfx_ns);
-        out.compute_ns = add(out.compute_ns, c.compute_ns);
+        out.vram_bytes = sum_opt(out.vram_bytes, c.vram);
+        out.gtt_bytes = sum_opt(out.gtt_bytes, c.gtt);
+        out.gfx_ns = sum_opt(out.gfx_ns, c.gfx_ns);
+        out.compute_ns = sum_opt(out.compute_ns, c.compute_ns);
     }
     out
-}
-
-fn add(a: Option<u64>, b: Option<u64>) -> Option<u64> {
-    match (a, b) {
-        (None, None) => None,
-        (x, y) => Some(x.unwrap_or(0) + y.unwrap_or(0)),
-    }
 }
 
 fn split_kv(line: &str) -> Option<(&str, &str)> {

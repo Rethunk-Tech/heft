@@ -83,7 +83,7 @@ impl Metrics {
     }
 }
 
-fn sum_opt(a: Option<u64>, b: Option<u64>) -> Option<u64> {
+pub(crate) fn sum_opt(a: Option<u64>, b: Option<u64>) -> Option<u64> {
     match (a, b) {
         (None, None) => None,
         (x, y) => Some(x.unwrap_or(0) + y.unwrap_or(0)),

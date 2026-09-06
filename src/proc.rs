@@ -147,7 +147,6 @@ fn read_uid(status_path: &str) -> Option<u32> {
 fn read_exe(path: &str) -> Option<String> {
     match fs::read_link(path) {
         Ok(p) => Some(strip_deleted(&p.to_string_lossy()).to_string()),
-        Err(e) if e.kind() == io::ErrorKind::PermissionDenied => None,
         Err(_) => None,
     }
 }

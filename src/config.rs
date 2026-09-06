@@ -26,20 +26,13 @@ impl Default for View {
 }
 
 pub fn config_dir() -> PathBuf {
-    xdg_dir("XDG_CONFIG_HOME", ".config").join("heft")
-}
-
-fn xdg_dir(var: &str, fallback: &str) -> PathBuf {
-    if let Ok(v) = std::env::var(var)
-        && !v.is_empty()
-    {
-        return PathBuf::from(v);
-    }
-    home().join(fallback)
-}
-
-fn home() -> PathBuf {
-    std::env::var("HOME").map_or_else(|_| PathBuf::from("/"), PathBuf::from)
+    let base = match std::env::var("XDG_CONFIG_HOME") {
+        Ok(v) if !v.is_empty() => PathBuf::from(v),
+        _ => std::env::var("HOME")
+            .map_or_else(|_| PathBuf::from("/"), PathBuf::from)
+            .join(".config"),
+    };
+    base.join("heft")
 }
 
 pub fn view_path() -> PathBuf {

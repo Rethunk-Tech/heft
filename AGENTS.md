@@ -121,8 +121,8 @@ stderr from `config::load_overrides` and grouping continues built-in.
 | surface | rule |
 | --- | --- |
 | CPU bar | `/proc/stat` Δ user+nice / system+irq+softirq / iowait; idle+steal unfilled |
-| MEM bar | one MemTotal width when APU VRAM is unified; VRAM/GTT resident, then Cached/Buffers, then anon; clip so the stack never exceeds `used.min(MemTotal)` (`mem::clip_used`) |
-| Discrete VRAM | own tank against `mem_info_vram_total`, sharing the MEMORY row with the MEM bar (half width each); `vram`/`gtt` drop from that legend |
+| MEM bar | one MemTotal width when APU VRAM is unified; VRAM (unified only) / GTT resident, then Cached/Buffers, then anon; clip so the stack never exceeds `used.min(MemTotal)` (`mem::clip_used`) |
+| Discrete VRAM | own tank against `mem_info_vram_total`, sharing the MEMORY row with the MEM bar (half width each); only `vram` drops from that legend — GTT is pinned system RAM and stays in MEM |
 | Layout | 2 unbordered header rows (a second tank splits the MEMORY row, never adds a third); persistent rules: header↔tree and tree↔footer |
 | Disk R/W | table columns only (formatted rates change width every tick) |
 | Ordering | one comparator in `once.rs` for every level; a `None` metric sorts last in either direction, name breaks ties, stable over `group::proc_forest` pid order |

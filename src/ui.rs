@@ -527,11 +527,16 @@ fn mem_header_line(tree: &HostTree, width: usize) -> Line<'static> {
     let discrete = (!tree.unified_memory)
         .then(|| tree.vram_total_bytes.filter(|v| *v > 0))
         .flatten();
-    let (vram, gtt) = if tree.unified_memory {
-        (host.vram_bytes.unwrap_or(0), host.gtt_bytes.unwrap_or(0))
+    // GTT is pinned system RAM on a discrete card too, already counted in
+    // `used`, so it paints inside MEM either way. Both figures sum the drm
+    // clients heft can see, not the device totals: sysfs has only
+    // `mem_info_gtt_total`, a capacity, which as a usage would be a lie.
+    let vram = if tree.unified_memory {
+        host.vram_bytes.unwrap_or(0)
     } else {
-        (0, 0)
+        0
     };
+    let gtt = host.gtt_bytes.unwrap_or(0);
     let seg = mem::clip_used(MemParts {
         used: tree.mem_used_bytes,
         total: tree.mem_total_bytes,
@@ -544,10 +549,10 @@ fn mem_header_line(tree: &HostTree, width: usize) -> Line<'static> {
     // rows with rules above and below, so the second tank splits this row.
     let mem_width = if discrete.is_some() { width / 2 } else { width };
     let mut labels: Vec<(&str, Color)> = Vec::new();
-    if discrete.is_none() {
+    if tree.unified_memory {
         labels.push(("vram", Color::LightRed));
-        labels.push(("gtt", Color::LightCyan));
     }
+    labels.push(("gtt", Color::LightCyan));
     labels.push(("cache", Color::Blue));
     labels.push(("buf", Color::Green));
     let mut spans = bar_group(
@@ -831,6 +836,43 @@ mod tests {
         assert!(text.contains("VRAM ["), "{text}");
         assert!(text.contains("6.0G/12.0G"), "{text}");
         assert!(text.contains("8.0G/32.0G"), "{text}");
+        assert_eq!(text.chars().count(), 100);
+    }
+
+    #[test]
+    fn discrete_gtt_still_paints_in_the_mem_bar() {
+        let g = 1024 * 1024 * 1024;
+        let mut tree = tree_with_gpu(&mem::GpuPool {
+            vram_used: Some(6 * g),
+            vram_total: Some(12 * g),
+            gtt_total: Some(4 * g),
+        });
+        tree.system = vec![IdentNode {
+            id: "sys".into(),
+            title: "sys".into(),
+            nproc: 1,
+            metrics: Metrics {
+                gtt_bytes: Some(2 * g),
+                ..Metrics::default()
+            },
+            instances: Vec::new(),
+            containers: Vec::new(),
+        }];
+        let line = mem_header_line(&tree, 100);
+        let text = line.to_string();
+        // The bug this guards: GTT dropped entirely once VRAM moved to its own
+        // tank, even though it is system RAM sitting inside the MEM bar's used.
+        assert!(text.contains("gtt/cache/buf"), "{text}");
+        assert!(
+            !text.contains("vram/"),
+            "discrete vram is not a MEM segment"
+        );
+        assert!(
+            line.spans
+                .iter()
+                .any(|s| s.style.fg == Some(Color::LightCyan) && s.content.contains('█')),
+            "{text}"
+        );
         assert_eq!(text.chars().count(), 100);
     }
 

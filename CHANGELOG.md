@@ -23,6 +23,12 @@
   rather than adding a third row, so a desktop-GPU user no longer sees VRAM
   silently dropped from the header.
 
+- GTT now paints in the MEM bar on a discrete card, and on any GPU heft has no
+  `mem_info_vram_total` for. Splitting VRAM into its own tank had dropped GTT
+  from the header entirely, even though GTT is system RAM pinned for the GPU
+  and is already inside `used`. The figure sums `drm-resident-gtt` over the drm
+  clients heft can see, not the sysfs `mem_info_gtt_total` capacity.
+
 ### Changed
 
 - Container ownership comes from bind-mount sources: a container with no

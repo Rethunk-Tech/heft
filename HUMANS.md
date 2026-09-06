@@ -60,8 +60,10 @@ Other users, User Services, Host-level Containers, and System start collapsed.
   VRAM and GTT are carve-outs of that same pool, not a second tank, so the row
   is one MEMORY bar whose width is MemTotal. With a discrete card the MEMORY
   row splits in half: MEM against MemTotal, and VRAM against the card's own
-  total. The Host row sums only the PIDs heft can see, so it can sit below the
-  header.
+  total. GTT stays in the MEM bar either way — it is system RAM pinned for the
+  GPU, not card memory. That GTT slice, and the unified VRAM slice beside it,
+  add up only the drm clients heft can see, the same caveat as the Host row,
+  which sums only visible PIDs and so can sit below the header.
 - **User** is a unix uid. Terminals, shells, and the compositor live under that
   user — not as Host.
 - **Applications** vs **User Services**: a user-instance `*.service` whose name

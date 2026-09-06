@@ -15,9 +15,6 @@ const LAUNCHERS: &[&str] = &[
     "startvesktop",
 ];
 
-/// zypak-helper subcommand, not a payload.
-const HINT_SKIP: &[&str] = &["child"];
-
 const GENERICS: &[&str] = &[
     "bun",
     "python",
@@ -412,17 +409,14 @@ pub fn launcher_payload_hint(p: &Process) -> Option<String> {
                 continue;
             }
             let b = basename(arg);
-            if b.is_empty() || is_launcher_name(&b) || is_hint_skip(&b) {
+            // "child" is a zypak-helper subcommand, not a payload.
+            if b.is_empty() || is_launcher_name(&b) || b.eq_ignore_ascii_case("child") {
                 continue;
             }
             return Some(b);
         }
     }
     None
-}
-
-fn is_hint_skip(name: &str) -> bool {
-    HINT_SKIP.iter().any(|x| x.eq_ignore_ascii_case(name))
 }
 
 pub fn looks_script(arg: &str) -> bool {

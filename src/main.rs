@@ -33,6 +33,10 @@ fn main() -> ExitCode {
     if let Some(filter) = cli.filter {
         view.filter = filter;
     }
+    // Unlike `--filter`, this one applies to `--json` too: it prunes User
+    // nodes, which the JSON tree has, where "keep the ancestors" had nothing
+    // to mean there.
+    view.users = cli.user.iter().map(|who| check_user(who)).collect();
     let result = if cli.json {
         heft::once::print_json(interval, &view)
     } else if cli.once {
@@ -68,6 +72,22 @@ fn check_sort(label: &str) -> &str {
                 "invalid value '{label}' for '--sort <COLUMN>'\n  [possible values: {}]",
                 labels.join(", ")
             ),
+        )
+        .exit()
+}
+
+/// A name nothing on this machine answers to is a typo worth reporting, the
+/// same as a bad `--sort`. A bare number is never rejected: uids without a
+/// passwd entry are ordinary inside containers, and refusing them would make
+/// `--user` unusable for exactly the rows it is most wanted on.
+fn check_user(who: &str) -> u32 {
+    if let Some(uid) = heft::proc::uid_for(who) {
+        return uid;
+    }
+    Cli::command()
+        .error(
+            ErrorKind::InvalidValue,
+            format!("invalid value '{who}' for '--user <NAME|UID>': no such user"),
         )
         .exit()
 }

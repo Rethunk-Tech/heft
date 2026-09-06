@@ -405,9 +405,30 @@ fn layout(cols: &Columns, cell: impl Fn(&Column) -> String) -> String {
 /// # Errors
 ///
 /// Returns an error if writing the table to stdout fails.
+/// Drop every User node but the ones named, on every surface.
+///
+/// A prune, not a `keep_matches` filter, and the two deliberately disagree
+/// about what happens to the Host row. `--filter` builds every row from the
+/// whole tree and drops rows afterwards, so an ancestor keeps the total it
+/// always had: you need that to see what fraction of a browser the matching
+/// helper is. This cuts branches out of the tree before any row is built, so
+/// the Host row totals what is left — which is what someone who asked for one
+/// user wants the top row to mean.
+///
+/// System and Host-level Containers stay either way. They are the machine's
+/// cost and belong to nobody, so hiding them would leave a tree that no longer
+/// explains the header above it.
+pub fn keep_users(tree: &mut HostTree, uids: &[u32]) {
+    if uids.is_empty() {
+        return;
+    }
+    tree.users.retain(|u| uids.contains(&u.uid));
+}
+
 pub fn print_table(interval: Duration, view: &View) -> Result<(), Error> {
     let cols = Columns::from_view(view);
     let mut tree = proc::sample_world(interval);
+    keep_users(&mut tree, &view.users);
     sort_tree(&mut tree, Sort::from_label(&view.sort), view.desc);
     let mut rows = table_rows(&tree);
     if !view.filter.is_empty() {
@@ -509,6 +530,7 @@ fn host_swap(tree: &HostTree) -> String {
 /// Returns an error if the tree cannot be serialized or stdout cannot be written.
 pub fn print_json(interval: Duration, view: &View) -> Result<(), Error> {
     let mut tree = proc::sample_world(interval);
+    keep_users(&mut tree, &view.users);
     sort_tree(&mut tree, Sort::from_label(&view.sort), view.desc);
     let doc = serde_json::json!({ "host": tree });
     // `println!` panics when the reader closes, and the release profile is
@@ -635,6 +657,38 @@ mod tests {
 
     /// One identity, two instances whose CPU order is the reverse of their PSS
     /// order, and a process forest in pid order with one unreadable PSS.
+    #[test]
+    fn keep_users_prunes_users_and_spares_the_machine() {
+        let mut tree = ordering_tree();
+        tree.users.push(UserNode {
+            uid: 0,
+            name: "root".into(),
+            applications: Vec::new(),
+            user_services: Vec::new(),
+            containers: Vec::new(),
+        });
+        tree.system = vec![IdentNode {
+            id: "kthread".into(),
+            title: "kthread".into(),
+            nproc: 1,
+            metrics: metrics(Some(1), 0.0),
+            instances: Vec::new(),
+            containers: Vec::new(),
+        }];
+
+        // An empty list is "no --user was given", never "keep nobody".
+        let mut untouched = tree.clone();
+        keep_users(&mut untouched, &[]);
+        assert_eq!(untouched.users.len(), 2);
+
+        keep_users(&mut tree, &[1000]);
+        assert_eq!(
+            tree.users.iter().map(|u| u.uid).collect::<Vec<_>>(),
+            vec![1000]
+        );
+        assert_eq!(tree.system.len(), 1, "System is nobody's and always stays");
+    }
+
     fn ordering_tree() -> HostTree {
         let inst = |key: &str, pss: u64, cpu: f64, procs: Vec<ProcNode>| InstanceNode {
             key: key.into(),

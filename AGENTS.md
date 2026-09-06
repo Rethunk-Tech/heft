@@ -124,6 +124,12 @@ standalone to generate the completions and man page.
 terminal it has not got, and reporting that after a `/proc` walk would burn an
 `--interval` first. Non-zero, and never a silent fall back to `--once`.
 
+`once::keep_users` prunes User nodes before rows are built, on all three
+surfaces, so the Host row totals what survived; it is not `conflicts_with =
+"json"` the way `--filter` is, because the JSON tree does have User nodes.
+`View::users` is `#[serde(skip)]` — it rides the existing plumbing without ever
+reaching `view.json`.
+
 `once::keep_matches` is the one filter for every surface — the TUI over its
 flattened rows, `--once` over `once::table_rows`. Rows are built from the whole
 tree and filtered afterwards, so an ancestor row keeps the total it was built

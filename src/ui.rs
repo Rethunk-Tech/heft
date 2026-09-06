@@ -19,7 +19,7 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph, Row, Table};
 use crate::config::{self, View};
 use crate::cpu;
 use crate::mem::{self, MemParts};
-use crate::once::{Columns, Sort, fmt_bytes, fmt_pct, keep_matches, sort_tree};
+use crate::once::{Columns, Sort, fmt_bytes, fmt_pct, keep_matches, keep_users, sort_tree};
 use crate::proc;
 use crate::types::{
     Error, HostTree, IdentNode, Metrics, ProcNode, folder_nproc, host_metrics, sum_idents,
@@ -112,6 +112,7 @@ fn run_loop(
             .take()
         {
             app.tree = tree;
+            keep_users(&mut app.tree, &app.view.users);
         }
     }
     Ok(())

@@ -243,6 +243,23 @@ fn read_rss_pages(path: &str) -> Option<u64> {
     let text = fs::read_to_string(path).ok()?;
     text.split_whitespace().nth(1)?.parse().ok()
 }
+/// A uid straight through, otherwise the `/etc/passwd` name. Numeric first
+/// because a uid is always meaningful and a passwd entry is not always there:
+/// a container's uid appears in `/proc` with nothing in `/etc/passwd` to name
+/// it, and `--user 1000` has to reach that branch anyway.
+pub fn uid_for(who: &str) -> Option<u32> {
+    if let Ok(uid) = who.parse::<u32>() {
+        return Some(uid);
+    }
+    let text = fs::read_to_string("/etc/passwd").ok()?;
+    text.lines().find_map(|line| {
+        let mut it = line.split(':');
+        (it.next()? == who).then_some(())?;
+        let _ = it.next();
+        it.next()?.parse().ok()
+    })
+}
+
 pub(crate) fn username(uid: u32) -> String {
     if let Ok(text) = fs::read_to_string("/etc/passwd") {
         for line in text.lines() {

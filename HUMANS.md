@@ -53,6 +53,7 @@ heft --interval 0.5       # catch-all period (TUI tick and --once/--json gap)
 heft --pss-interval 5     # TUI only: how often to read smaps_rollup (default 5s)
 heft --sort rss           # start on this column instead of the saved one
 heft --once --filter code # keep rows whose name contains this, and their parents
+heft --once --user 1000   # only this user's branch (name or uid, repeatable)
 ```
 
 The TUI needs a terminal. `heft > file`, or heft in a script, says so and
@@ -83,6 +84,18 @@ usage error, so a typo is told to you rather than quietly sorting by PSS the
 way a stale saved view does. `--filter` is the `/` key: it keeps matching rows
 **and their parents**, so the tree stays a tree, and a parent still shows the
 total it always did rather than the total of what survived.
+
+`--user` takes a login name or a uid and can be repeated; other User nodes
+drop, while System and Host-level Containers stay, since those are the
+machine's own cost and belong to nobody. A bare number is always accepted as a
+uid even with no `/etc/passwd` entry, which is the ordinary case inside a
+container; a name nothing answers to is a usage error. Unlike `--filter` it
+works with `--json`, because the JSON tree does have User nodes to prune, and
+unlike `--filter` the Host row totals what survived rather than what it was
+built with — asking for one user is asking what the top row should count. It is
+never written to `view.json`, not even by `s`: a saved user cut would hide most
+of the machine on every later run for a reason the file, not the command, was
+keeping.
 
 Both flags beat a saved `view.json`. `--once` otherwise starts from that saved
 view; `--json` never does — its shape is a contract, so only an explicit flag

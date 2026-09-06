@@ -19,6 +19,13 @@ pub struct View {
     /// column added after the file was written.
     #[serde(default)]
     pub hide_columns: Vec<String>,
+    /// uids from `--user`. Deliberately not serialized: sort, filter and hidden
+    /// columns are preferences a `s` press should outlive the session, but a
+    /// saved user cut would hide most of the machine on every later run for a
+    /// reason the file, not the command line, was keeping. It rides in `View`
+    /// only because every surface already takes one.
+    #[serde(skip)]
+    pub users: Vec<u32>,
 }
 
 impl Default for View {
@@ -28,6 +35,7 @@ impl Default for View {
             desc: true,
             filter: String::new(),
             hide_columns: Vec::new(),
+            users: Vec::new(),
         }
     }
 }

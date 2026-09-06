@@ -4,6 +4,12 @@
 
 ### Added
 
+- Intel GPUs report VRAM/GTT and gfx%/compute% instead of blank columns. The
+  driver gate accepted only `amdgpu`, so i915 and xe users saw nothing; their
+  fdinfo region and engine names now map onto the same counters. xe publishes
+  engine busy as `drm-cycles-*` rather than nanoseconds, so it gets memory
+  columns but no engine percentage. NVIDIA still needs NVML and stays out.
+
 - Discrete GPUs get a VRAM bar measured against the card's own
   `mem_info_vram_total`. It shares the MEMORY header row with the MEM bar
   rather than adding a third row, so a desktop-GPU user no longer sees VRAM

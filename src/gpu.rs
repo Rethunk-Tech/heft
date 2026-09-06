@@ -93,12 +93,25 @@ pub fn parse_fdinfo(text: &str) -> Option<ClientView> {
     let mut compute_ns = None;
     for line in text.lines() {
         let (k, v) = split_kv(line)?;
+        // amdgpu, i915 and xe all implement Documentation/gpu/drm-usage-stats.rst
+        // but name their regions and engines differently. i915 regions are
+        // `<class><instance>` -- "system0" is GPU-visible system memory, "local0"
+        // is discrete VRAM (i915/intel_memory_region.c intel_memory_type_str);
+        // xe uses "gtt" and "vram0"/"vram1" (xe/xe_bo.c xe_mem_type_to_name).
+        // Summing lets a multi-tile xe report both VRAM tiles.
         match k {
-            "drm-driver" if v.contains("amdgpu") => driver_ok = true,
+            "drm-driver" if matches!(v, "amdgpu" | "i915" | "xe") => driver_ok = true,
             "drm-client-id" => id = v.trim().parse().ok(),
-            "drm-resident-vram" => vram = parse_size(v),
-            "drm-resident-gtt" => gtt = parse_size(v),
-            "drm-engine-gfx" => gfx_ns = parse_ns(v),
+            "drm-resident-vram"
+            | "drm-resident-vram0"
+            | "drm-resident-vram1"
+            | "drm-resident-local0" => vram = sum_opt(vram, parse_size(v)),
+            "drm-resident-gtt" | "drm-resident-system0" => gtt = sum_opt(gtt, parse_size(v)),
+            // xe publishes engine busy only as drm-cycles-<rcs|ccs|...> against
+            // drm-total-cycles-*, never ns, so it has no arm here: feeding cycles
+            // to the ns-over-wall-clock rate would render a confidently wrong
+            // percentage, which is worse than the blank column it gets instead.
+            "drm-engine-gfx" | "drm-engine-render" => gfx_ns = parse_ns(v),
             "drm-engine-compute" => compute_ns = parse_ns(v),
             _ => {}
         }
@@ -168,6 +181,30 @@ mod tests {
     use super::*;
 
     const SAMPLE: &str = "drm-driver:\tamdgpu\ndrm-client-id:\t27\ndrm-resident-vram:\t48596 KiB\ndrm-resident-gtt:\t100 KiB\ndrm-engine-gfx:\t1000 ns\n";
+
+    /// Integrated Intel: shmem-backed "system0" only, no discrete "local0".
+    const I915_SAMPLE: &str = "drm-driver:\ti915\ndrm-client-id:\t14\ndrm-pdev:\t0000:00:02.0\ndrm-total-system0:\t8192 KiB\ndrm-shared-system0:\t0\ndrm-resident-system0:\t6144 KiB\ndrm-engine-render:\t2000 ns\ndrm-engine-capacity-render:\t1\ndrm-engine-compute:\t500 ns\n";
+
+    /// Shape taken from the example in drivers/gpu/drm/xe/xe_drm_client.c.
+    const XE_SAMPLE: &str = "drm-driver:\txe\ndrm-client-id:\t3\ndrm-pdev:\t0000:03:00.0\ndrm-total-gtt:\t192 KiB\ndrm-resident-gtt:\t192 KiB\ndrm-total-vram0:\t23992 KiB\ndrm-resident-vram0:\t23992 KiB\ndrm-cycles-rcs:\t28257900\ndrm-total-cycles-rcs:\t7655183225\n";
+
+    #[test]
+    fn i915_keys_map_onto_the_amdgpu_shape() {
+        let g = merge_fdinfo_texts(&[I915_SAMPLE.to_string()]);
+        assert_eq!(g.gtt_bytes, Some(6144 * 1024));
+        assert_eq!(g.vram_bytes, None, "integrated Intel has no discrete VRAM");
+        assert_eq!(g.gfx_ns, Some(2000));
+        assert_eq!(g.compute_ns, Some(500));
+    }
+
+    #[test]
+    fn xe_maps_memory_but_has_no_ns_engine_counter() {
+        let g = merge_fdinfo_texts(&[XE_SAMPLE.to_string()]);
+        assert_eq!(g.vram_bytes, Some(23992 * 1024));
+        assert_eq!(g.gtt_bytes, Some(192 * 1024));
+        assert_eq!(g.gfx_ns, None, "drm-cycles-rcs is not nanoseconds");
+        assert_eq!(g.compute_ns, None);
+    }
 
     #[test]
     fn dedupe_client_id() {

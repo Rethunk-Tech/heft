@@ -16,7 +16,7 @@ src/proc.rs          every visible PID; blank metrics on EACCES
 src/cpu.rs           /proc/stat split (usr/sys/wait) + per-pid utime/stime rates
 src/mem.rs           meminfo used/Buffers/Cached, unified APU clip, host VRAM
 src/io.rs            /proc/pid/io rates and smaps_rollup PSS
-src/gpu.rs           amdgpu fdinfo; dri/drm prefilter; full walk on PSS/--once; drm-client-id dedupe
+src/gpu.rs           amdgpu/i915/xe fdinfo; dri/drm prefilter; full walk on PSS/--once; drm-client-id dedupe
 src/classify.rs      launcher / worker / shell / terminal / compositor tables
 src/identity.rs      cgroup parse, merge key + display name
 src/containers.rs    GET-only docker/podman; project vs per-container
@@ -95,8 +95,8 @@ Never read `/proc/pid/mem`. Never ptrace.
 | RSS | `/proc/pid/statm` |
 | PSS | `/proc/pid/smaps_rollup` — cadence in [HUMANS.md](HUMANS.md) |
 | Disk R/W | Δ `read_bytes` / `write_bytes` from `/proc/pid/io` |
-| GPU mem | prefer `drm-resident-vram` / `drm-resident-gtt` over `drm-total-*` |
-| gfx% / compute% | engine ns deltas from amdgpu fdinfo |
+| GPU mem | prefer `drm-resident-*` over `drm-total-*`; regions `vram`/`gtt` (amdgpu), `local0`/`system0` (i915), `vram0`/`gtt` (xe) |
+| gfx% / compute% | `drm-engine-gfx`/`-render` and `-compute` ns deltas. xe reports only `drm-cycles-*`, so it has no engine % |
 
 | surface | rule |
 | --- | --- |

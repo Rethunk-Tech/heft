@@ -10,7 +10,7 @@
 
 ---
 
-`heft` walks `/proc` and amdgpu fdinfo, then draws a tree: **Host → each User
+`heft` walks `/proc` and DRM fdinfo (amdgpu, i915, xe), then draws a tree: **Host → each User
 (Applications, User Services, Containers) → System**. Docker and Podman
 workloads are never billed to `dockerd`, `containerd`, or the starter daemon.
 

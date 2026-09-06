@@ -116,7 +116,7 @@ stderr from `config::load_overrides` and grouping continues built-in.
 | PSS | `/proc/pid/smaps_rollup` — cadence in [HUMANS.md](HUMANS.md) |
 | Disk R/W | Δ `read_bytes` / `write_bytes` from `/proc/pid/io` |
 | GPU mem | prefer `drm-resident-*` over `drm-total-*`; regions `vram`/`gtt` (amdgpu), `local0`/`system0` (i915), `vram0`/`gtt` (xe) |
-| gfx% / compute% | `drm-engine-gfx`/`-render` and `-compute` ns deltas. xe reports only `drm-cycles-*`, so it has no engine % |
+| gfx% / compute% | `drm-engine-gfx`/`-render` and `-compute` ns deltas over wall clock. xe has no ns key: `drm-cycles-rcs`/`-ccs` delta over the `drm-total-cycles-*` GPU-clock delta, each divided by `drm-engine-capacity-*`. Two formulas, deliberately not unified |
 
 | surface | rule |
 | --- | --- |

@@ -91,6 +91,11 @@ pub fn parse_fdinfo(text: &str) -> Option<ClientView> {
     let mut gtt = None;
     let mut gfx_ns = None;
     let mut compute_ns = None;
+    let mut gfx_cycles = None;
+    let mut compute_cycles = None;
+    let mut total_cycles = None;
+    let mut gfx_capacity = 1;
+    let mut compute_capacity = 1;
     for line in text.lines() {
         let (k, v) = split_kv(line)?;
         // amdgpu, i915 and xe all implement Documentation/gpu/drm-usage-stats.rst
@@ -107,12 +112,19 @@ pub fn parse_fdinfo(text: &str) -> Option<ClientView> {
             | "drm-resident-vram1"
             | "drm-resident-local0" => vram = sum_opt(vram, parse_size(v)),
             "drm-resident-gtt" | "drm-resident-system0" => gtt = sum_opt(gtt, parse_size(v)),
+            "drm-engine-gfx" | "drm-engine-render" => gfx_ns = parse_count(v),
+            "drm-engine-compute" => compute_ns = parse_count(v),
             // xe publishes engine busy only as drm-cycles-<rcs|ccs|...> against
-            // drm-total-cycles-*, never ns, so it has no arm here: feeding cycles
-            // to the ns-over-wall-clock rate would render a confidently wrong
-            // percentage, which is worse than the blank column it gets instead.
-            "drm-engine-gfx" | "drm-engine-render" => gfx_ns = parse_ns(v),
-            "drm-engine-compute" => compute_ns = parse_ns(v),
+            // drm-total-cycles-*, never ns, so it takes the ratio path in
+            // `cpu::cycles_pct` instead of the ns-over-wall-clock rate.
+            "drm-cycles-rcs" => gfx_cycles = parse_count(v),
+            "drm-cycles-ccs" => compute_cycles = parse_count(v),
+            // One `xe_hw_engine_read_timestamp` read is printed under every
+            // class (xe/xe_drm_client.c `show_run_ticks`), so these are the
+            // same number and the last one parsed is as good as the first.
+            "drm-total-cycles-rcs" | "drm-total-cycles-ccs" => total_cycles = parse_count(v),
+            "drm-engine-capacity-rcs" => gfx_capacity = parse_capacity(v),
+            "drm-engine-capacity-ccs" => compute_capacity = parse_capacity(v),
             _ => {}
         }
     }
@@ -125,6 +137,15 @@ pub fn parse_fdinfo(text: &str) -> Option<ClientView> {
         gtt,
         gfx_ns,
         compute_ns,
+        // xe sums run_ticks over every engine instance of the class while
+        // drm-total-cycles is one clock, so capacity is the divisor
+        // (drm-usage-stats.rst; xe/xe_drm_client.c `show_run_ticks` prints
+        // it only when it exceeds one). Dividing here rather than carrying
+        // capacity to the rate costs under one count in the ~1e10 that a
+        // second of GPU timestamp spans.
+        gfx_cycles: gfx_cycles.map(|c| c / gfx_capacity),
+        compute_cycles: compute_cycles.map(|c| c / compute_capacity),
+        total_cycles,
     })
 }
 
@@ -134,6 +155,9 @@ pub struct ClientView {
     pub gtt: Option<u64>,
     pub gfx_ns: Option<u64>,
     pub compute_ns: Option<u64>,
+    pub gfx_cycles: Option<u64>,
+    pub compute_cycles: Option<u64>,
+    pub total_cycles: Option<u64>,
 }
 
 pub fn merge_fdinfo_texts(texts: &[String]) -> GpuCounters {
@@ -149,6 +173,11 @@ pub fn merge_fdinfo_texts(texts: &[String]) -> GpuCounters {
         out.gtt_bytes = sum_opt(out.gtt_bytes, c.gtt);
         out.gfx_ns = sum_opt(out.gfx_ns, c.gfx_ns);
         out.compute_ns = sum_opt(out.compute_ns, c.compute_ns);
+        out.gfx_cycles = sum_opt(out.gfx_cycles, c.gfx_cycles);
+        out.compute_cycles = sum_opt(out.compute_cycles, c.compute_cycles);
+        // A device clock, not a quantity: summing it would divide the busy
+        // cycles by one clock per open client.
+        out.total_cycles = out.total_cycles.max(c.total_cycles);
     }
     out
 }
@@ -172,8 +201,15 @@ fn parse_size(v: &str) -> Option<u64> {
     Some(n.saturating_mul(mul))
 }
 
-fn parse_ns(v: &str) -> Option<u64> {
+fn parse_count(v: &str) -> Option<u64> {
     v.split_whitespace().next()?.parse().ok()
+}
+
+/// drm-usage-stats.rst forbids a zero capacity and says an absent tag means
+/// one, so an unparsable value falls back the same way rather than dividing
+/// the busy cycles away.
+fn parse_capacity(v: &str) -> u64 {
+    parse_count(v).unwrap_or(1).max(1)
 }
 
 #[cfg(test)]
@@ -204,6 +240,32 @@ mod tests {
         assert_eq!(g.gtt_bytes, Some(192 * 1024));
         assert_eq!(g.gfx_ns, None, "drm-cycles-rcs is not nanoseconds");
         assert_eq!(g.compute_ns, None);
+    }
+
+    /// Two rcs-and-ccs samples of one xe client. ccs capacity 4 is the shape
+    /// the kernel doc's worked example shows on an Arc part; rcs prints no
+    /// capacity line, which means one.
+    fn xe_tick(rcs: u64, ccs: u64, stamp: u64) -> String {
+        format!(
+            "drm-driver:\txe\ndrm-client-id:\t3\ndrm-resident-gtt:\t192 KiB\n\
+             drm-cycles-rcs:\t{rcs}\ndrm-total-cycles-rcs:\t{stamp}\n\
+             drm-cycles-ccs:\t{ccs}\ndrm-total-cycles-ccs:\t{stamp}\n\
+             drm-engine-capacity-ccs:\t4\n"
+        )
+    }
+
+    #[test]
+    fn xe_cycles_divide_by_capacity_and_keep_one_device_clock() {
+        let g = merge_fdinfo_texts(&[xe_tick(400, 4000, 9_000)]);
+        assert_eq!(g.gfx_cycles, Some(400), "rcs capacity is 1");
+        assert_eq!(g.compute_cycles, Some(1000), "4 ccs instances, one clock");
+        assert_eq!(g.total_cycles, Some(9_000));
+        // Two clients on one device: busy cycles add, the clock does not.
+        let mut two = xe_tick(400, 4000, 9_000);
+        two.push_str("drm-client-id:\t4\n");
+        let g = merge_fdinfo_texts(&[xe_tick(400, 4000, 9_000), two]);
+        assert_eq!(g.gfx_cycles, Some(800));
+        assert_eq!(g.total_cycles, Some(9_000));
     }
 
     #[test]

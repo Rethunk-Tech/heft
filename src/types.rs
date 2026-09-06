@@ -29,6 +29,13 @@ pub struct GpuCounters {
     pub(crate) gtt_bytes: Option<u64>,
     pub(crate) gfx_ns: Option<u64>,
     pub(crate) compute_ns: Option<u64>,
+    /// xe reports engine busy in GPU cycles instead of nanoseconds. Already
+    /// divided by the class capacity; `total_cycles` is the divisor.
+    pub(crate) gfx_cycles: Option<u64>,
+    pub(crate) compute_cycles: Option<u64>,
+    /// The GPU timestamp both cycle counters are measured against. One clock
+    /// per device, so it is carried, never summed.
+    pub(crate) total_cycles: Option<u64>,
 }
 
 /// Kernel constants every per-PID rate divides by. Read once at startup;

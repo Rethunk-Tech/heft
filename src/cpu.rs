@@ -132,12 +132,29 @@ pub fn process_metrics(
     let pss_bytes = cur.pss_kb.map(|k| k.saturating_mul(1024));
     let disk_r_bps = rate(prev.and_then(|p| p.read_bytes), cur.read_bytes, secs);
     let disk_w_bps = rate(prev.and_then(|p| p.write_bytes), cur.write_bytes, secs);
-    let gfx_pct = engine_pct(prev.and_then(|p| p.gpu.gfx_ns), cur.gpu.gfx_ns, secs);
+    // Two formulas, because the drivers measure two different things: a
+    // duration against the wall clock, and a cycle count against the GPU's own
+    // clock. `or_else` keeps a driver that publishes ns on the ns path.
+    let span = cycles_span(prev, cur);
+    let gfx_pct = engine_pct(prev.and_then(|p| p.gpu.gfx_ns), cur.gpu.gfx_ns, secs).or_else(|| {
+        cycles_pct(
+            prev.and_then(|p| p.gpu.gfx_cycles),
+            cur.gpu.gfx_cycles,
+            span,
+        )
+    });
     let compute_pct = engine_pct(
         prev.and_then(|p| p.gpu.compute_ns),
         cur.gpu.compute_ns,
         secs,
-    );
+    )
+    .or_else(|| {
+        cycles_pct(
+            prev.and_then(|p| p.gpu.compute_cycles),
+            cur.gpu.compute_cycles,
+            span,
+        )
+    });
     Metrics {
         cpu_core_pct: core,
         cpu_machine_pct: machine,
@@ -161,6 +178,24 @@ fn engine_pct(prev: Option<u64>, cur: Option<u64>, secs: f64) -> Option<f64> {
     let (a, b) = (prev?, cur?);
     let dns = b.saturating_sub(a) as f64;
     Some((dns / (secs * 1_000_000_000.0) * 100.0).clamp(0.0, 100.0))
+}
+
+/// Advance of the GPU timestamp every xe cycle counter is measured against.
+/// Zero means both samples caught the same tick, which is a blank column
+/// rather than a division by zero.
+fn cycles_span(prev: Option<&Process>, cur: &Process) -> Option<u64> {
+    let (a, b) = (prev?.gpu.total_cycles?, cur.gpu.total_cycles?);
+    Some(b.saturating_sub(a)).filter(|d| *d > 0)
+}
+
+/// xe publishes engine busy as GPU cycles against `drm-total-cycles-<class>`
+/// rather than nanoseconds, so its utilisation is that ratio and no wall clock
+/// enters it (drm-usage-stats.rst, `drm-total-cycles-<keystr>`). Feeding those
+/// cycles to `engine_pct` would print a confident ~0.00% forever.
+fn cycles_pct(prev: Option<u64>, cur: Option<u64>, span: Option<u64>) -> Option<f64> {
+    let (a, b) = (prev?, cur?);
+    let busy = b.saturating_sub(a) as f64;
+    Some((busy / span? as f64 * 100.0).clamp(0.0, 100.0))
 }
 
 pub fn host_consts() -> HostHeader {
@@ -225,6 +260,45 @@ mod tests {
         assert!((s.system - 60.0 / dt * 100.0).abs() < 0.01);
         assert!((s.wait - 50.0 / dt * 100.0).abs() < 0.01);
         assert!((s.busy - (s.user + s.system + s.wait)).abs() < 0.01);
+    }
+
+    #[test]
+    fn xe_engine_pct_is_a_cycle_ratio_not_a_wall_clock_rate() {
+        let consts = HostHeader {
+            nproc: 8,
+            clk_tck: 100,
+            page_size: 4096,
+        };
+        let sample = |busy: u64, stamp: u64| Process {
+            gpu: crate::types::GpuCounters {
+                gfx_cycles: Some(busy),
+                total_cycles: Some(stamp),
+                ..crate::types::GpuCounters::default()
+            },
+            ..Process::default()
+        };
+        // 250 busy cycles while the GPU clock advanced 1000: a quarter of the
+        // engine, whatever the wall-clock gap between the two samples was.
+        let (a, b) = (sample(1_000, 5_000), sample(1_250, 6_000));
+        for gap in [Duration::from_millis(50), Duration::from_secs(5)] {
+            let m = process_metrics(Some(&a), &b, gap, &consts);
+            assert!((m.gfx_pct.unwrap() - 25.0).abs() < 1e-9, "{:?}", m.gfx_pct);
+        }
+        // A clock that did not advance is blank, never 0.00%.
+        let m = process_metrics(
+            Some(&a),
+            &sample(1_250, 5_000),
+            Duration::from_secs(1),
+            &consts,
+        );
+        assert_eq!(m.gfx_pct, None);
+        // amdgpu / i915 keep the ns path even with cycle fields present.
+        let mut ns = b.clone();
+        ns.gpu.gfx_ns = Some(500_000_000);
+        let mut ns_prev = a.clone();
+        ns_prev.gpu.gfx_ns = Some(0);
+        let m = process_metrics(Some(&ns_prev), &ns, Duration::from_secs(1), &consts);
+        assert!((m.gfx_pct.unwrap() - 50.0).abs() < 1e-9, "{:?}", m.gfx_pct);
     }
 
     #[test]

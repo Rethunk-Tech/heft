@@ -26,6 +26,10 @@ pub struct View {
     /// only because every surface already takes one.
     #[serde(skip)]
     pub users: Vec<u32>,
+    /// `--top`, and not serialized for the same reason `users` is not: a saved
+    /// row limit would quietly hide most of the machine on every later run.
+    #[serde(skip)]
+    pub top: Option<usize>,
 }
 
 impl Default for View {
@@ -36,6 +40,7 @@ impl Default for View {
             filter: String::new(),
             hide_columns: Vec::new(),
             users: Vec::new(),
+            top: None,
         }
     }
 }

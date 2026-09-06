@@ -55,6 +55,7 @@ heft --sort rss           # start on this column instead of the saved one
 heft --once --filter '^(code|claude)$'  # keep rows matching this regex, and their parents
 heft --once --user 1000   # only this user's branch (name or uid, repeatable)
 heft --once --sort age --asc   # low to high, rather than the saved direction
+heft --once --top 5       # the five heaviest rows under each parent
 ```
 
 The TUI needs a terminal. `heft > file`, or heft in a script, says so and
@@ -113,6 +114,18 @@ built with — asking for one user is asking what the top row should count. It i
 never written to `view.json`, not even by `s`: a saved user cut would hide most
 of the machine on every later run for a reason the file, not the command, was
 keeping.
+
+`--top N` keeps the N heaviest rows under each parent, at every depth. It
+never trims Host, a User, or a folder header: those are the shape of the tree
+rather than entries competing to be heaviest, and neither Users nor the
+host-level folders are ordered by the sort at all, so trimming them would drop
+whichever came last — losing the whole System section on a machine that happens
+to have two users. Cutting a row cuts its subtree with it. Like `--filter`, a
+surviving parent still shows the total it was built with, so `Host` keeps
+counting the whole machine, and `--top` applies after `--filter`, so
+`--filter chrome --top 3` is the three heaviest rows that match. Also like
+`--filter`, it is refused with `--json`: the JSON shape is a contract and a
+row limit is a human's presentation preference — slice it with `jq` instead.
 
 `--desc` and `--asc` set the direction the `d` key toggles. Without one,
 `--sort age` meant whichever direction the saved view happened to hold, so the

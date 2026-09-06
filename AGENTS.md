@@ -143,6 +143,14 @@ that means: clap `InvalidValue` for `--filter`, warn-and-ignore for a stale
 `view.json`, and in the TUI the last compiling pattern stays live behind a `?`
 in the footer.
 
+`once::keep_top` trims to `--top` after `keep_matches`, generic over the row
+type for the same reason: the TUI trims its flattened rows and `--once` trims
+the ones it prints. Row-level rather than tree-level so an ancestor keeps the
+total it was built with, and `TableRow::trimmable` / `Flat::trimmable` is false
+on Host, User and folder rows — sort never orders `tree.users` or the top-level
+folders, so a "top" of them would cut arbitrarily. `conflicts_with = "json"`,
+same reasoning as `--filter`.
+
 `once::keep_matches` is the one filter for every surface — the TUI over its
 flattened rows, `--once` over `once::table_rows`. Rows are built from the whole
 tree and filtered afterwards, so an ancestor row keeps the total it was built

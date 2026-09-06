@@ -19,7 +19,9 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph, Row, Table};
 use crate::config::{self, View};
 use crate::cpu;
 use crate::mem::{self, MemParts};
-use crate::once::{Columns, Filter, Sort, fmt_bytes, fmt_pct, keep_matches, keep_users, sort_tree};
+use crate::once::{
+    Columns, Filter, Sort, fmt_bytes, fmt_pct, keep_matches, keep_top, keep_users, sort_tree,
+};
 use crate::proc;
 use crate::types::{
     Error, HostTree, IdentNode, Metrics, ProcNode, folder_nproc, host_metrics, sum_idents,
@@ -149,6 +151,9 @@ struct Flat {
     nproc: u32,
     metrics: Metrics,
     expandable: bool,
+    /// See `TableRow::trimmable`: Host, Users and folder headers are the shape
+    /// of the tree, not candidates for `--top`.
+    trimmable: bool,
 }
 
 fn flatten(
@@ -166,6 +171,7 @@ fn flatten(
         nproc: host_n,
         metrics: host_metrics(tree),
         expandable: true,
+        trimmable: false,
     });
     if expand.contains("host") {
         for user in &tree.users {
@@ -178,6 +184,7 @@ fn flatten(
                 nproc: user_nproc(user),
                 metrics: user_metrics(user),
                 expandable: true,
+                trimmable: false,
             });
             if expand.contains(&id) {
                 for (slug, title, idents) in [
@@ -217,6 +224,9 @@ fn flatten(
     if let Some(filter) = filter.filter(|_| !view.filter.is_empty()) {
         keep_rows(&mut rows, filter);
     }
+    if let Some(n) = view.top {
+        keep_top(&mut rows, n, |r| (r.depth, r.trimmable));
+    }
     rows
 }
 
@@ -240,6 +250,7 @@ fn push_folder(rows: &mut Vec<Flat>, p: &FolderPush<'_>) {
         nproc: folder_nproc(p.idents),
         metrics: sum_idents(p.idents),
         expandable: true,
+        trimmable: false,
     });
     if !p.expand.contains(p.id) {
         return;
@@ -253,6 +264,7 @@ fn push_folder(rows: &mut Vec<Flat>, p: &FolderPush<'_>) {
             nproc: ident.nproc,
             metrics: ident.metrics.clone(),
             expandable: true,
+            trimmable: true,
         });
         if !p.expand.contains(&iid) {
             continue;
@@ -266,6 +278,7 @@ fn push_folder(rows: &mut Vec<Flat>, p: &FolderPush<'_>) {
                 nproc: member.nproc,
                 metrics: member.metrics.clone(),
                 expandable: true,
+                trimmable: true,
             });
             if p.expand.contains(&mid) {
                 push_procs(rows, p.expand, p.depth + 3, &mid, &member.processes);
@@ -280,6 +293,7 @@ fn push_folder(rows: &mut Vec<Flat>, p: &FolderPush<'_>) {
                 nproc: inst.nproc,
                 metrics: inst.metrics.clone(),
                 expandable: true,
+                trimmable: true,
             });
             if p.expand.contains(&sid) {
                 push_procs(rows, p.expand, p.depth + 3, &sid, &inst.processes);
@@ -304,6 +318,7 @@ fn push_procs(
             nproc: 1,
             metrics: p.metrics.clone(),
             expandable: !p.children.is_empty(),
+            trimmable: true,
         });
         if expand.contains(&id) {
             push_procs(rows, expand, depth + 1, &id, &p.children);
@@ -1053,6 +1068,7 @@ mod tests {
             nproc: 1,
             metrics: Metrics::default(),
             expandable: false,
+            trimmable: true,
         }
     }
 

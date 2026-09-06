@@ -34,6 +34,7 @@ fn main() -> ExitCode {
         check_filter(&filter);
         view.filter = filter;
     }
+    view.top = cli.top.map(|n| n as usize);
     // `--sort age` alone meant whichever direction the saved view happened to
     // hold, so the same command printed differently on two machines. Only an
     // explicit flag moves it; absent both, the view still decides.

@@ -461,6 +461,59 @@ fn layout(cols: &Columns, cell: impl Fn(&Column) -> String) -> String {
 /// # Errors
 ///
 /// Returns an error if writing the table to stdout fails.
+/// Keep the `n` heaviest rows under each parent, at every depth.
+///
+/// A row-level trim, deliberately, and not a tree one. Rows are built from the
+/// whole tree first, so a surviving parent still shows the total it was built
+/// with rather than the total of what it kept — the same contract `--filter`
+/// has, and the reason `Host` does not start claiming the machine holds three
+/// applications. Dropping a row drops its subtree with it: a child of a row
+/// nobody can see is not a row.
+///
+/// Generic over the row type for the same reason `keep_matches` is: the TUI
+/// trims its flattened rows and `--once` trims the ones it prints, and `--top`
+/// has to mean one thing on both.
+pub(crate) fn keep_top<T>(rows: &mut Vec<T>, n: usize, row: impl Fn(&T) -> (u16, bool)) {
+    if n == 0 || rows.is_empty() {
+        return;
+    }
+    // Siblings kept so far, indexed by depth. Seeing a row at depth `d` means
+    // every deeper parent has been left behind, so those counts are discarded
+    // and the next child under the new parent starts from zero.
+    let mut kept: Vec<usize> = Vec::new();
+    let mut pruned_at: Option<u16> = None;
+    let mut keep = Vec::with_capacity(rows.len());
+    for r in rows.iter() {
+        let (d, trimmable) = row(r);
+        if let Some(cut) = pruned_at {
+            if d > cut {
+                keep.push(false);
+                continue;
+            }
+            pruned_at = None;
+        }
+        let i = usize::from(d);
+        if kept.len() <= i {
+            kept.resize(i + 1, 0);
+        }
+        // Moving back up leaves every deeper parent behind, so the next child
+        // under the new one starts counting from zero.
+        kept.truncate(i + 1);
+        if !trimmable {
+            keep.push(true);
+            continue;
+        }
+        kept[i] += 1;
+        let over = kept[i] > n;
+        if over {
+            pruned_at = Some(d);
+        }
+        keep.push(!over);
+    }
+    let mut flags = keep.into_iter();
+    rows.retain(|_| flags.next() == Some(true));
+}
+
 /// Drop every User node but the ones named, on every surface.
 ///
 /// A prune, not a `keep_matches` filter, and the two deliberately disagree
@@ -500,6 +553,11 @@ pub fn print_table(interval: Duration, view: &View) -> Result<(), Error> {
             ),
         }
     }
+    // After the filter, so `--filter chrome --top 3` is the three heaviest
+    // rows that match rather than whatever of the top three happened to.
+    if let Some(n) = view.top {
+        keep_top(&mut rows, n, |r| (r.depth, r.trimmable));
+    }
     let mut out = io::stdout();
     writeln!(
         out,
@@ -526,6 +584,12 @@ struct TableRow {
     name: String,
     nproc: u32,
     metrics: Metrics,
+    /// False for Host, a User, and a folder header. `--top` never trims those:
+    /// they are the shape of the tree rather than entries competing to be
+    /// heaviest, and neither Users nor the host-level folders are ordered by
+    /// the sort at all, so "the top two" of them would cut whichever ones
+    /// `assemble` happened to build first.
+    trimmable: bool,
 }
 
 fn table_rows(tree: &HostTree) -> Vec<TableRow> {
@@ -534,6 +598,7 @@ fn table_rows(tree: &HostTree) -> Vec<TableRow> {
         name: "Host".into(),
         nproc: tree_host_nproc(tree),
         metrics: host_metrics(tree),
+        trimmable: false,
     }];
     for user in &tree.users {
         rows.push(TableRow {
@@ -541,6 +606,7 @@ fn table_rows(tree: &HostTree) -> Vec<TableRow> {
             name: format!("{} ({})", user.name, user.uid),
             nproc: user_nproc(user),
             metrics: user_metrics(user),
+            trimmable: false,
         });
         push_folder(&mut rows, 2, "Applications", &user.applications);
         push_folder(&mut rows, 2, "User Services", &user.user_services);
@@ -557,6 +623,7 @@ fn push_folder(rows: &mut Vec<TableRow>, depth: u16, name: &str, idents: &[Ident
         name: name.into(),
         nproc: folder_nproc(idents),
         metrics: sum_idents(idents),
+        trimmable: false,
     });
     for ident in idents {
         rows.push(TableRow {
@@ -564,6 +631,7 @@ fn push_folder(rows: &mut Vec<TableRow>, depth: u16, name: &str, idents: &[Ident
             name: ident.title.clone(),
             nproc: ident.nproc,
             metrics: ident.metrics.clone(),
+            trimmable: true,
         });
         for member in &ident.containers {
             rows.push(TableRow {
@@ -571,6 +639,7 @@ fn push_folder(rows: &mut Vec<TableRow>, depth: u16, name: &str, idents: &[Ident
                 name: member.title.clone(),
                 nproc: member.nproc,
                 metrics: member.metrics.clone(),
+                trimmable: true,
             });
         }
     }
@@ -988,6 +1057,79 @@ mod tests {
         let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
         assert_eq!(names, ["Host", "u (1000)", "Applications", "firefox"]);
         assert_eq!(rows[0].metrics.pss_bytes, Some(3072));
+    }
+
+    /// `--top` counts per parent, not per depth: two folders each keep their
+    /// own N. Structural rows never count and are never cut, since Users and
+    /// the host-level folders are not ordered by the sort at all, so "the top
+    /// two" of them would drop whichever ones came last for no reason a reader
+    /// could see — losing the whole System section to a machine that happened
+    /// to have two users.
+    #[test]
+    fn top_counts_siblings_under_each_parent_and_spares_the_shape() {
+        let row = |depth: u16, name: &str, trimmable: bool| TableRow {
+            depth,
+            name: name.into(),
+            nproc: 1,
+            metrics: Metrics::default(),
+            trimmable,
+        };
+        let mut rows = vec![
+            row(0, "Host", false),
+            row(1, "alice", false),
+            row(2, "Applications", false),
+            row(3, "a1", true),
+            row(3, "a2", true),
+            row(3, "a3", true),
+            row(2, "User Services", false),
+            row(3, "s1", true),
+            row(3, "s2", true),
+            row(1, "System", false),
+            row(2, "k1", true),
+            row(2, "k2", true),
+        ];
+        keep_top(&mut rows, 2, |r| (r.depth, r.trimmable));
+        assert_eq!(
+            rows.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(),
+            [
+                "Host",
+                "alice",
+                "Applications",
+                "a1",
+                "a2",
+                "User Services",
+                "s1",
+                "s2",
+                "System",
+                "k1",
+                "k2"
+            ]
+        );
+    }
+
+    /// A child of a row nobody can see is not a row.
+    #[test]
+    fn top_drops_the_subtree_of_a_row_it_cut() {
+        let row = |depth: u16, name: &str, trimmable: bool| TableRow {
+            depth,
+            name: name.into(),
+            nproc: 1,
+            metrics: Metrics::default(),
+            trimmable,
+        };
+        let mut rows = vec![
+            row(0, "Host", false),
+            row(1, "kept", true),
+            row(2, "kept-child", true),
+            row(1, "cut", true),
+            row(2, "cut-child", true),
+            row(3, "cut-grandchild", true),
+        ];
+        keep_top(&mut rows, 1, |r| (r.depth, r.trimmable));
+        assert_eq!(
+            rows.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(),
+            ["Host", "kept", "kept-child"]
+        );
     }
 
     fn folder_rows(disk_r_bps: f64) -> Vec<TableRow> {

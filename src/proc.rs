@@ -12,10 +12,6 @@ use crate::identity;
 use crate::types::{GpuCounters, HostTree, Process};
 use crate::{gpu, io as pio};
 
-pub fn enumerate() -> HashMap<u32, Process> {
-    collect(true, None)
-}
-
 fn collect(want_pss: bool, prev: Option<&HashMap<u32, Process>>) -> HashMap<u32, Process> {
     let mut out = HashMap::new();
     let Ok(dir) = fs::read_dir("/proc") else {

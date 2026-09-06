@@ -48,9 +48,7 @@ pub struct ContainerInfo {
     pub ident_key: String,
     pub ident_title: String,
     pub member_name: Option<String>,
-    pub ips: Vec<String>,
     pub owner_uid: Option<u32>,
-    pub running: bool,
 }
 
 #[derive(Default)]
@@ -188,9 +186,7 @@ impl ContainerIndex {
             ident_key,
             ident_title,
             member_name,
-            ips: ips.clone(),
             owner_uid: owner,
-            running,
         };
         self.index_ids(&info);
         for ip in ips {
@@ -382,8 +378,6 @@ pub struct Inspect {
 pub struct InspectState {
     #[serde(rename = "Running")]
     pub running: Option<bool>,
-    #[serde(rename = "Pid")]
-    pub pid: Option<i64>,
 }
 
 #[derive(Clone, Debug, Deserialize, Default)]
@@ -452,9 +446,7 @@ mod tests {
             ident_key: "x".into(),
             ident_title: "x".into(),
             member_name: None,
-            ips: Vec::new(),
             owner_uid: None,
-            running: true,
         }
     }
 

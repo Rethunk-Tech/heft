@@ -2,25 +2,24 @@
 
 ## Unreleased
 
-### Changed
-
-- The TUI `c` and `d` keys now reorder instance, member-container and process
-  rows too, not just identity rows. Every level of the tree, and the `--once` /
-  `--json` order, starts PSS descending as documented; a metric heft cannot
-  read sorts last in either direction instead of as a zero.
-- Disk rates below 1 KiB/s round instead of truncating; they no longer
-  round-trip through an integer byte count.
-- TUI start no longer creates `$XDG_STATE_HOME/heft` or `$XDG_CACHE_HOME/heft`.
-  Only `$XDG_CONFIG_HOME/heft` is created, and only when saving a view.
+First release. Nothing is tagged yet, so this is what `heft` 0.1.0 contains.
 
 ### Added
 
-- TUI `--pss-interval` (default 5s, at least `--interval`); between those
-  reads heft reuses last per-PID PSS. `--once` / `--json` ignore it and
-  always read PSS.
+- Fullscreen TUI, plus `--once` and `--json` for one sample, over the tree
+  Host → User (Applications | User Services | Containers) → System.
+- Per-row `%core` / `%machine`, PSS, RSS, disk read/write rates, and amdgpu
+  VRAM / GTT / gfx% / compute% from fdinfo.
+- Read-only Docker and Podman attribution: `GET` only, containers billed to
+  their workload rather than to `dockerd` or `containerd`.
+- `--interval` catch-all sampling (default 1s, floor 0.05s) and TUI-only
+  `--pss-interval` (default 5s). Between PSS reads heft reuses the last
+  per-PID value; `--once` / `--json` always read PSS on the published sample.
+- Sort and filter across every level of the tree, saved to
+  `$XDG_CONFIG_HOME/heft/view.json` with `s`. Default is PSS descending, and a
+  metric heft cannot read sorts last rather than as a zero.
 - User Services logical groups (GNOME Settings Daemon plugins, GVFS, Flatpak
   session helper/portal, xdg-desktop-portal family, evolution-data-server)
   merge by unit/package/D-Bus family, not by comm prefix.
-- Initial `heft` TUI and `--once` / `--json` sample: Host → User
-  (Applications | User Services | Containers) → System, with amdgpu fdinfo
-  and read-only Docker/Podman inspect.
+- `$XDG_CONFIG_HOME/heft` is the only directory heft creates, and only when
+  you save a view. No state or cache tree.

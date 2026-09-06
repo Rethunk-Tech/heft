@@ -159,7 +159,7 @@ fn container_place(p: &Process, containers: &ContainerIndex) -> Option<Place> {
     }
     let scope = docker_scope_id(&p.cgroup);
     if let Some(id) = scope.clone().or_else(|| containers::helper_id(p)) {
-        let short: String = id.chars().take(12).collect();
+        let short = containers::hex12(&id).unwrap_or(&id);
         let title = format!("docker-{short}");
         return Some(Place {
             folder: Folder::Containers,

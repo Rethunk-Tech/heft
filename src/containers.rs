@@ -18,7 +18,7 @@ fn hex_id(s: &str) -> Option<&str> {
     (s.len() >= 12 && s.bytes().all(|b| b.is_ascii_hexdigit())).then_some(s)
 }
 
-fn hex12(s: &str) -> Option<&str> {
+pub(crate) fn hex12(s: &str) -> Option<&str> {
     hex_id(s).and_then(|id| id.get(..12))
 }
 

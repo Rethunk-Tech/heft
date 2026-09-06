@@ -518,7 +518,11 @@ fn pct_weight(p: f64) -> u64 {
 fn cpu_header_line(tree: &HostTree, width: usize) -> Line<'static> {
     let prefix = " CPU [";
     let mid = format!("] {:>5}%  ", fmt_pct(tree.cpu_pct));
-    let legend_len = "usr/sys/wait".len();
+    let (tail, legend_len) = legend(&[
+        ("usr", Color::Cyan),
+        ("sys", Color::Magenta),
+        ("wait", Color::Yellow),
+    ]);
     let bar_w = width.saturating_sub(prefix.len() + mid.len() + legend_len);
     let parts = [
         (pct_weight(tree.cpu_user_pct), Color::Cyan),
@@ -528,11 +532,7 @@ fn cpu_header_line(tree: &HostTree, width: usize) -> Line<'static> {
     let mut spans = vec![Span::raw(prefix)];
     spans.extend(stacked_bar(bar_w, &parts, 10_000));
     spans.push(Span::raw(mid));
-    spans.push(Span::styled("usr", Style::default().fg(Color::Cyan)));
-    spans.push(Span::raw("/"));
-    spans.push(Span::styled("sys", Style::default().fg(Color::Magenta)));
-    spans.push(Span::raw("/"));
-    spans.push(Span::styled("wait", Style::default().fg(Color::Yellow)));
+    spans.extend(tail);
     Line::from(spans)
 }
 
@@ -557,7 +557,12 @@ fn mem_header_line(tree: &HostTree, width: usize) -> Line<'static> {
         fmt_bytes(Some(tree.mem_used_bytes)),
         fmt_bytes(Some(tree.mem_total_bytes))
     );
-    let legend_len = "vram/gtt/cache/buf".len();
+    let (tail, legend_len) = legend(&[
+        ("vram", Color::LightRed),
+        ("gtt", Color::LightCyan),
+        ("cache", Color::Blue),
+        ("buf", Color::Green),
+    ]);
     let bar_w = width.saturating_sub(prefix.len() + mid.len() + legend_len);
     let cap = tree.mem_total_bytes.max(1);
     let parts = [
@@ -570,14 +575,28 @@ fn mem_header_line(tree: &HostTree, width: usize) -> Line<'static> {
     let mut spans = vec![Span::raw(prefix)];
     spans.extend(stacked_bar(bar_w, &parts, cap));
     spans.push(Span::raw(mid));
-    spans.push(Span::styled("vram", Style::default().fg(Color::LightRed)));
-    spans.push(Span::raw("/"));
-    spans.push(Span::styled("gtt", Style::default().fg(Color::LightCyan)));
-    spans.push(Span::raw("/"));
-    spans.push(Span::styled("cache", Style::default().fg(Color::Blue)));
-    spans.push(Span::raw("/"));
-    spans.push(Span::styled("buf", Style::default().fg(Color::Green)));
+    spans.extend(tail);
     Line::from(spans)
+}
+
+/// Slash-joined coloured labels plus the columns they occupy. The bar width
+/// subtracts that count, so deriving it here is what keeps a renamed label
+/// from overflowing the line.
+fn legend(labels: &[(&str, Color)]) -> (Vec<Span<'static>>, usize) {
+    let mut spans = Vec::new();
+    let mut cols = 0;
+    for (i, (text, color)) in labels.iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::raw("/"));
+            cols += 1;
+        }
+        spans.push(Span::styled(
+            (*text).to_string(),
+            Style::default().fg(*color),
+        ));
+        cols += text.chars().count();
+    }
+    (spans, cols)
 }
 
 fn stacked_bar(width: usize, parts: &[(u64, Color)], capacity: u64) -> Vec<Span<'static>> {
@@ -783,9 +802,14 @@ mod tests {
         assert!(text.contains("wait"));
         assert!(!text.contains("/s R"));
         assert!(!text.contains("/s W"));
-        let bar = text.chars().filter(|c| *c == '█' || *c == '░').count();
-        let mid = format!("] {:>5}%  ", fmt_pct(tree.cpu_pct)).len();
-        assert_eq!(bar, width - " CPU [".len() - mid - "usr/sys/wait".len());
+        // The only check that catches a legend whose labels disagree with the
+        // width the bar subtracts: the rendered line must land on `width`.
+        assert_eq!(text.chars().count(), width);
+        assert_eq!(cpu_header_line(&tree, 200).to_string().chars().count(), 200);
+        assert_eq!(
+            mem_header_line(&tree, width).to_string().chars().count(),
+            width
+        );
     }
 
     fn flat(depth: u16, name: &str) -> Flat {

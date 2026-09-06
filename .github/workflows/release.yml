@@ -73,12 +73,18 @@ jobs:
           # Newest, not first: rust-cache restores target/ between runs, so an
           # assets dir from an earlier build of an earlier tag survives and
           # `head -1` can hand back its stale completions and man page.
-          assets=$(find "target/${{ matrix.target }}/release/build" -type d -name assets \
+          #
+          # Ranked by the man page's own mtime, not the directory's. A build
+          # script rewriting these files in place does not touch the directory,
+          # whose mtime only moves when an entry is added or removed — measured
+          # locally at a directory an hour older than the file inside it.
+          man=$(find "target/${{ matrix.target }}/release/build" -name heft.1 \
             -printf '%T@ %p\n' | sort -rn | head -1 | cut -d' ' -f2-)
-          test -n "$assets" || { echo "build.rs produced no assets dir"; exit 1; }
+          test -n "$man" || { echo "build.rs produced no man page"; exit 1; }
+          assets=$(dirname "$man")
           # The invariant, without naming a flag that could be renamed: what
           # build.rs generated must postdate the flag definitions it read.
-          test "$assets/heft.1" -nt src/cli.rs || {
+          test "$man" -nt src/cli.rs || {
             echo "generated assets predate src/cli.rs: $assets"; exit 1; }
           for f in heft.bash _heft heft.fish heft.1; do
             test -s "$assets/$f" || { echo "missing generated asset: $f"; exit 1; }

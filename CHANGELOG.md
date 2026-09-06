@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### Fixed
+
+- Every `Ctrl-` key ran its unmodified binding. Raw mode turns `ISIG` off, so
+  the terminal never raises `SIGINT` and heft has to answer `Ctrl-C` itself; it
+  did not. Reproduced in a pty against the release binary: one `Ctrl-C` moved
+  the sort from `pss` to `rss` and a second to `swap`, exactly as pressing `c`
+  twice; `Ctrl-D` flipped the sort direction; and `Ctrl-S` wrote `view.json`
+  with no `s` ever pressed. `Ctrl-C` now quits, from the filter editor as well
+  as the table, and every other `CONTROL`, `ALT` or `SUPER` combination is
+  dropped. `SHIFT` still reaches the bindings, since a capital is how you type
+  one.
+
+- The terminal is put back when heft does not exit through `run()`. The release
+  profile is `panic = abort`, so a panic never unwinds and no teardown ran, and
+  `SIGTERM`/`SIGHUP`/`SIGQUIT` terminated outright — leaving the shell in raw
+  mode inside the alternate screen with no echo. Measured in a pty before and
+  after: without the guard all three signals left canonical mode and echo off
+  and the alternate screen active; with it, all three restore and exit
+  `128 +` the signal.
+
+- `systemd_unescape` pushed each decoded byte as a `char`, reading systemd's
+  byte-at-a-time escapes as Latin-1, so `\xc3\xa9` rendered `Ã©` rather than `é`
+  and any unit or scope name that was not pure ASCII appeared as mojibake.
+
 ### Added
 
 - `CPU ST` / `IO ST` / `MEM ST`, per-cgroup stall percentages from the kernel's
@@ -25,6 +49,35 @@
   its cgroup holds only that pid, since a cgroup's stall is not one process's.
   Measured, 67% of user identity rows carry a figure on one desktop, and
   sampling costs about 5 ms a tick.
+
+- `--follow`, so heft keeps sampling instead of exiting after one. `--json
+  --follow` emits one compact document per line (NDJSON, so a reader takes a
+  line at a time without a streaming parser) and `--once --follow` reprints the
+  table each interval, each sample carrying its own header. It honours
+  `--pss-interval` where the one-shot forms force PSS, because reading
+  `smaps_rollup` for every process once a second forever is the cost that flag
+  exists to avoid. No `--count`: heft already exits quietly on `EPIPE`.
+
+- `--top N`, keeping the N heaviest rows under each parent at every depth, with
+  the subtree of a cut row going with it. It never trims Host, a User or a
+  folder header: the sort does not order those at all, so a "top two" of them
+  cuts arbitrarily — caught in testing, where `--top 2` on a two-user machine
+  silently dropped the entire System section. Row-level rather than tree-level,
+  so a surviving parent still shows the total it was built with; trimming the
+  tree instead made `Host` report 85 processes on a machine running 813.
+
+- `--desc` and `--asc`. `--sort age` alone meant whichever direction the saved
+  view happened to hold, so the same command printed differently on two
+  machines.
+
+- `--glyphs auto|unicode|ascii`. Bars, rules, expand markers and the table's
+  truncation ellipsis were all block or box-drawing characters, which render as
+  tofu on a bare console or a container stripped to a few fonts — worse since
+  glyphs became the primary channel for telling bar segments apart. `auto`
+  reads `LC_ALL`, `LC_CTYPE` then `LANG`; no locale set at all resolves to
+  ASCII, since that is the C locale and the machine most likely to lack the
+  fonts. Every substitute is one column, because the header lines land on an
+  exact width and the table truncates to an exact column count.
 
 - `--user <NAME|UID>`, repeatable, cutting the tree to one owner's branch.
   System and Host-level Containers survive it, since they are the machine's

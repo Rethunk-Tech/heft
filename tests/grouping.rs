@@ -491,7 +491,7 @@ fn gui_and_docker_fixture() {
         titles(&user.user_services)
     );
 
-    assert!(has(&user.containers, "supabase:caldera"));
+    assert!(has(&user.containers, "supabase:demo"));
     assert!(has(&user.containers, "acme-encoder"));
     assert!(has(&user.containers, "acme-indexer"));
     assert!(has(&user.containers, "acme-thumbnailer"));
@@ -509,13 +509,13 @@ fn gui_and_docker_fixture() {
     assert!(!has(&user.containers, "dockerd"));
     assert!(!has(&user.containers, "containerd"));
 
-    let caldera = user
+    let demo = user
         .containers
         .iter()
-        .find(|c| c.id == "supabase:caldera")
+        .find(|c| c.id == "supabase:demo")
         .unwrap();
     assert!(
-        caldera.containers.len() >= 2,
+        demo.containers.len() >= 2,
         "project should expand to member containers"
     );
 
@@ -529,6 +529,6 @@ fn gui_and_docker_fixture() {
     assert!(has(&tree.system, "dockerd"));
     assert!(has(&tree.system, "containerd"));
     assert!(!has(&tree.system, "acme-encoder"));
-    assert!(!has(&tree.system, "supabase:caldera"));
+    assert!(!has(&tree.system, "supabase:demo"));
     assert!(!tree.system.iter().any(|n| n.title.starts_with("docker-")));
 }

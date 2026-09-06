@@ -3,7 +3,7 @@
   "clk_tck": 100,
   "page_size": 4096,
   "workdir_uids": {
-    "/usr/local/src/com.github/PeleOs-LLC/caldera": 1000,
+    "/home/u/src/demo": 1000,
     "/etc/localtime": 0,
     "/var/lib/docker/volumes/acme-cache/_data": 1001,
     "/home/u/.local/share/acme/models/encoder": 1000,
@@ -47,25 +47,25 @@
     {
       "Id": "e367d3e55b3fbd8a85744a0df137fbd149ebfb46346dae8861728d23b1acaad9",
       "Names": [
-        "/supabase_db_caldera"
+        "/supabase_db_demo"
       ],
       "State": "running",
       "Labels": {
-        "com.supabase.cli.project": "caldera",
-        "com.docker.compose.project": "caldera",
-        "com.supabase.cli.workdir": "/usr/local/src/com.github/PeleOs-LLC/caldera"
+        "com.supabase.cli.project": "demo",
+        "com.docker.compose.project": "demo",
+        "com.supabase.cli.workdir": "/home/u/src/demo"
       }
     },
     {
       "Id": "5d1382bafd3cb4b46cd6a11040463164283cfd7eb61f8cac0f91cda558022d96",
       "Names": [
-        "/supabase_kong_caldera"
+        "/supabase_kong_demo"
       ],
       "State": "running",
       "Labels": {
-        "com.supabase.cli.project": "caldera",
-        "com.docker.compose.project": "caldera",
-        "com.supabase.cli.workdir": "/usr/local/src/com.github/PeleOs-LLC/caldera"
+        "com.supabase.cli.project": "demo",
+        "com.docker.compose.project": "demo",
+        "com.supabase.cli.workdir": "/home/u/src/demo"
       }
     },
     {

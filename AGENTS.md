@@ -9,8 +9,10 @@ Read-only Linux process monitor. Binary name `heft`.
 ## Layout
 
 ```
-src/main.rs          clap: TUI default, --once, --json, --interval, --pss-interval
+src/cli.rs           clap Cli; build.rs includes it so completions/man cannot drift
+src/main.rs          dispatch: TUI default, --once, --json
 src/lib.rs           modules
+build.rs             clap_complete + clap_mangen → OUT_DIR/assets (build-deps only)
 src/types.rs         Process, Metrics, HostTree, JSON shape
 src/proc.rs          every visible PID; blank metrics on EACCES
 src/cpu.rs           /proc/stat split (usr/sys/wait) + per-pid utime/stime rates
@@ -25,6 +27,7 @@ src/config.rs        XDG view.json (write on save) and grouping.json (read-only)
 src/once.rs          columns, tree ordering, table and JSON
 src/ui.rs            ratatui header + tree table
 tests/grouping.rs    integration tests over tests/fixtures/
+tests/live_proc.rs   invariants over the real /proc; must hold in a bare container
 tests/fixtures/      GUI grouping snapshot
 ```
 

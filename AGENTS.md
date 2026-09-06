@@ -196,7 +196,10 @@ stderr from `config::load_overrides` and grouping continues built-in.
 | Ordering | one comparator in `once.rs` for every level; a `None` metric sorts last in either direction, name breaks ties, stable over `group::proc_forest` pid order |
 
 TUI sampling runs on a background thread; the ratatui loop only swaps in the
-last complete tree and never blocks on `/proc` I/O. Sample cadence (`--interval`,
+last complete tree and never blocks on `/proc` I/O. `proc::collect` then splits
+the pid list across a `thread::scope` sized by `available_parallelism`, because
+the walk is latency-bound on procfs rather than compute-bound. Measured numbers
+and which tick actually gains live on that function. Sample cadence (`--interval`,
 `--pss-interval`, `--once` / `--json`): [HUMANS.md](HUMANS.md).
 
 JSON shape (`src/types.rs` `HostTree`): `host.users[].applications|user_services|containers`,

@@ -60,7 +60,15 @@ exits non-zero rather than falling back to `--once` behind your back.
 
 `--interval` is the catch-all (default 1s, floor 0.05s): `/proc` walk, RSS,
 io, GPU, grouping, and CPU/disk/GPU rates. The TUI sleeps `--interval` minus
-sample time; a PSS pass may stretch that tick. `--pss-interval` (default 5s,
+sample time; a PSS pass may stretch that tick.
+
+The walk is split across as many threads as the machine has cores, since
+almost all of its time is spent waiting on the kernel to produce one small
+`/proc` file at a time. On a 777-process host that takes an ordinary tick from
+about 120ms to about 20ms, which is what makes the 0.05s floor usable. A PSS
+tick gains less — roughly 850ms to 340ms — because `smaps_rollup` makes the
+kernel walk each process's page tables, so it still stretches its interval.
+This is also why heft shows itself holding more than one thread. `--pss-interval` (default 5s,
 at least `--interval`) is TUI-only; between those reads heft reuses last
 per-PID PSS (vanished PIDs drop). New PIDs show a blank PSS until the next
 rollup.

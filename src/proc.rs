@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::io;
+use std::num::NonZero;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -12,25 +13,65 @@ use crate::group;
 use crate::types::{GpuCounters, HostHeader, HostTree, Process};
 use crate::{gpu, io as pio, net};
 
+/// The walk is around seven small procfs reads per pid and no computation
+/// worth the name, so nearly all of its wall clock is the kernel building
+/// those files one at a time while this process waits. Splitting the pid list
+/// across threads overlaps that wait.
+///
+/// Measured on a 777-pid host, `--once --interval 0.05` (a plain walk, then a
+/// PSS walk), ten interleaved runs each: 1.02s serial to 0.41s parallel. The
+/// two walks do not gain equally. A plain tick goes 120ms to 20ms, which is
+/// what makes the documented 0.05s `--interval` floor reachable at all; the
+/// PSS tick only goes 850ms to 340ms, because `smaps_rollup` makes the kernel
+/// walk that process's page tables and that is memory-bound rather than
+/// latency-bound. So a PSS tick still stretches its interval, exactly as
+/// HUMANS.md says it does — this made the ordinary tick cheap, not that one.
+///
+/// A scope per sample rather than a pool: the threads are spawned once a
+/// second at the default interval and cost tens of microseconds each, so a
+/// pool would be state to keep alive and drain for no measurable gain.
 fn collect(
     want_pss: bool,
     want_swap: bool,
     prev: Option<&HashMap<u32, Process>>,
 ) -> HashMap<u32, Process> {
-    let mut out = HashMap::new();
     let Ok(dir) = fs::read_dir("/proc") else {
-        return out;
+        return HashMap::new();
     };
-    for ent in dir.flatten() {
-        let name = ent.file_name();
-        let Some(pid) = name.to_str().and_then(|s| s.parse::<u32>().ok()) else {
-            continue;
-        };
-        if let Some(p) = read_pid(pid, want_pss, want_swap, prev.and_then(|m| m.get(&pid))) {
-            out.insert(pid, p);
-        }
+    let pids: Vec<u32> = dir
+        .flatten()
+        .filter_map(|e| e.file_name().to_str().and_then(|s| s.parse::<u32>().ok()))
+        .collect();
+    if pids.is_empty() {
+        return HashMap::new();
     }
-    out
+    let threads = thread::available_parallelism()
+        .map_or(1, NonZero::get)
+        .min(pids.len());
+    let chunk = pids.len().div_ceil(threads);
+    thread::scope(|scope| {
+        let workers: Vec<_> = pids
+            .chunks(chunk)
+            .map(|chunk| {
+                scope.spawn(move || {
+                    chunk
+                        .iter()
+                        .filter_map(|&pid| {
+                            let p =
+                                read_pid(pid, want_pss, want_swap, prev.and_then(|m| m.get(&pid)))?;
+                            Some((pid, p))
+                        })
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect();
+        workers
+            .into_iter()
+            // A panic here is a bug in a `/proc` parser, and swallowing it
+            // would publish a tree quietly missing a chunk of the machine.
+            .flat_map(|w| w.join().expect("a /proc walk thread panicked"))
+            .collect()
+    })
 }
 
 fn read_pid(pid: u32, want_pss: bool, want_swap: bool, prev: Option<&Process>) -> Option<Process> {

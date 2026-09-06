@@ -46,6 +46,10 @@ struct Sample {
     /// two scans drops the kworker that was born or reaped mid-walk, which is
     /// the only way this set could disagree with what heft saw.
     kthreads: Vec<u64>,
+    /// Every pid seen both before and after, kernel and userspace alike. A
+    /// process that was in `/proc` at both ends was in `/proc` throughout, so
+    /// heft had no excuse for missing it.
+    alive: Vec<u64>,
 }
 
 /// One live walk shared by every test here; each test names one invariant, so
@@ -54,6 +58,7 @@ fn sample() -> &'static Sample {
     static SAMPLE: OnceLock<Sample> = OnceLock::new();
     SAMPLE.get_or_init(|| {
         let before = kthread_pids();
+        let alive_before = all_pids();
         let child = heft(&["--json", "--interval", FAST])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -62,6 +67,7 @@ fn sample() -> &'static Sample {
         let self_pid = u64::from(child.id());
         let out = child.wait_with_output().expect("wait for heft --json");
         let after = kthread_pids();
+        let alive_after = all_pids();
         assert!(out.status.success(), "heft --json exited {}", out.status);
         assert!(
             out.stderr.is_empty(),
@@ -73,6 +79,10 @@ fn sample() -> &'static Sample {
             host: doc["host"].clone(),
             self_pid,
             kthreads: before.into_iter().filter(|p| after.contains(p)).collect(),
+            alive: alive_before
+                .into_iter()
+                .filter(|p| alive_after.contains(p))
+                .collect(),
         }
     })
 }
@@ -86,6 +96,16 @@ fn heft(args: &[&str]) -> Command {
         std::env::temp_dir().join("heft-no-config"),
     );
     cmd
+}
+
+/// Every pid `/proc` lists, straight from the directory.
+fn all_pids() -> Vec<u64> {
+    let Ok(dir) = std::fs::read_dir("/proc") else {
+        return Vec::new();
+    };
+    dir.flatten()
+        .filter_map(|e| e.file_name().to_str().and_then(|s| s.parse::<u64>().ok()))
+        .collect()
 }
 
 /// Kernel threads straight from the kernel, parsed independently of heft: a
@@ -216,6 +236,29 @@ fn every_pid_is_billed_to_exactly_one_row() {
             }
         }
     }
+}
+
+/// The walk is split across threads, so the failure this guards is a chunk of
+/// the pid list going missing: the tree still parses, still reconciles, and is
+/// quietly short a slice of the machine. Nothing else here would notice, since
+/// every other invariant is about the pids that *are* present.
+#[test]
+fn a_pid_alive_across_the_whole_walk_is_never_dropped() {
+    let s = sample();
+    let seen = placement(&s.host);
+    let missing: Vec<u64> = s
+        .alive
+        .iter()
+        .copied()
+        .filter(|pid| !seen.contains_key(pid))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "{} of {} pids alive across the whole walk are billed to no row: {:?}",
+        missing.len(),
+        s.alive.len(),
+        &missing[..missing.len().min(20)]
+    );
 }
 
 #[test]

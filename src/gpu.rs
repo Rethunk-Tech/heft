@@ -98,7 +98,8 @@ pub fn parse_fdinfo(text: &str) -> Option<ClientView> {
     let mut compute_capacity = 1;
     for line in text.lines() {
         let (k, v) = split_kv(line)?;
-        // amdgpu, i915 and xe all implement Documentation/gpu/drm-usage-stats.rst
+        // amdgpu, i915 and xe all implement the same DRM fdinfo interface
+        // (docs.kernel.org/gpu/drm-usage-stats.html)
         // but name their regions and engines differently. i915 regions are
         // `<class><instance>` -- "system0" is GPU-visible system memory, "local0"
         // is discrete VRAM (i915/intel_memory_region.c intel_memory_type_str);
@@ -139,7 +140,7 @@ pub fn parse_fdinfo(text: &str) -> Option<ClientView> {
         compute_ns,
         // xe sums run_ticks over every engine instance of the class while
         // drm-total-cycles is one clock, so capacity is the divisor
-        // (drm-usage-stats.rst; xe/xe_drm_client.c `show_run_ticks` prints
+        // (docs.kernel.org/gpu/drm-usage-stats.html; xe/xe_drm_client.c `show_run_ticks` prints
         // it only when it exceeds one). Dividing here rather than carrying
         // capacity to the rate costs under one count in the ~1e10 that a
         // second of GPU timestamp spans.
@@ -205,7 +206,8 @@ fn parse_count(v: &str) -> Option<u64> {
     v.split_whitespace().next()?.parse().ok()
 }
 
-/// drm-usage-stats.rst forbids a zero capacity and says an absent tag means
+/// The DRM fdinfo spec (docs.kernel.org/gpu/drm-usage-stats.html) forbids
+/// a zero capacity and says an absent tag means
 /// one, so an unparsable value falls back the same way rather than dividing
 /// the busy cycles away.
 fn parse_capacity(v: &str) -> u64 {

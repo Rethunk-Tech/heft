@@ -196,7 +196,8 @@ fn cycles_span(prev: Option<&Process>, cur: &Process) -> Option<u64> {
 
 /// xe publishes engine busy as GPU cycles against `drm-total-cycles-<class>`
 /// rather than nanoseconds, so its utilisation is that ratio and no wall clock
-/// enters it (drm-usage-stats.rst, `drm-total-cycles-<keystr>`). Feeding those
+/// enters it (`drm-total-cycles-<keystr>`, docs.kernel.org/gpu/drm-usage-stats.html).
+/// Feeding those
 /// cycles to `engine_pct` would print a confident ~0.00% forever.
 fn cycles_pct(prev: Option<u64>, cur: Option<u64>, span: Option<u64>) -> Option<f64> {
     let (a, b) = (prev?, cur?);

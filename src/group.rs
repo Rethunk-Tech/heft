@@ -93,21 +93,7 @@ fn compute_place(
     memo: &mut HashMap<u32, Place>,
     walking: &mut HashSet<u32>,
 ) -> Place {
-    if let Some(place) = container_place(p, containers) {
-        return place;
-    }
-    if identity::is_kernel(p) {
-        return system_place(p);
-    }
-    if identity::in_system_slice(&p.cgroup) && !identity::in_user_slice(&p.cgroup) {
-        return system_place(p);
-    }
-
-    if let Some(place) = session_plumbing_place(p) {
-        return place;
-    }
-
-    if let Some(place) = crash_helper_place(p) {
+    if let Some(place) = direct_place(p, containers) {
         return place;
     }
 
@@ -267,18 +253,22 @@ fn crash_helper_place(p: &Process) -> Option<Place> {
     })
 }
 
+/// The bucket rules that need no ancestor walk, so the cycle-breaking path can
+/// answer with the same verdict `compute_place` would give instead of a subset.
+fn direct_place(p: &Process, containers: &ContainerIndex) -> Option<Place> {
+    if let Some(place) = container_place(p, containers) {
+        return Some(place);
+    }
+    if identity::is_kernel(p)
+        || (identity::in_system_slice(&p.cgroup) && !identity::in_user_slice(&p.cgroup))
+    {
+        return Some(system_place(p));
+    }
+    session_plumbing_place(p).or_else(|| crash_helper_place(p))
+}
+
 fn raw_place(p: &Process, containers: &ContainerIndex) -> Place {
-    container_place(p, containers).unwrap_or_else(|| {
-        if identity::is_kernel(p)
-            || (identity::in_system_slice(&p.cgroup) && !identity::in_user_slice(&p.cgroup))
-        {
-            system_place(p)
-        } else if let Some(place) = session_plumbing_place(p) {
-            place
-        } else {
-            user_place(p)
-        }
-    })
+    direct_place(p, containers).unwrap_or_else(|| user_place(p))
 }
 
 fn owning_app_ancestor(
@@ -546,5 +536,28 @@ fn proc_node(
             .into_iter()
             .map(|c| proc_node(c, children, curr, metrics))
             .collect(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Folder, Process, raw_place};
+    use crate::containers::ContainerIndex;
+
+    #[test]
+    fn cycle_path_still_bills_a_crash_helper_to_its_app() {
+        let place = raw_place(
+            &Process {
+                comm: "crashhelper".into(),
+                exe: Some("/usr/lib64/firefox/crashhelper".into()),
+                cmdline: vec!["crashhelper".into(), "12766".into()],
+                uid: 1000,
+                cgroup: "0::/user.slice/user-1000.slice/user@1000.service/app.slice".into(),
+                ..Process::default()
+            },
+            &ContainerIndex::default(),
+        );
+        assert_eq!(place.folder, Folder::Applications);
+        assert_eq!(place.key, "firefox");
     }
 }

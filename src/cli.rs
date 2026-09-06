@@ -28,4 +28,10 @@ pub struct Cli {
     /// Show only this user's branch; repeat for several. Takes a name or a uid
     #[arg(long = "user", value_name = "NAME|UID")]
     pub user: Vec<String>,
+    /// Sort high to low, whatever the saved view holds
+    #[arg(long, conflicts_with = "asc")]
+    pub desc: bool,
+    /// Sort low to high, whatever the saved view holds
+    #[arg(long)]
+    pub asc: bool,
 }

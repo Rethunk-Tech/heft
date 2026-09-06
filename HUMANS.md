@@ -54,6 +54,7 @@ heft --pss-interval 5     # TUI only: how often to read smaps_rollup (default 5s
 heft --sort rss           # start on this column instead of the saved one
 heft --once --filter '^(code|claude)$'  # keep rows matching this regex, and their parents
 heft --once --user 1000   # only this user's branch (name or uid, repeatable)
+heft --once --sort age --asc   # low to high, rather than the saved direction
 ```
 
 The TUI needs a terminal. `heft > file`, or heft in a script, says so and
@@ -112,6 +113,10 @@ built with — asking for one user is asking what the top row should count. It i
 never written to `view.json`, not even by `s`: a saved user cut would hide most
 of the machine on every later run for a reason the file, not the command, was
 keeping.
+
+`--desc` and `--asc` set the direction the `d` key toggles. Without one,
+`--sort age` meant whichever direction the saved view happened to hold, so the
+same command printed differently on two machines.
 
 Both flags beat a saved `view.json`. `--once` otherwise starts from that saved
 view; `--json` never does — its shape is a contract, so only an explicit flag

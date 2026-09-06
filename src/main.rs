@@ -34,6 +34,14 @@ fn main() -> ExitCode {
         check_filter(&filter);
         view.filter = filter;
     }
+    // `--sort age` alone meant whichever direction the saved view happened to
+    // hold, so the same command printed differently on two machines. Only an
+    // explicit flag moves it; absent both, the view still decides.
+    if cli.asc {
+        view.desc = false;
+    } else if cli.desc {
+        view.desc = true;
+    }
     // Unlike `--filter`, this one applies to `--json` too: it prunes User
     // nodes, which the JSON tree has, where "keep the ancestors" had nothing
     // to mean there.

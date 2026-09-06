@@ -284,18 +284,18 @@ fn flatten(tree: &HostTree, expand: &HashSet<String>, view: &View) -> Vec<Flat> 
 }
 
 fn keep_matches(rows: &mut Vec<Flat>, filter: &str) {
-    // `want` is the depth a match reaches back for. It only ever widens, and
-    // resets at a depth-0 row, so a match retains every earlier row shallower
-    // than itself back to its host -- the whole shallower prefix, not just the
-    // ancestor chain. Widening rather than tightening is what makes this one
-    // reverse pass equal to a backward walk per match.
+    // `want` is the depth still needed to complete the ancestor chain of the
+    // nearest match below. Tightening it to each kept row's own depth is what
+    // limits the walk to that chain: a shallower row on another branch is
+    // always preceded by the deeper rows of its own subtree, which do not
+    // match and do not lower `want`, so it never becomes an empty header.
     let mut want = 0;
     let mut keep = vec![false; rows.len()];
     for (i, row) in rows.iter().enumerate().rev() {
         let d = row.depth;
         if row.name.to_ascii_lowercase().contains(filter) || d < want {
             keep[i] = true;
-            want = if d == 0 { 0 } else { want.max(d) };
+            want = d;
         }
     }
     let mut flags = keep.into_iter();
@@ -929,25 +929,13 @@ mod tests {
     }
 
     #[test]
-    fn keep_matches_also_keeps_shallower_rows_that_are_not_ancestors() {
-        // The retained depth is the match's own depth and never tightens while
-        // walking back, so every earlier row shallower than the match survives
-        // as far as the preceding depth-0 row -- alice's subtree rides along
-        // with a match under bob.
+    fn keep_matches_drops_shallower_rows_that_are_not_ancestors() {
+        // A match under bob keeps bob's chain only; alice's folders are
+        // shallower than the match but sit on another branch, so they must not
+        // survive as empty headers.
         let mut rows = filter_rows();
         keep_matches(&mut rows, "vim");
-        assert_eq!(
-            names(&rows),
-            [
-                "Host",
-                "alice",
-                "Applications",
-                "User Services",
-                "bob",
-                "Applications",
-                "vim",
-            ]
-        );
+        assert_eq!(names(&rows), ["Host", "bob", "Applications", "vim"]);
     }
 
     #[test]

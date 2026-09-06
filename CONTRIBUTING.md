@@ -1,5 +1,12 @@
 # Contributing
 
+Issues and pull requests are welcome. By contributing you agree your work is
+licensed under [Apache-2.0](LICENSE) and to the
+[Code of Conduct](CODE_OF_CONDUCT.md).
+
+Open an issue before a large change. heft is deliberately narrow, and the
+[Scope](#scope) rules below rule some ideas out entirely.
+
 Read [AGENTS.md](AGENTS.md) first — grouping invariants live there, not here.
 
 ## Setup

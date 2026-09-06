@@ -1,0 +1,36 @@
+name: Bug report
+description: Something heft shows is wrong, or it crashed
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What did heft show, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduce
+      description: The exact command, and the row or column that is wrong.
+      placeholder: heft --once
+    validations:
+      required: true
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: |
+        `heft --version`, your distro and kernel (`uname -r`), and the GPU
+        vendor if the report is about VRAM/GTT or gfx%.
+    validations:
+      required: true
+  - type: textarea
+    id: json
+    attributes:
+      label: heft --json output
+      description: |
+        Optional but decisive for grouping bugs. Redact anything you do not
+        want public — process names and paths can identify your machine.
+      render: json

@@ -15,8 +15,9 @@ ignore = []
 
 [licenses]
 confidence-threshold = 0.93
-# Permissive-only allow list. The binary itself is All Rights Reserved (see LICENSE);
-# unpublished workspace members are skipped below rather than given a fake SPDX.
+# Permissive-only allow list, matching heft's own Apache-2.0 (see LICENSE).
+# `publish = false` keeps this crate off crates.io, so it is skipped below as a
+# private package rather than checked against this list.
 allow = [
   "Apache-2.0",
   "Apache-2.0 WITH LLVM-exception",

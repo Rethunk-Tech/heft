@@ -12,7 +12,6 @@ const LAUNCHERS: &[&str] = &[
     "firejail",
     "xdg-dbus-proxy",
     "zypak-sandbox",
-    "startvesktop",
 ];
 
 const GENERICS: &[&str] = &[
@@ -90,7 +89,8 @@ pub fn is_launcher(p: &Process) -> bool {
     if names_match(&names_of(p), is_launcher_name) {
         return true;
     }
-    // `bash /app/bin/startvesktop`: comm is the shell, payload is argv.
+    // A shell wrapper reports the shell as comm; the launcher it execs is the
+    // first positional argument.
     for arg in p.cmdline.iter().skip(1) {
         if arg.starts_with('-') {
             continue;
@@ -482,15 +482,20 @@ mod tests {
             exe: Some("/home/x/cursor.appimage".into()),
             ..Process::default()
         }));
-        assert!(is_launcher(&p("startvesktop", &["startvesktop"])));
-        assert!(is_launcher(&p("bash", &["bash", "/app/bin/startvesktop"])));
+        assert!(is_launcher(&p("zypak-helper", &["zypak-helper", "child"])));
+        assert!(is_launcher(&p("bash", &["bash", "/app/bin/AppRun"])));
         assert!(is_session_noise(&p("cat", &["cat"])));
         assert!(is_worker(&p("cursor", &["cursor", "--type=renderer"])));
         assert!(is_interactive_shell(&p("bash", &["-bash"])));
-        assert!(!is_interactive_shell(&p(
+        let wrapper = p(
             "bash",
-            &["bash", "/app/bin/startvesktop"]
-        )));
+            &["bash", "/app/bin/zypak-wrapper", "/app/extra/vscode/code"],
+        );
+        assert!(!is_interactive_shell(&wrapper));
+        assert!(
+            is_foldable_helper(&wrapper),
+            "a flatpak wrapper script folds as a non-interactive shell"
+        );
         assert!(is_generic(&p(
             "npm",
             &["npm", "exec", "@upstash/context7-mcp"]
@@ -523,7 +528,7 @@ mod tests {
         assert!(session_helper_ident(&p("vivaldi-bin", &["vivaldi-bin"])).is_none());
         assert!(session_helper_ident(&p("claude", &["claude"])).is_none());
         assert!(session_helper_ident(&p("cursor", &["cursor"])).is_none());
-        assert!(session_helper_ident(&p("vesktop.bin", &["vesktop.bin"])).is_none());
+        assert!(session_helper_ident(&p("code", &["code"])).is_none());
         assert_eq!(
             session_helper_ident(&Process {
                 comm: "gjs".into(),
@@ -649,7 +654,7 @@ mod tests {
             session_helper_ident(&Process {
                 comm: "xdg-dbus-proxy".into(),
                 exe: Some("/usr/bin/xdg-dbus-proxy".into()),
-                cgroup: "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-flatpak-dev.vencord.Vesktop-1.scope".into(),
+                cgroup: "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-flatpak-com.visualstudio.code-1.scope".into(),
                 ..Process::default()
             })
             .is_none(),
@@ -760,16 +765,13 @@ mod tests {
                 "/app/bin/zypak-helper",
                 "child",
                 "-",
-                "/app/bin/vesktop/vesktop.bin",
+                "/app/extra/vscode/code",
                 "--type=zygote",
             ],
         );
+        assert_eq!(launcher_payload_hint(&zypak).as_deref(), Some("code"));
         assert_eq!(
-            launcher_payload_hint(&zypak).as_deref(),
-            Some("vesktop.bin")
-        );
-        assert_eq!(
-            launcher_payload_hint(&p("bwrap", &["/usr/bin/bwrap", "--", "startvesktop"]))
+            launcher_payload_hint(&p("bwrap", &["/usr/bin/bwrap", "--", "/usr/bin/flatpak"]))
                 .as_deref(),
             None
         );

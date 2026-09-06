@@ -5,7 +5,7 @@ use clap::{CommandFactory, Parser, error::ErrorKind};
 
 mod cli;
 
-use cli::Cli;
+use cli::{Cli, Glyphs};
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
@@ -31,6 +31,13 @@ fn main() -> ExitCode {
         );
         return ExitCode::FAILURE;
     }
+    // Before anything renders, and once: the answer cannot change while heft
+    // runs, so no render site has to carry it.
+    heft::glyph::init(match cli.glyphs {
+        Glyphs::Auto => None,
+        Glyphs::Unicode => Some(heft::glyph::Set::Unicode),
+        Glyphs::Ascii => Some(heft::glyph::Set::Ascii),
+    });
     let (interval, pss_interval) = heft::proc::clamp_intervals(cli.interval, cli.pss_interval);
     // A saved view is a human's TUI preference. `--json` is a documented
     // contract, so only an explicit flag reshapes it.

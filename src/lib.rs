@@ -2,6 +2,7 @@ pub(crate) mod classify;
 pub mod config;
 pub mod containers;
 pub(crate) mod cpu;
+pub mod glyph;
 pub(crate) mod gpu;
 pub mod group;
 pub(crate) mod identity;

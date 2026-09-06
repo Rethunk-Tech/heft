@@ -18,6 +18,7 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph, Row, Table};
 
 use crate::config::{self, View};
 use crate::cpu;
+use crate::glyph;
 use crate::mem::{self, MemParts};
 use crate::once::{
     Columns, Filter, Sort, fmt_bytes, fmt_pct, keep_matches, keep_top, keep_users, sort_tree,
@@ -441,9 +442,9 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &App, rows: &[Flat]) {
     for (i, r) in rows[start..end].iter().enumerate() {
         let mark = if r.expandable {
             if app.expand.contains(&r.id) {
-                "▼ "
+                glyph::expanded()
             } else {
-                "▶ "
+                glyph::collapsed()
             }
         } else {
             "  "
@@ -511,7 +512,10 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &App, rows: &[Flat]) {
 }
 
 fn render_rule(f: &mut ratatui::Frame<'_>, area: Rect) {
-    f.render_widget(Paragraph::new("─".repeat(area.width as usize)), area);
+    f.render_widget(
+        Paragraph::new(glyph::rule().to_string().repeat(area.width as usize)),
+        area,
+    );
 }
 
 fn draw_header(f: &mut ratatui::Frame<'_>, area: Rect, app: &App) {
@@ -533,9 +537,9 @@ fn cpu_header_line(tree: &HostTree, width: usize) -> Line<'static> {
     let prefix = " CPU [";
     let mid = format!("] {:>5}%  ", fmt_pct(tree.cpu_pct));
     let (tail, legend_len) = legend(&[
-        ("usr", Color::Cyan, '█'),
-        ("sys", Color::Magenta, '▓'),
-        ("wait", Color::Yellow, '▒'),
+        ("usr", Color::Cyan, glyph::full()),
+        ("sys", Color::Magenta, glyph::dark()),
+        ("wait", Color::Yellow, glyph::medium()),
     ]);
     // The machine's own stall, from `/proc/pressure`, on the row about
     // contention. Absent entirely when the kernel has no PSI (`CONFIG_PSI=n`
@@ -545,9 +549,17 @@ fn cpu_header_line(tree: &HostTree, width: usize) -> Line<'static> {
     let psi = crate::psi::header_tail(tree);
     let bar_w = width.saturating_sub(prefix.len() + mid.len() + legend_len + psi.len());
     let parts = [
-        (pct_weight(tree.cpu_user_pct), Color::Cyan, '█'),
-        (pct_weight(tree.cpu_system_pct), Color::Magenta, '▓'),
-        (pct_weight(tree.cpu_wait_pct), Color::Yellow, '▒'),
+        (pct_weight(tree.cpu_user_pct), Color::Cyan, glyph::full()),
+        (
+            pct_weight(tree.cpu_system_pct),
+            Color::Magenta,
+            glyph::dark(),
+        ),
+        (
+            pct_weight(tree.cpu_wait_pct),
+            Color::Yellow,
+            glyph::medium(),
+        ),
     ];
     let mut spans = vec![Span::raw(prefix)];
     spans.extend(stacked_bar(bar_w, &parts, 10_000));
@@ -623,20 +635,20 @@ fn mem_header_line(tree: &HostTree, width: usize) -> Line<'static> {
     // in a terminal that widens ambiguous characters.
     let mut labels: Vec<(&str, Color, char)> = Vec::new();
     if tree.unified_memory {
-        labels.push(("vram", Color::LightRed, '▚'));
+        labels.push(("vram", Color::LightRed, glyph::quad_a()));
     }
-    labels.push(("gtt", Color::LightCyan, '▙'));
-    labels.push(("cache", Color::Blue, '▓'));
-    labels.push(("buf", Color::Green, '▒'));
+    labels.push(("gtt", Color::LightCyan, glyph::quad_b()));
+    labels.push(("cache", Color::Blue, glyph::dark()));
+    labels.push(("buf", Color::Green, glyph::medium()));
     let mut spans = bar_group(
         "MEM",
         mem_width,
         &[
-            (seg.vram, Color::LightRed, '▚'),
-            (seg.gtt, Color::LightCyan, '▙'),
-            (seg.cache, Color::Blue, '▓'),
-            (seg.buffers, Color::Green, '▒'),
-            (seg.anon, Color::Gray, '█'),
+            (seg.vram, Color::LightRed, glyph::quad_a()),
+            (seg.gtt, Color::LightCyan, glyph::quad_b()),
+            (seg.cache, Color::Blue, glyph::dark()),
+            (seg.buffers, Color::Green, glyph::medium()),
+            (seg.anon, Color::Gray, glyph::full()),
         ],
         tree.mem_total_bytes,
         tree.mem_used_bytes,
@@ -649,7 +661,7 @@ fn mem_header_line(tree: &HostTree, width: usize) -> Line<'static> {
         spans.extend(bar_group(
             "VRAM",
             tanks[next],
-            &[(vram_used, Color::LightRed, '█')],
+            &[(vram_used, Color::LightRed, glyph::full())],
             vram_total,
             vram_used,
             vram_total,
@@ -662,7 +674,7 @@ fn mem_header_line(tree: &HostTree, width: usize) -> Line<'static> {
         spans.extend(bar_group(
             "SWAP",
             tanks[next],
-            &[(swap_used, Color::Yellow, '█')],
+            &[(swap_used, Color::Yellow, glyph::full())],
             swap_total,
             swap_used,
             swap_total,
@@ -731,7 +743,7 @@ fn stacked_bar(width: usize, parts: &[(u64, Color, char)], capacity: u64) -> Vec
     let rest = width.saturating_sub(filled);
     if rest > 0 {
         out.push(Span::styled(
-            "░".repeat(rest),
+            glyph::light().to_string().repeat(rest),
             Style::default().fg(Color::DarkGray),
         ));
     }
@@ -867,6 +879,36 @@ mod tests {
         assert_eq!(table_body_rows(24), 18);
         assert_eq!(table_body_rows(6), 0);
         assert_eq!(table_body_rows(7), 1);
+    }
+
+    /// Every ASCII substitute has to be one column, because the header lines
+    /// are built to land on an exact width. `stacked_bar` takes its glyphs as
+    /// arguments, so this checks the real render path rather than the table.
+    #[test]
+    fn an_ascii_bar_fills_exactly_as_many_cells_as_a_unicode_one() {
+        let parts = |a: char, b: char, c: char| {
+            [
+                (30_u64, Color::Cyan, a),
+                (30, Color::Magenta, b),
+                (20, Color::Yellow, c),
+            ]
+        };
+        for width in [1_usize, 7, 40, 137] {
+            let uni: String = stacked_bar(width, &parts('█', '▓', '▒'), 100)
+                .iter()
+                .map(|s| s.content.as_ref())
+                .collect();
+            let asc: String = stacked_bar(width, &parts('#', '=', '+'), 100)
+                .iter()
+                .map(|s| s.content.as_ref())
+                .collect();
+            assert_eq!(uni.chars().count(), width, "unicode at {width}");
+            assert_eq!(asc.chars().count(), width, "ascii at {width}");
+            // Only the segments are arguments; the unfilled tail comes from
+            // `glyph::light()`, which is process-wide and defaults to Unicode
+            // here. Which character it is was checked in a pty against the
+            // real binary; that it occupies one column is what this asserts.
+        }
     }
 
     #[test]

@@ -1,4 +1,17 @@
-use clap::Parser;
+use clap::{Parser, ValueEnum};
+
+/// Which characters the bars, rules and markers use. Defined here rather than
+/// beside the glyph table because `build.rs` compiles this file standalone to
+/// generate the completions and man page.
+#[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum Glyphs {
+    /// Unicode when the locale names a UTF-8 charmap, ASCII otherwise
+    Auto,
+    /// Block and box-drawing characters
+    Unicode,
+    /// One-column ASCII substitutes, for a console without the fonts
+    Ascii,
+}
 
 #[derive(Parser)]
 #[command(
@@ -28,6 +41,9 @@ pub struct Cli {
     /// Show only this user's branch; repeat for several. Takes a name or a uid
     #[arg(long = "user", value_name = "NAME|UID")]
     pub user: Vec<String>,
+    /// Characters for bars, rules and markers
+    #[arg(long, value_enum, default_value_t = Glyphs::Auto, value_name = "SET")]
+    pub glyphs: Glyphs,
     /// Keep sampling: one table or one JSON line per interval. Needs --once or --json
     #[arg(long)]
     pub follow: bool,

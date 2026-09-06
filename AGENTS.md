@@ -29,6 +29,7 @@ src/config.rs        XDG view.json (sort, filter, hide_columns; write on save) a
 src/once.rs          columns, tree ordering, table and JSON
 src/ui.rs            ratatui header + tree table
 src/tty.rs           panic hook + signal handler; restores the terminal
+src/glyph.rs         unicode vs ascii bar/rule/marker characters; resolved once
 tests/grouping.rs    integration tests over tests/fixtures/
 tests/live_proc.rs   invariants over the real /proc; must hold in a bare container
 tests/fixtures/      GUI grouping snapshot
@@ -163,6 +164,13 @@ same reasoning as `--filter`.
 flattened rows, `--once` over `once::table_rows`. Rows are built from the whole
 tree and filtered afterwards, so an ancestor row keeps the total it was built
 with rather than the total of what survived.
+
+`glyph` resolves the character set once in `main` into a `OnceLock` rather
+than threading it through every render site, since it cannot change while heft
+runs. Every ASCII substitute is one column wide: the header lines are built to
+land on an exact width and `once::trunc` cuts to an exact column count, so a
+three-character `...` for `…` would overflow both. `Cli::Glyphs` lives in
+`src/cli.rs` because `build.rs` compiles that file standalone.
 
 ## Columns
 

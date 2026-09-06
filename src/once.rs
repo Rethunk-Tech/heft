@@ -756,7 +756,9 @@ fn trunc(s: &str, width: usize) -> String {
     if s.chars().count() <= width {
         return s.to_string();
     }
-    s.chars().take(width.saturating_sub(1)).collect::<String>() + "…"
+    let mut out: String = s.chars().take(width.saturating_sub(1)).collect();
+    out.push(crate::glyph::ellipsis());
+    out
 }
 /// 1024-scale suffix, or None below 1 KiB where the caller decides: a byte
 /// count prints exactly, a rate rounds.

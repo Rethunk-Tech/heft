@@ -57,6 +57,7 @@ heft --once --user 1000   # only this user's branch (name or uid, repeatable)
 heft --once --sort age --asc   # low to high, rather than the saved direction
 heft --once --top 5       # the five heaviest rows under each parent
 heft --json --follow      # one JSON document per line, per interval, forever
+heft --glyphs ascii       # bars and markers without block characters
 ```
 
 The TUI needs a terminal. `heft > file`, or heft in a script, says so and
@@ -115,6 +116,13 @@ built with — asking for one user is asking what the top row should count. It i
 never written to `view.json`, not even by `s`: a saved user cut would hide most
 of the machine on every later run for a reason the file, not the command, was
 keeping.
+
+`--glyphs` chooses the characters the bars, rules and expand markers use.
+`auto`, the default, reads `LC_ALL`, `LC_CTYPE` then `LANG` and uses block
+characters only when one of them names a UTF-8 charmap — a bare console, the C
+locale, or a container with no locale set at all gets one-column ASCII
+substitutes instead of tofu. `unicode` and `ascii` force it either way, for a
+terminal whose environment undersells or oversells what its font has.
 
 `--follow` keeps sampling instead of exiting after one. `--json --follow`
 emits one compact document per line — NDJSON, so a reader takes a line at a

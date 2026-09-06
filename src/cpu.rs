@@ -10,8 +10,7 @@ pub struct HostCpu {
     /// system + irq + softirq
     pub system: u64,
     pub wait: u64,
-    /// idle + steal — unfilled remainder of the header bar
-    pub idle: u64,
+    /// includes idle + steal, the unfilled remainder of the header bar
     pub total: u64,
 }
 
@@ -87,7 +86,6 @@ pub fn parse_host_cpu(line: &str) -> Option<HostCpu> {
         user,
         system,
         wait,
-        idle,
         total: user
             .saturating_add(system)
             .saturating_add(wait)
@@ -108,17 +106,10 @@ pub fn host_split(a: &HostCpu, b: &HostCpu) -> HostSplit {
         user,
         system,
         wait,
-        busy: host_pct(a, b),
+        // a counter reset leaves each term clamped at 100 on its own, so the
+        // sum needs its own ceiling to stay a percentage of one machine
+        busy: (user + system + wait).min(100.0),
     }
-}
-
-pub fn host_pct(a: &HostCpu, b: &HostCpu) -> f64 {
-    let dt = b.total.saturating_sub(a.total) as f64;
-    if dt <= 0.0 {
-        return 0.0;
-    }
-    let di = b.idle.saturating_sub(a.idle) as f64;
-    ((dt - di) / dt * 100.0).clamp(0.0, 100.0)
 }
 
 pub fn process_metrics(
@@ -204,7 +195,18 @@ mod tests {
     fn host_cpu_line() {
         let a = parse_host_cpu("cpu  10 0 10 80 0 0 0 0 0 0").unwrap();
         let b = parse_host_cpu("cpu  20 0 20 80 0 0 0 0 0 0").unwrap();
-        assert!((host_pct(&a, &b) - 100.0).abs() < 0.01);
+        assert!((host_split(&a, &b).busy - 100.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn counter_reset_keeps_busy_at_one_machine() {
+        // idle resets to 0 while user and system each jump a full dt
+        let a = parse_host_cpu("cpu  100 0 100 100 0 0 0 0").unwrap();
+        let b = parse_host_cpu("cpu  200 0 200 0 0 0 0 0").unwrap();
+        let s = host_split(&a, &b);
+        assert!((s.user - 100.0).abs() < 0.01);
+        assert!((s.system - 100.0).abs() < 0.01);
+        assert!((s.busy - 100.0).abs() < 0.01);
     }
 
     #[test]

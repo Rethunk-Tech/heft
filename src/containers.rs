@@ -107,7 +107,7 @@ impl ContainerIndex {
             }
             let inspect =
                 hex_id(&item.id).and_then(|id| cache.inspects.get(&id.to_ascii_lowercase()));
-            idx.insert_item(item, inspect);
+            idx.insert_resolved(item, inspect, None);
         }
         idx
     }
@@ -123,23 +123,13 @@ impl ContainerIndex {
             if list_skip(item) {
                 continue;
             }
-            let inspect = inspects.get(&item.id).or_else(|| {
-                inspects
-                    .iter()
-                    .find(|(k, _)| item.id.starts_with(*k) || k.starts_with(&item.id))
-                    .map(|(_, v)| v)
-            });
-            idx.insert_resolved(item, inspect, Some(workdir_uids));
+            idx.insert_resolved(item, inspects.get(&item.id), Some(workdir_uids));
         }
         // Same order as the live sampler: the engined uid is only known after
         // the walk that finds engined.service, so it lands on an index already
         // built.
         idx.apply_engined_uid(engined_uid);
         idx
-    }
-
-    fn insert_item(&mut self, item: &ListItem, inspect: Option<&Inspect>) {
-        self.insert_resolved(item, inspect, None);
     }
 
     fn insert_resolved(

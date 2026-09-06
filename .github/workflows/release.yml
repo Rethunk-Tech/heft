@@ -1,0 +1,98 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        # musl is the portable artifact: heft only needs sysconf and geteuid
+        # from libc and reads /etc/passwd itself, so a static build carries no
+        # NSS dependency and runs on any glibc.
+        target:
+          - x86_64-unknown-linux-gnu
+          - x86_64-unknown-linux-musl
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Check the tag matches the crate version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
+          test "$TAG" = "v$version"
+
+      # Uses [profile.release] from Cargo.toml (LTO, codegen-units = 1, strip,
+      # panic = abort). Do not restate those here.
+      - run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Stage the binary and its checksum
+        run: |
+          mkdir -p dist
+          cp "target/${{ matrix.target }}/release/heft" "dist/heft-${{ matrix.target }}"
+          cd dist
+          sha256sum "heft-${{ matrix.target }}" > "heft-${{ matrix.target }}.sha256"
+
+      # A release that ships a binary which cannot walk /proc is the failure
+      # worth catching here, not at the first user download.
+      - name: Smoke-test the binary
+        run: |
+          "./dist/heft-${{ matrix.target }}" --json --interval 0.1 > /tmp/heft.json
+          test -s /tmp/heft.json
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: heft-${{ matrix.target }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Scoped to this job: the build compiles dependency build scripts and must
+    # not hold a token that can write to the repository.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Verify the checksums survived the round trip
+        working-directory: dist
+        run: sha256sum -c ./*.sha256
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh release create "$TAG" \
+            --repo "$REPO" \
+            --title "$TAG" \
+            --verify-tag \
+            --generate-notes \
+            dist/*

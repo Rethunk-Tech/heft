@@ -2,6 +2,18 @@
 
 ## Install
 
+Grab the static build. It has no libc to match, so it runs on any distro:
+
+```sh
+curl -fsSLO https://github.com/Rethunk-Tech/heft/releases/latest/download/heft-x86_64-unknown-linux-musl
+install -Dm755 heft-x86_64-unknown-linux-musl ~/.local/bin/heft
+```
+
+Every release also carries a `x86_64-unknown-linux-gnu` build and a `.sha256`
+beside each binary (`sha256sum -c heft-<target>.sha256`).
+
+Or build it, which is also how you get completions and the man page:
+
 ```sh
 git clone https://github.com/Rethunk-Tech/heft.git && cd heft
 cargo build --release

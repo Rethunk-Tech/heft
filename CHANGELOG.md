@@ -4,6 +4,11 @@
 
 ### Added
 
+- Prebuilt binaries on every `v*` tag, so installing no longer needs a Rust
+  toolchain. Each release carries `x86_64-unknown-linux-gnu` and a static
+  `x86_64-unknown-linux-musl` build that runs on any glibc, plus a `.sha256`
+  beside each one.
+
 - Shell completions (bash, zsh, fish) and a `heft.1` man page, generated at
   build time from the same clap definition the binary parses, so they cannot
   drift from the real flags. `clap_complete` and `clap_mangen` are

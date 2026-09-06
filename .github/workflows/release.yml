@@ -52,6 +52,21 @@ jobs:
           cd dist
           sha256sum "heft-${{ matrix.target }}" > "heft-${{ matrix.target }}.sha256"
 
+      # build.rs writes completions and the man page under a hashed OUT_DIR.
+      # They are arch-independent, so only one matrix leg stages them; two
+      # would collide on the same filename when the artifacts are merged.
+      - name: Stage completions and the man page
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        run: |
+          assets=$(find "target/${{ matrix.target }}/release/build" -type d -name assets | head -1)
+          test -n "$assets" || { echo "build.rs produced no assets dir"; exit 1; }
+          for f in heft.bash _heft heft.fish heft.1; do
+            test -s "$assets/$f" || { echo "missing generated asset: $f"; exit 1; }
+          done
+          tar -czf dist/heft-completions-man.tar.gz -C "$assets" heft.bash _heft heft.fish heft.1
+          cd dist
+          sha256sum heft-completions-man.tar.gz > heft-completions-man.tar.gz.sha256
+
       # A release that ships a binary which cannot walk /proc is the failure
       # worth catching here, not at the first user download.
       - name: Smoke-test the binary

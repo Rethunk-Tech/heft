@@ -23,7 +23,7 @@ use crate::once::{COLUMNS, fmt_bytes, fmt_pct};
 use crate::proc;
 use crate::types::{
     Error, HostTree, IdentNode, Metrics, ProcNode, folder_nproc, host_metrics, sum_idents,
-    sum_lists, tree_host_nproc, user_nproc,
+    tree_host_nproc, user_metrics, user_nproc,
 };
 
 const HEADER_ROWS: u16 = 2;
@@ -173,7 +173,7 @@ fn flatten(tree: &HostTree, expand: &HashSet<String>, view: &View) -> Vec<Flat> 
                 depth: 1,
                 name: format!("{} ({uid})", user.name),
                 nproc: user_nproc(user),
-                metrics: sum_lists(&[&user.applications, &user.user_services, &user.containers]),
+                metrics: user_metrics(user),
                 expandable: true,
             });
             if expand.contains(&id) {

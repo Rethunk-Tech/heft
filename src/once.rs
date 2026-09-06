@@ -3,8 +3,8 @@ use std::time::Duration;
 
 use crate::proc;
 use crate::types::{
-    Error, IdentNode, Metrics, folder_nproc, host_metrics, sum_idents, sum_lists, tree_host_nproc,
-    user_nproc,
+    Error, IdentNode, Metrics, folder_nproc, host_metrics, sum_idents, tree_host_nproc,
+    user_metrics, user_nproc,
 };
 
 /// One table column. Adding a column here is the whole change: it reaches the
@@ -162,7 +162,7 @@ pub fn print_table(interval: Duration) -> Result<(), Error> {
             1,
             &format!("{} ({})", user.name, user.uid),
             user_nproc(user),
-            &sum_lists(&[&user.applications, &user.user_services, &user.containers]),
+            &user_metrics(user),
         )?;
         write_folder(&mut out, 2, "Applications", &user.applications)?;
         write_folder(&mut out, 2, "User Services", &user.user_services)?;

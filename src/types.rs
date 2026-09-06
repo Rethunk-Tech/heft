@@ -179,11 +179,10 @@ pub(crate) fn sum_idents(idents: &[IdentNode]) -> Metrics {
     m
 }
 
-pub(crate) fn sum_lists(lists: &[&[IdentNode]]) -> Metrics {
-    let mut m = Metrics::default();
-    for list in lists {
-        m.accumulate(&sum_idents(list));
-    }
+pub(crate) fn user_metrics(user: &UserNode) -> Metrics {
+    let mut m = sum_idents(&user.applications);
+    m.accumulate(&sum_idents(&user.user_services));
+    m.accumulate(&sum_idents(&user.containers));
     m
 }
 
@@ -200,13 +199,10 @@ pub(crate) fn tree_host_nproc(tree: &HostTree) -> u32 {
 }
 
 pub(crate) fn host_metrics(tree: &HostTree) -> Metrics {
-    let mut m = sum_lists(&[&tree.containers, &tree.system]);
+    let mut m = sum_idents(&tree.containers);
+    m.accumulate(&sum_idents(&tree.system));
     for u in &tree.users {
-        m.accumulate(&sum_lists(&[
-            &u.applications,
-            &u.user_services,
-            &u.containers,
-        ]));
+        m.accumulate(&user_metrics(u));
     }
     m
 }

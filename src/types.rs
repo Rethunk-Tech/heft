@@ -101,6 +101,17 @@ pub(crate) struct Metrics {
     pub(crate) net_rx_bps: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) net_tx_bps: Option<f64>,
+    /// Percent of the interval this row's cgroup had at least one task stalled
+    /// on the resource. Like the netns pair, `accumulate` leaves these out: a
+    /// percentage of an interval is not a quantity, so summing two cgroups'
+    /// stall would produce a number the kernel never measured. A row only
+    /// carries them when it *is* one non-root cgroup; see `psi`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) cpu_stall_pct: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) io_stall_pct: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) mem_stall_pct: Option<f64>,
 }
 
 impl Metrics {
@@ -118,7 +129,8 @@ impl Metrics {
         self.gtt_bytes = sum_opt(self.gtt_bytes, other.gtt_bytes);
         self.gfx_pct = sum_opt_f(self.gfx_pct, other.gfx_pct);
         self.compute_pct = sum_opt_f(self.compute_pct, other.compute_pct);
-        // net_rx_bps / net_tx_bps are not summed; see the field comment.
+        // net_rx_bps / net_tx_bps and the three *_stall_pct are not summed;
+        // see their field comments.
     }
 }
 
@@ -162,6 +174,15 @@ pub struct HostTree {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) vram_total_bytes: Option<u64>,
     pub(crate) unified_memory: bool,
+    /// The kernel's own machine-wide `some avg10`, for the header only. The
+    /// table's stall columns are interval deltas instead; the two time bases
+    /// are deliberate, the way gfx%/compute% already use two formulas.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) psi_cpu_avg10: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) psi_io_avg10: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) psi_mem_avg10: Option<f64>,
     pub users: Vec<UserNode>,
     pub containers: Vec<IdentNode>,
     pub system: Vec<IdentNode>,
@@ -261,3 +282,40 @@ pub(crate) fn host_metrics(tree: &HostTree) -> Metrics {
 /// matches on a variant. `Box<dyn Error>` gets the `?` conversions from std;
 /// it need not be `Send` because the sampler thread returns `io::Result`.
 pub type Error = Box<dyn std::error::Error>;
+
+#[cfg(test)]
+mod tests {
+    use super::Metrics;
+
+    /// The rule both the netns pair and the stall trio depend on. Every other
+    /// column here is a quantity that adds up; these are a namespace's traffic
+    /// and a percentage of an interval, and a folder, User or Host row that
+    /// summed them would present one cgroup's stall as its own. Guarding it on
+    /// `accumulate` catches it at the only place it could go wrong, rather
+    /// than on whichever row happened to be checked.
+    #[test]
+    fn a_rate_that_belongs_to_one_namespace_or_cgroup_is_never_summed() {
+        let with = |v: f64| Metrics {
+            pss_bytes: Some(4),
+            net_rx_bps: Some(v),
+            net_tx_bps: Some(v),
+            cpu_stall_pct: Some(v),
+            io_stall_pct: Some(v),
+            mem_stall_pct: Some(v),
+            ..Metrics::default()
+        };
+        let mut folder = with(10.0);
+        folder.accumulate(&with(20.0));
+
+        assert_eq!(folder.pss_bytes, Some(8), "quantities still add up");
+        for (name, got) in [
+            ("net_rx_bps", folder.net_rx_bps),
+            ("net_tx_bps", folder.net_tx_bps),
+            ("cpu_stall_pct", folder.cpu_stall_pct),
+            ("io_stall_pct", folder.io_stall_pct),
+            ("mem_stall_pct", folder.mem_stall_pct),
+        ] {
+            assert_eq!(got, Some(10.0), "{name} was summed into its parent");
+        }
+    }
+}

@@ -135,8 +135,9 @@ Other users, User Services, Host-level Containers, and System start collapsed.
   is one MEMORY bar whose width is MemTotal. With a discrete card the MEMORY
   row splits in half: MEM against MemTotal, and VRAM against the card's own
   total. GTT stays in the MEM bar either way — it is system RAM pinned for the
-  GPU, not card memory. That GTT slice, and the unified VRAM slice beside it,
-  add up only the drm clients heft can see, the same caveat as the Host row,
+  GPU, not card memory. The header also carries `psi`, the machine's
+  own cpu/io/memory stall averages. That GTT slice, and the unified VRAM slice
+  beside it, add up only the drm clients heft can see, the same caveat as the Host row,
   which sums only visible PIDs and so can sit below the header. Swap, when the
   machine has any, is a third tank on that same row rather than a segment of
   MEM: swapped pages are not in RAM. A machine with `SwapTotal: 0` gets no
@@ -186,6 +187,49 @@ with 40 processes holding 1400 threads looked the same as one holding 40.
 them — when the thing on that row first appeared — never a sum. Both come from
 the `/proc/<pid>/stat` heft already reads for CPU, so neither costs a read.
 
+## CPU ST / IO ST / MEM ST
+
+The stall columns say whether a row was *waiting* rather than working. `%CORE`
+says a row used the processor and `PSS` says it holds memory, but neither can
+tell an application that is busy from one that is stuck: both look idle in
+`%CORE` while one is halfway through its work and the other has been blocked on
+the disk for a second. The kernel accounts exactly that, per cgroup, in
+`cpu.pressure`, `io.pressure` and `memory.pressure`, and heft reads those the
+way it reads everything else — no root, no tracing.
+
+Each figure is the percentage of the last interval during which **at least one**
+task in that cgroup was stalled on the resource. That is the kernel's `some`
+number, not `full`; `full` means every task was stalled at once, which on the
+single-process cgroups most of a tree is made of prints the same value twice.
+
+The columns are blank on any row that is not exactly one cgroup, and that blank
+means what every other blank in heft means: no figure exists, not zero.
+
+- A row whose processes span several cgroups is blank. A stall is a percentage
+  of an interval, not a quantity, so two cgroups' figures cannot be added — a
+  browser folding a dozen scopes has no single number to show. Measured on one
+  desktop, 82% of rows do resolve to one cgroup and carry a figure.
+- Folder rows — Applications, User Services, Containers — and the User and Host
+  rows are blank for the same reason. `user-1000.slice` is *not* heft's User
+  row: a rootful container lives in `system.slice` and heft still bills it to
+  its owner. `system.slice` is not the System row either, since kernel threads
+  sit in the root cgroup.
+- A row that resolves to the root cgroup is blank, because the root cgroup's
+  pressure is the machine's. Printing it on a kernel-thread row would read as
+  that row's own cost — the same reason a `--network=host` container gets no
+  NETNS figure.
+- A process row is blank unless that process is the only one in its cgroup. A
+  cgroup's stall belongs to the cgroup; showing it beside four sibling pids
+  would invite reading it as four separate costs.
+
+The `psi` figures in the host header are a different measurement of the same
+thing: those are the kernel's own 10-second averages for the whole machine, in
+cpu/io/memory order, which is where a smoothed trend reads better than an
+instant. The columns are per-interval deltas so they sit on the same time base
+as `%CORE` and the disk rates beside them. A machine whose kernel was built
+without `CONFIG_PSI`, or booted `psi=0`, gets no header figures and no columns
+at all.
+
 ## NETNS RX / NETNS TX
 
 Network I/O is counted per network *namespace*, never per process. A container
@@ -231,7 +275,7 @@ sysfs, or cgroup files.
 
 ### Hiding columns
 
-The table has seventeen columns and most terminals cannot hold them. Add
+The table has twenty columns and most terminals cannot hold them. Add
 `hide_columns` to `view.json` by hand; `s` keeps whatever is already there.
 
 ```json
@@ -240,8 +284,8 @@ The table has seventeen columns and most terminals cannot hold them. Add
 
 Labels are the ones `c` cycles and `--sort` takes: `name`, `nproc`, `threads`,
 `age`, `core`, `machine`, `pss`, `rss`, `swap`, `diskr`, `diskw`, `vram`,
-`gtt`, `gfx`, `compute`, `netns_rx`, `netns_tx`. No file, or no key, shows
-every column. An unknown label warns on stderr and is ignored, and `name` is
+`gtt`, `gfx`, `compute`, `cpustall`, `iostall`, `memstall`, `netns_rx`,
+`netns_tx`. No file, or no key, shows every column. An unknown label warns on stderr and is ignored, and `name` is
 refused — a table of numbers with no labels is unreadable.
 
 Hiding is presentation only: heft reads the same `/proc` files either way, `c`

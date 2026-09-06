@@ -194,6 +194,12 @@ pub fn process_metrics(
         // `net::Rates` bills the container rows afterwards.
         net_rx_bps: None,
         net_tx_bps: None,
+        // Pressure is accounted per cgroup, never per process, so nothing here
+        // can fill these either. `psi::Sampler` bills the rows that are one
+        // cgroup afterwards.
+        cpu_stall_pct: None,
+        io_stall_pct: None,
+        mem_stall_pct: None,
     }
 }
 

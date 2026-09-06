@@ -11,7 +11,7 @@ use crate::containers::{ContainerIndex, InspectCache};
 use crate::cpu;
 use crate::group;
 use crate::types::{GpuCounters, HostHeader, HostTree, Process};
-use crate::{gpu, io as pio, net};
+use crate::{gpu, io as pio, net, psi};
 
 /// The walk is around seven small procfs reads per pid and no computation
 /// worth the name, so nearly all of its wall clock is the kernel building
@@ -289,6 +289,7 @@ struct Sampler {
     consts: HostHeader,
     inspect_cache: InspectCache,
     overrides: Overrides,
+    psi: psi::Sampler,
     net: net::Sampler,
 }
 
@@ -306,6 +307,11 @@ impl Sampler {
             &prev,
             1.0,
         );
+        // Pressure totals are levels too, for the same reason: without a
+        // baseline here the first published tick has nothing to subtract and
+        // every stall column would be blank.
+        let mut psi = psi::Sampler::default();
+        psi.tick(&prev, 1.0);
         let t0 = Instant::now();
         Self {
             consts: cpu::host_consts(),
@@ -317,6 +323,7 @@ impl Sampler {
             inspect_cache,
             overrides,
             net,
+            psi,
         }
     }
 
@@ -327,15 +334,16 @@ impl Sampler {
         let want_pss = force_pss || pss_due(self.last_pss, t1, self.pss_interval);
         // Built before the walk so the walk knows whether this machine has swap
         // at all; it reads only world-readable host files, so the order is free.
-        let header = cpu::header_from(&self.consts, &self.cpu0, &cpu1);
+        let mut header = cpu::header_from(&self.consts, &self.cpu0, &cpu1);
+        psi::host_avg10(&mut header);
         let curr = collect(want_pss, header.swap_total_bytes > 0, Some(&self.prev));
         if want_pss {
             self.last_pss = Some(t1);
         }
         let elapsed = t1.duration_since(self.t0);
-        let net = self
-            .net
-            .tick(&containers, &curr, elapsed.as_secs_f64().max(1e-6));
+        let secs = elapsed.as_secs_f64().max(1e-6);
+        let net = self.net.tick(&containers, &curr, secs);
+        let stalls = self.psi.tick(&curr, secs);
         let mut tree = group::build_tree(
             &self.prev,
             &curr,
@@ -346,6 +354,9 @@ impl Sampler {
             &self.overrides,
         );
         net.apply(&mut tree);
+        // Applied after the tree exists, because a row's cgroup is only
+        // knowable from the processes the grouping put under it.
+        stalls.apply(&mut tree, &curr);
         self.prev = curr;
         self.cpu0 = cpu1;
         self.t0 = t1;

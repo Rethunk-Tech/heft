@@ -19,6 +19,7 @@ src/cpu.rs           /proc/stat split (usr/sys/wait) + per-pid utime/stime rates
 src/mem.rs           meminfo used/Buffers/Cached/Swap, unified APU clip, host VRAM
 src/io.rs            /proc/pid/io rates and smaps_rollup PSS + SwapPss
 src/net.rs           per-netns rx/tx from /proc/pid/net/dev; container rows only
+src/psi.rs           cgroup cpu/io/memory.pressure; single-cgroup rows only
 src/gpu.rs           amdgpu/i915/xe fdinfo; dri/drm prefilter; full walk on PSS/--once; drm-client-id dedupe
 src/classify.rs      launcher / worker / shell / terminal / compositor tables
 src/identity.rs      cgroup parse, merge key + display name
@@ -102,7 +103,9 @@ checked, not assumed, so replacing them is not pending work.
   namespace. A container is skipped when `HostConfig.NetworkMode` is `host` or
   absent (`Inspect::owns_netns`), because that namespace is the machine's.
   `Metrics::accumulate` never sums the pair, so a folder, User or Host row
-  stays blank rather than reporting one namespace as its own.
+  stays blank rather than reporting one namespace as its own. The three
+  `*_stall_pct` fields are left out of `accumulate` for the same reason;
+  `types.rs` guards both in one test.
 
 ## Surfaces and flags
 
@@ -187,6 +190,8 @@ stderr from `config::load_overrides` and grouping continues built-in.
 | Disk R/W | Δ `read_bytes` / `write_bytes` from `/proc/pid/io` |
 | GPU mem | prefer `drm-resident-*` over `drm-total-*`; regions `vram`/`gtt` (amdgpu), `local0`/`system0` (i915), `vram0`/`gtt` (xe) |
 | NETNS RX/TX | Δ non-`lo` bytes from `/proc/<container-scope-pid>/net/dev`; a new pid or a counter that went backwards discards the interval |
+| CPU/IO/MEM ST | Δ `some ... total=` microseconds from that cgroup's `{cpu,io,memory}.pressure` over wall clock. `some`, not `full`: `full` on a one-process cgroup is the same number twice. A counter that went backwards (a recreated cgroup) discards the interval |
+| Host `psi` | `some avg10` from `/proc/pressure/{cpu,io,memory}`. Deliberately a different time base from the columns — a machine-wide trend reads better smoothed, a row's rate has to match the `%core` and disk rates beside it |
 | gfx% / compute% | `drm-engine-gfx`/`-render` and `-compute` ns deltas over wall clock. xe has no ns key: `drm-cycles-rcs`/`-ccs` delta over the `drm-total-cycles-*` GPU-clock delta, each divided by `drm-engine-capacity-*`. Two formulas, deliberately not unified |
 
 | surface | rule |
@@ -198,6 +203,7 @@ stderr from `config::load_overrides` and grouping continues built-in.
 | Layout | 2 unbordered header rows (extra tanks split the MEMORY row via `ui::tank_widths`, never add a third row); persistent rules: header↔tree and tree↔footer |
 | Disk R/W | table columns only (formatted rates change width every tick) |
 | THR / AGE | beside `N`, before the metric columns: all three say what the row *is* rather than what it is currently costing |
+| CPU/IO/MEM ST | a row carries a figure only when every process under it is in one non-root cgroup; a process row only when it is alone in its cgroup. Folder, User, Host and multi-cgroup rows are blank — a percentage of an interval cannot be summed, and `user-<uid>.slice` is not the User row (a rootful container is billed to its owner from `system.slice`) nor `system.slice` the System row (kernel threads are in the root cgroup). Root-cgroup rows are blank because that pressure is the machine's, the same rule as a `--network=host` container |
 | NETNS RX/TX | last two columns, named for the namespace and not the resource: a blank cell means the row owns no namespace, not that it moved no bytes |
 | Ordering | one comparator in `once.rs` for every level; a `None` metric sorts last in either direction, name breaks ties, stable over `group::proc_forest` pid order |
 

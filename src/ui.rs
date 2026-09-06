@@ -477,7 +477,13 @@ fn cpu_header_line(tree: &HostTree, width: usize) -> Line<'static> {
         ("sys", Color::Magenta, '▓'),
         ("wait", Color::Yellow, '▒'),
     ]);
-    let bar_w = width.saturating_sub(prefix.len() + mid.len() + legend_len);
+    // The machine's own stall, from `/proc/pressure`, on the row about
+    // contention. Absent entirely when the kernel has no PSI (`CONFIG_PSI=n`
+    // or `psi=0`), the way a swapless host gets no swap tank rather than a
+    // zeroed one. The CPU row pays for it because the MEMORY row is already
+    // splitting itself between MEM, VRAM and swap tanks.
+    let psi = crate::psi::header_tail(tree);
+    let bar_w = width.saturating_sub(prefix.len() + mid.len() + legend_len + psi.len());
     let parts = [
         (pct_weight(tree.cpu_user_pct), Color::Cyan, '█'),
         (pct_weight(tree.cpu_system_pct), Color::Magenta, '▓'),
@@ -487,6 +493,7 @@ fn cpu_header_line(tree: &HostTree, width: usize) -> Line<'static> {
     spans.extend(stacked_bar(bar_w, &parts, 10_000));
     spans.push(Span::raw(mid));
     spans.extend(tail);
+    spans.push(Span::raw(psi));
     Line::from(spans)
 }
 

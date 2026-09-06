@@ -146,6 +146,33 @@ pub(crate) const COLUMNS: &[Column] = &[
     // column after the resource would make a blank process cell read as "this
     // process moved no bytes" when it means "no namespace of its own, so no
     // figure exists" — the blank contract every other column already uses.
+    // Stall, not PSI: the column says what the number means to someone who has
+    // never heard of pressure stall information. It is a percentage of the
+    // interval the cgroup had at least one task waiting, so it answers what
+    // %CORE and PSS cannot — this row is slow because it is *not* running.
+    // Blank on every row that is not exactly one non-root cgroup, which is the
+    // NETNS blank contract again: no figure exists, rather than a zero.
+    Column {
+        label: "cpustall",
+        header: "CPU ST",
+        width: 6,
+        fmt: |_, _, m| fmt_opt_pct(m.cpu_stall_pct),
+        key: Some(|_, m| m.cpu_stall_pct),
+    },
+    Column {
+        label: "iostall",
+        header: "IO ST",
+        width: 6,
+        fmt: |_, _, m| fmt_opt_pct(m.io_stall_pct),
+        key: Some(|_, m| m.io_stall_pct),
+    },
+    Column {
+        label: "memstall",
+        header: "MEM ST",
+        width: 6,
+        fmt: |_, _, m| fmt_opt_pct(m.mem_stall_pct),
+        key: Some(|_, m| m.mem_stall_pct),
+    },
     Column {
         label: "netns_rx",
         header: "NETNS RX",
@@ -439,7 +466,7 @@ pub fn print_table(interval: Duration, view: &View) -> Result<(), Error> {
     let mut out = io::stdout();
     writeln!(
         out,
-        "HOST  cpu {:>5.1}%  usr {:>4.1} sys {:>4.1} wait {:>4.1}  mem {} / {}{}  nproc {}",
+        "HOST  cpu {:>5.1}%  usr {:>4.1} sys {:>4.1} wait {:>4.1}  mem {} / {}{}  nproc {}{}",
         tree.cpu_pct,
         tree.cpu_user_pct,
         tree.cpu_system_pct,
@@ -447,7 +474,8 @@ pub fn print_table(interval: Duration, view: &View) -> Result<(), Error> {
         fmt_bytes(Some(tree.mem_used_bytes)),
         fmt_bytes(Some(tree.mem_total_bytes)),
         host_swap(&tree),
-        tree.nproc
+        tree.nproc,
+        crate::psi::header_tail(&tree)
     )?;
     write_header(&mut out, &cols)?;
     write_rows(&mut out, &cols, &rows)?;
@@ -824,7 +852,7 @@ mod tests {
             labels(&hiding(&["gtt", "vram", "netns_rx", "netns_tx"])),
             [
                 "name", "nproc", "threads", "age", "core", "machine", "pss", "rss", "swap",
-                "diskr", "diskw", "gfx", "compute"
+                "diskr", "diskw", "gfx", "compute", "cpustall", "iostall", "memstall"
             ]
         );
         assert_eq!(labels(&hiding(&["name"])), all_labels());
@@ -837,7 +865,8 @@ mod tests {
     fn hiding_a_column_only_removes_its_cells() {
         let mut out = Vec::new();
         let cols = hiding(&[
-            "nproc", "threads", "age", "diskr", "diskw", "gfx", "compute", "netns_rx", "netns_tx",
+            "nproc", "threads", "age", "diskr", "diskw", "gfx", "compute", "cpustall", "iostall",
+            "memstall", "netns_rx", "netns_tx",
         ]);
         write_header(&mut out, &cols).unwrap();
         write_rows(&mut out, &cols, &folder_rows(1536.0)).unwrap();
@@ -883,6 +912,12 @@ mod tests {
                 // pair is the layout this table shows for every non-container.
                 net_rx_bps: None,
                 net_tx_bps: None,
+                // One cgroup, so this row does carry a stall — the mixed case
+                // (a figure here, blanks in the pair above) is what the width
+                // and truncation assertions need to see.
+                cpu_stall_pct: Some(0.5),
+                io_stall_pct: Some(12.0),
+                mem_stall_pct: None,
             },
             instances: Vec::new(),
             containers: Vec::new(),
@@ -935,14 +970,14 @@ mod tests {
         write_rows(&mut out, &cols, &folder_rows(1536.0)).unwrap();
         assert_eq!(
             String::from_utf8(out).unwrap(),
-            "NAME                            N   THR   AGE   %CORE   %MACH      PSS      RSS   SWAP   DISK R   DISK W     VRAM      GTT   GFX   CMP NETNS RX NETNS TX\n  Applications                  7    19    3h    12.2     1.5     1.5K     2.0K          1.5K/s              1.0M            3.0                        \n    an-identity-name-long-e\u{2026}    7    19    3h    12.2     1.5     1.5K     2.0K          1.5K/s              1.0M            3.0                        \n"
+            "NAME                            N   THR   AGE   %CORE   %MACH      PSS      RSS   SWAP   DISK R   DISK W     VRAM      GTT   GFX   CMP CPU ST  IO ST MEM ST NETNS RX NETNS TX\n  Applications                  7    19    3h    12.2     1.5     1.5K     2.0K          1.5K/s              1.0M            3.0                                             \n    an-identity-name-long-e\u{2026}    7    19    3h    12.2     1.5     1.5K     2.0K          1.5K/s              1.0M            3.0          0.5   12.0                         \n"
         );
 
         let mut out = Vec::new();
         write_rows(&mut out, &cols, &folder_rows(1_030_963.0)).unwrap();
         assert_eq!(
             String::from_utf8(out).unwrap(),
-            "  Applications                  7    19    3h    12.2     1.5     1.5K     2.0K        1006.8K/s              1.0M            3.0                        \n    an-identity-name-long-e\u{2026}    7    19    3h    12.2     1.5     1.5K     2.0K        1006.8K/s              1.0M            3.0                        \n"
+            "  Applications                  7    19    3h    12.2     1.5     1.5K     2.0K        1006.8K/s              1.0M            3.0                                             \n    an-identity-name-long-e\u{2026}    7    19    3h    12.2     1.5     1.5K     2.0K        1006.8K/s              1.0M            3.0          0.5   12.0                         \n"
         );
     }
 

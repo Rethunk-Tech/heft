@@ -47,6 +47,9 @@ ignored).
 | `s` | save the current sort and filter to `$XDG_CONFIG_HOME/heft/view.json` |
 | `?` / `F1` | toggle the key help overlay |
 
+`c` and `d` reorder every level of the tree, not just the top rows: identity
+rows, their instances and member containers, and the process forests under both.
+
 Sort and filter last only for this session until you press `s`. Starting heft
 again loads that file if it exists.
 
@@ -74,7 +77,8 @@ Other users, User Services, Host-level Containers, and System start collapsed.
   `dockerd` / `containerd`). Container scopes never go here.
 
 Other uids appear as extra User nodes when `/proc` lists them. Metrics heft
-cannot read (`smaps_rollup`, `io`, fdinfo, `exe`) render as a blank cell.
+cannot read (`smaps_rollup`, `io`, fdinfo, `exe`) render as a blank cell. A
+blank is not a zero: those rows sort last whichever way the sort runs.
 
 ## Docker / Podman
 

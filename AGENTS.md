@@ -101,6 +101,7 @@ Never read `/proc/pid/mem`. Never ptrace.
 | Discrete VRAM | out of scope as a second tank |
 | Layout | 2 unbordered header rows; persistent rules: header↔tree and tree↔footer |
 | Disk R/W | table columns only (formatted rates change width every tick) |
+| Ordering | one comparator in `once.rs` for every level; a `None` metric sorts last in either direction, name breaks ties, stable over `group::proc_forest` pid order |
 
 TUI sampling runs on a background thread; the ratatui loop only swaps in the
 last complete tree and never blocks on `/proc` I/O. Sample cadence (`--interval`,

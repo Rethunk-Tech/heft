@@ -28,6 +28,9 @@ pub struct Cli {
     /// Show only this user's branch; repeat for several. Takes a name or a uid
     #[arg(long = "user", value_name = "NAME|UID")]
     pub user: Vec<String>,
+    /// Keep sampling: one table or one JSON line per interval. Needs --once or --json
+    #[arg(long)]
+    pub follow: bool,
     /// Keep only the N heaviest rows in each list the sort ordered
     #[arg(long, value_name = "N", value_parser = clap::value_parser!(u32).range(1..), conflicts_with = "json")]
     pub top: Option<u32>,

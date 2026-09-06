@@ -56,6 +56,7 @@ heft --once --filter '^(code|claude)$'  # keep rows matching this regex, and the
 heft --once --user 1000   # only this user's branch (name or uid, repeatable)
 heft --once --sort age --asc   # low to high, rather than the saved direction
 heft --once --top 5       # the five heaviest rows under each parent
+heft --json --follow      # one JSON document per line, per interval, forever
 ```
 
 The TUI needs a terminal. `heft > file`, or heft in a script, says so and
@@ -114,6 +115,19 @@ built with — asking for one user is asking what the top row should count. It i
 never written to `view.json`, not even by `s`: a saved user cut would hide most
 of the machine on every later run for a reason the file, not the command, was
 keeping.
+
+`--follow` keeps sampling instead of exiting after one. `--json --follow`
+emits one compact document per line — NDJSON, so a reader takes a line at a
+time without a streaming parser — and `--once --follow` reprints the table each
+interval, each sample carrying its own header and separated by a blank line, so
+any line of the stream still says which machine state it belongs to. It needs
+`--once` or `--json`; the TUI is already a follow. Closing the reader ends it
+quietly, so `heft --json --follow | head -5` exits 0.
+
+Unlike the one-shot forms, `--follow` honours `--pss-interval`: reading
+`smaps_rollup` for every process once a second forever is the cost that flag
+exists to avoid. The first published sample reads PSS regardless, so the stream
+never opens with a blank memory column.
 
 `--top N` keeps the N heaviest rows under each parent, at every depth. It
 never trims Host, a User, or a folder header: those are the shape of the tree

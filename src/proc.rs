@@ -363,6 +363,34 @@ impl Sampler {
         tree
     }
 }
+/// Primes once, then hands `emit` a tree every `interval` until the reader
+/// goes away or `emit` fails.
+///
+/// Unlike `sample_world`, this honours `--pss-interval`: a stream is a
+/// continuous mode, and reading `smaps_rollup` for every process once a second
+/// forever is the exact cost `--pss-interval` exists to avoid. The first
+/// published sample forces PSS anyway, so the stream never opens with a blank
+/// memory column.
+///
+/// # Errors
+///
+/// Returns whatever `emit` returns. A closed reader surfaces as `EPIPE`, which
+/// `main` recognises and exits quietly on.
+pub(crate) fn sample_stream(
+    interval: Duration,
+    pss_interval: Duration,
+    mut emit: impl FnMut(&HostTree) -> Result<(), crate::types::Error>,
+) -> Result<(), crate::types::Error> {
+    let mut sampler = Sampler::prime(pss_interval);
+    let mut first = true;
+    loop {
+        thread::sleep(interval);
+        let tree = sampler.tick(first);
+        first = false;
+        emit(&tree)?;
+    }
+}
+
 pub(crate) fn sample_world(interval: Duration) -> HostTree {
     let mut sampler = Sampler::prime(interval);
     thread::sleep(interval);

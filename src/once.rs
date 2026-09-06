@@ -536,7 +536,35 @@ pub fn keep_users(tree: &mut HostTree, uids: &[u32]) {
 
 pub fn print_table(interval: Duration, view: &View) -> Result<(), Error> {
     let cols = Columns::from_view(view);
-    let mut tree = proc::sample_world(interval);
+    let tree = proc::sample_world(interval);
+    render_table(&mut io::stdout(), &tree, view, &cols)
+}
+
+/// One table per `--interval`, forever. Each sample reprints its own header
+/// rather than repeating one at the top, so any line of the stream still says
+/// which machine state it belongs to and a blank line separates the samples.
+///
+/// # Errors
+///
+/// Returns an error if a sample cannot be written.
+pub fn follow_table(interval: Duration, pss_interval: Duration, view: &View) -> Result<(), Error> {
+    let cols = Columns::from_view(view);
+    let mut out = io::stdout();
+    proc::sample_stream(interval, pss_interval, |tree| {
+        render_table(&mut out, tree, view, &cols)?;
+        writeln!(out)?;
+        out.flush()?;
+        Ok(())
+    })
+}
+
+fn render_table(
+    out: &mut impl Write,
+    tree: &HostTree,
+    view: &View,
+    cols: &Columns,
+) -> Result<(), Error> {
+    let mut tree = tree.clone();
     keep_users(&mut tree, &view.users);
     sort_tree(&mut tree, Sort::from_label(&view.sort), view.desc);
     let mut rows = table_rows(&tree);
@@ -558,7 +586,6 @@ pub fn print_table(interval: Duration, view: &View) -> Result<(), Error> {
     if let Some(n) = view.top {
         keep_top(&mut rows, n, |r| (r.depth, r.trimmable));
     }
-    let mut out = io::stdout();
     writeln!(
         out,
         "HOST  cpu {:>5.1}%  usr {:>4.1} sys {:>4.1} wait {:>4.1}  mem {} / {}{}  nproc {}{}",
@@ -572,8 +599,8 @@ pub fn print_table(interval: Duration, view: &View) -> Result<(), Error> {
         tree.nproc,
         crate::psi::header_tail(&tree)
     )?;
-    write_header(&mut out, &cols)?;
-    write_rows(&mut out, &cols, &rows)?;
+    write_header(out, cols)?;
+    write_rows(out, cols, &rows)?;
     Ok(())
 }
 
@@ -663,7 +690,31 @@ fn host_swap(tree: &HostTree) -> String {
 ///
 /// Returns an error if the tree cannot be serialized or stdout cannot be written.
 pub fn print_json(interval: Duration, view: &View) -> Result<(), Error> {
-    let mut tree = proc::sample_world(interval);
+    let tree = proc::sample_world(interval);
+    let text = json_text(&tree, view, true)?;
+    writeln!(io::stdout(), "{text}")?;
+    Ok(())
+}
+
+/// One JSON document per line per `--interval`, forever: NDJSON, so a reader
+/// can take a line at a time without a streaming parser. Compact rather than
+/// pretty for the same reason — a document that spans lines is not a record.
+///
+/// # Errors
+///
+/// Returns an error if a sample cannot be serialized or written.
+pub fn follow_json(interval: Duration, pss_interval: Duration, view: &View) -> Result<(), Error> {
+    let mut out = io::stdout();
+    proc::sample_stream(interval, pss_interval, |tree| {
+        let text = json_text(tree, view, false)?;
+        writeln!(out, "{text}")?;
+        out.flush()?;
+        Ok(())
+    })
+}
+
+fn json_text(tree: &HostTree, view: &View, pretty: bool) -> Result<String, Error> {
+    let mut tree = tree.clone();
     keep_users(&mut tree, &view.users);
     sort_tree(&mut tree, Sort::from_label(&view.sort), view.desc);
     let doc = serde_json::json!({ "host": tree });
@@ -672,9 +723,11 @@ pub fn print_json(interval: Duration, view: &View) -> Result<(), Error> {
     // then write through `io::Write`: serializing into the stream instead
     // would bury the EPIPE inside a `serde_json::Error`, which `main` cannot
     // recognise as a closed pipe.
-    let text = serde_json::to_string_pretty(&doc)?;
-    writeln!(io::stdout(), "{text}")?;
-    Ok(())
+    Ok(if pretty {
+        serde_json::to_string_pretty(&doc)?
+    } else {
+        serde_json::to_string(&doc)?
+    })
 }
 
 fn write_header(out: &mut impl Write, cols: &Columns) -> io::Result<()> {

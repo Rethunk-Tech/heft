@@ -110,6 +110,14 @@ checked, not assumed, so replacing them is not pending work.
 
 ## Surfaces and flags
 
+`proc::sample_stream` primes once and then publishes every `--interval`,
+honouring `--pss-interval` where the one-shot surfaces force PSS: a stream is
+continuous, so it is the TUI's cadence question, not `--once`'s. `once::
+follow_table` and `once::follow_json` share their rendering with the one-shot
+pair through `render_table` and `json_text`; `--json --follow` is compact
+NDJSON, one document per line, because a record that spans lines is not a
+record.
+
 `main` resolves one `View` and hands it to whichever surface runs, so
 precedence lives in one place: `--sort` / `--filter` overwrite whatever the
 saved view held. `--once` starts from `config::load_view()`; `--json` starts

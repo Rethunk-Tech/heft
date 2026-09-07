@@ -120,8 +120,10 @@ NDJSON, one document per line, because a record that spans lines is not a
 record.
 
 `main` resolves one `View` and hands it to whichever surface runs, so
-precedence lives in one place: `--sort` / `--filter` overwrite whatever the
-saved view held. `--once` starts from `config::load_view()`; `--json` starts
+precedence lives in one place: `--sort`, `--asc` / `--desc`, `--filter`,
+`--user` and `--top` overwrite whatever the saved view held, and only `sort`,
+`desc`, `filter` and `hide_columns` are ever read back from it — `users` and
+`top` are `#[serde(skip)]`. `--once` starts from `config::load_view()`; `--json` starts
 from `View::default()` and never reads the file, because a human's saved
 preference must not reshape a documented contract. `--filter` is
 `conflicts_with = "json"`: the JSON tree has no folder rows, so "keep the
@@ -135,7 +137,9 @@ standalone to generate the completions and man page.
 
 `main` rejects a non-terminal stdout before sampling: the TUI cannot open a
 terminal it has not got, and reporting that after a `/proc` walk would burn an
-`--interval` first. Non-zero, and never a silent fall back to `--once`.
+`--interval` first. Non-zero, and never a silent fall back to `--once`. The
+`--follow` usage check runs ahead of even that, because a flag combination that
+cannot mean anything is wrong wherever stdout points.
 
 `once::keep_users` prunes User nodes before rows are built, on all three
 surfaces, so the Host row totals what survived; it is not `conflicts_with =

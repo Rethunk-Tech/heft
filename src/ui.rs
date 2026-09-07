@@ -784,11 +784,11 @@ fn share_cells(parts: &[u64], capacity: u64, width: usize) -> Vec<usize> {
 
 fn help_text() -> String {
     const ROWS: &[(&str, &str)] = &[
-        ("q  Esc", "quit"),
+        ("q  Esc  Ctrl-C", "quit"),
         ("↑ ↓  j k", "move"),
         ("← →  h l", "expand / collapse"),
         ("Enter  Space", "expand / collapse"),
-        ("/", "filter (Enter apply, Esc cancel)"),
+        ("/", "filter by regex (Enter apply, Esc cancel)"),
         ("c", "cycle sort column"),
         ("d", "reverse sort"),
         ("s", "save view"),

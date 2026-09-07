@@ -42,7 +42,9 @@ written.
 - **Slow, not just busy** — per-cgroup CPU/IO/memory stall percentages, so a
   row that is blocked on the disk stops looking the same as one that is idle.
 - **TUI plus scripts** — fullscreen table by default; `--once` and `--json`
-  for one sample, with `--sort` and `--filter` for the shape you want.
+  for one sample, `--follow` to keep sampling (NDJSON, or a repeating table),
+  and `--sort`, `--asc`/`--desc`, `--filter` (a regex), `--top` and `--user`
+  for the shape you want.
 
 ## Documentation
 

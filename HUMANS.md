@@ -84,9 +84,10 @@ at least `--interval`) is TUI-only; between those reads heft reuses last
 per-PID PSS (vanished PIDs drop). New PIDs show a blank PSS until the next
 rollup.
 
-`--json` / `--once` take two `/proc` walks separated by `--interval` so rates
-exist, and always read PSS on the published sample (`--pss-interval` is
-ignored).
+A one-shot `--json` / `--once` takes two `/proc` walks separated by
+`--interval` so rates exist, and always reads PSS on the published sample
+(`--pss-interval` is ignored). Adding `--follow` makes it a continuous mode
+instead, and there `--pss-interval` applies.
 
 `--sort` takes the labels the `c` key cycles and `view.json` saves (listed
 under [Hiding columns](#hiding-columns)); a name that is not one of them is a
@@ -162,12 +163,12 @@ folder rows for "keep the parents" to mean anything (filter it with `jq`).
 
 | key | action |
 | --- | --- |
-| `q` / `Esc` | quit |
+| `q` / `Esc` / `Ctrl-C` | quit |
 | `↑` `↓` / `j` `k` | move the cursor |
 | `PgUp` `PgDn` / `Home` `End` | page or jump the cursor |
 | `←` `→` / `h` `l` / Enter / Space | collapse or expand |
 | `[` `]` / `<` `>` | scroll columns when the terminal is narrower than the table |
-| `/` | filter by name (Enter applies, Esc cancels) |
+| `/` | filter by regex on the name (Enter applies, Esc cancels) |
 | `c` | cycle the sort column (default PSS descending) |
 | `d` | reverse the sort direction |
 | `s` | save the current sort and filter to `$XDG_CONFIG_HOME/heft/view.json` |
@@ -322,12 +323,13 @@ container title is `docker-<12hex>`. Stopped containers (no PID) do not appear.
 
 | tree | path | what |
 | --- | --- | --- |
-| config | `$XDG_CONFIG_HOME/heft/view.json` (default `~/.config/heft/view.json`) | saved sort + filter (after `s`), plus `hide_columns` if you write one |
+| config | `$XDG_CONFIG_HOME/heft/view.json` (default `~/.config/heft/view.json`) | saved sort, direction and filter (after `s`), plus `hide_columns` if you write one. `--user` and `--top` are deliberately never saved |
 | config | `$XDG_CONFIG_HOME/heft/grouping.json` | your grouping overrides, if you write one |
 
-v1 creates no `$XDG_STATE_HOME/heft` or `$XDG_CACHE_HOME/heft`. Heft writes
-only that config directory and the TTY alternate screen — never `/proc`,
-sysfs, or cgroup files.
+v1 creates no `$XDG_STATE_HOME/heft` or `$XDG_CACHE_HOME/heft`. The only file
+heft writes is that config directory; the only other state it touches is the
+terminal it is drawing on — the alternate screen, and the termios settings it
+restores on the way out. Never `/proc`, sysfs, or cgroup files.
 
 ### Hiding columns
 

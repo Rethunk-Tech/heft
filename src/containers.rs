@@ -23,6 +23,13 @@ pub(crate) fn hex12(s: &str) -> Option<&str> {
     hex_id(s).and_then(|id| id.get(..12))
 }
 
+/// Both index builders look an inspect up by this normalized id, in one place
+/// so neither can key differently from the other: a raw `item.id` misses
+/// whenever the daemon reports it in any case but the one the map was built in.
+fn inspect_for<'a>(item: &ListItem, inspects: &'a HashMap<String, Inspect>) -> Option<&'a Inspect> {
+    hex_id(&item.id).and_then(|id| inspects.get(&id.to_ascii_lowercase()))
+}
+
 fn live_hex_ids(list: &[ListItem]) -> Vec<String> {
     let mut ids: Vec<String> = list
         .iter()
@@ -104,9 +111,7 @@ impl ContainerIndex {
             if list_skip(item) {
                 continue;
             }
-            let inspect =
-                hex_id(&item.id).and_then(|id| cache.inspects.get(&id.to_ascii_lowercase()));
-            idx.insert_resolved(item, inspect, None, ov);
+            idx.insert_resolved(item, inspect_for(item, &cache.inspects), None, ov);
         }
         idx
     }
@@ -122,7 +127,7 @@ impl ContainerIndex {
             if list_skip(item) {
                 continue;
             }
-            idx.insert_resolved(item, inspects.get(&item.id), Some(workdir_uids), ov);
+            idx.insert_resolved(item, inspect_for(item, inspects), Some(workdir_uids), ov);
         }
         idx
     }

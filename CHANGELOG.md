@@ -24,6 +24,16 @@
   billing to its payload. The suffix is now matched case-insensitively wherever
   it is matched at all; shipping AppImages are mixed case.
 
+### Added
+
+- A `D` column counting the processes on a row in uninterruptible sleep. The
+  stall columns answer "was this row waiting", but only on the ~82% of rows
+  that resolve to one cgroup, and never on a folder, User or Host row, because
+  a percentage of an interval cannot be summed. `D` is a count, so it adds up
+  the tree and carries a figure exactly where those blanks are. It reads field
+  3 of the `/proc/<pid>/stat` line heft already parses for CPU and `THR`, so it
+  costs no extra read, and `0` is a figure rather than a blank.
+
 ### Changed
 
 - The two header bars are drawn to one width, so the CPU and MEMORY brackets

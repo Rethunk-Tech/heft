@@ -268,6 +268,27 @@ with 40 processes holding 1400 threads looked the same as one holding 40.
 them — when the thing on that row first appeared — never a sum. Both come from
 the `/proc/<pid>/stat` heft already reads for CPU, so neither costs a read.
 
+## D
+
+`D` counts the processes on a row in uninterruptible sleep: inside a kernel
+call that cannot be interrupted, which in practice means waiting on storage or
+a network filesystem. Such a process cannot be killed and gets no work done,
+but `%CORE` reads it as idle, so a machine grinding to a halt on a stuck NFS
+mount looks in every other column exactly like one that is quiet.
+
+It is field 3 of `/proc/<pid>/stat`, the line heft already reads for CPU and
+`THR`, so it costs no extra read.
+
+Unlike `CPU ST` / `IO ST` / `MEM ST` it is a count rather than a percentage of
+an interval, so it adds up the tree: a folder, User or Host row carries the
+total of everything beneath it, and those are precisely the rows the stall
+columns have to leave blank. `0` is a figure here and not a blank — every
+process heft can see at all has a state, so there is nothing it can fail to
+read.
+
+A steady `0` is the ordinary reading on a healthy machine. A row that holds
+above zero is waiting on something the kernel will not let it stop waiting for.
+
 ## CPU ST / IO ST / MEM ST
 
 The stall columns say whether a row was *waiting* rather than working. `%CORE`
@@ -368,8 +389,8 @@ The table has twenty columns and most terminals cannot hold them. Add
 
 Labels are the ones `c` cycles and `--sort` takes: `name`, `nproc`, `threads`,
 `age`, `core`, `machine`, `pss`, `rss`, `swap`, `diskr`, `diskw`, `vram`,
-`gtt`, `gfx`, `compute`, `cpustall`, `iostall`, `memstall`, `netns_rx`,
-`netns_tx`. No file, or no key, shows every column. An unknown label warns on stderr and is ignored, and `name` is
+`gtt`, `gfx`, `compute`, `dstate`, `cpustall`, `iostall`, `memstall`,
+`netns_rx`, `netns_tx`. No file, or no key, shows every column. An unknown label warns on stderr and is ignored, and `name` is
 refused — a table of numbers with no labels is unreadable.
 
 Hiding is presentation only: heft reads the same `/proc` files either way, `c`

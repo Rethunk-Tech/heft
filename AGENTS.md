@@ -240,6 +240,7 @@ stderr from `config::load_overrides` and grouping continues built-in.
 | PSS | `/proc/pid/smaps_rollup` — cadence in [HUMANS.md](HUMANS.md) |
 | SWAP | `SwapPss:` from that same rollup read, so it costs no extra file and shares the PSS cadence. `SwapPss`, never `Swap`: a shared swapped page must be apportioned or a summed tree reports it once per mapper. Blank on a `SwapTotal: 0` host |
 | Host swap | `SwapTotal` − `SwapFree` from `/proc/meminfo` (`SwapCached` is neither, so it is not subtracted) |
+| `D` | processes whose `/proc/pid/stat` state (field 3) is `D`, off the line already parsed for utime/stime. A count, so it sums up the tree the way `THR` does, and `0` is a figure rather than the blank a percentage would need |
 | THR | `num_threads`, field 20 of the `/proc/pid/stat` already parsed for utime/stime. Sums up the tree the way `nproc` does |
 | AGE | `now - (btime + starttime / CLK_TCK)`; `starttime` is field 22 of that same `stat`, `btime` is read from `/proc/stat` once per run and pinned. Aggregates take the OLDEST, never a sum: a duration summed is meaningless, and a max cannot be read as a total |
 | Disk R/W | Δ `read_bytes` / `write_bytes` from `/proc/pid/io` |
@@ -257,6 +258,7 @@ stderr from `config::load_overrides` and grouping continues built-in.
 | Swap | own tank against `SwapTotal`, never a MEM segment: swapped pages are not in RAM. Absent entirely when `SwapTotal` is 0, so a swapless host renders as it did before swap existed |
 | Layout | 2 unbordered header rows (extra tanks split the MEMORY row via `ui::tank_widths`, never add a third row); persistent rules: header↔tree and tree↔footer. Both rows draw their bar to one width so the two brackets stack: `mem_header_line` returns its first tank's width and `cpu_header_line` takes it, clamped to its own slack and padded on the right. The MEM group spends more of its row on `] used/total  ` and a fourth legend label, so the CPU row is normally the one with columns to spare — only a tree with no memory inverts that, and there the clamp wins |
 | Disk R/W | table columns only (formatted rates change width every tick) |
+| `D` | between the GPU columns and the stall trio: it asks the stall columns' question and, being a count rather than a percentage of an interval, answers it on the folder, User and Host rows they must leave blank |
 | THR / AGE | beside `N`, before the metric columns: all three say what the row *is* rather than what it is currently costing |
 | CPU/IO/MEM ST | a row carries a figure only when every process under it is in one non-root cgroup; a process row only when it is alone in its cgroup. Folder, User, Host and multi-cgroup rows are blank — a percentage of an interval cannot be summed, and `user-<uid>.slice` is not the User row (a rootful container is billed to its owner from `system.slice`) nor `system.slice` the System row (kernel threads are in the root cgroup). Root-cgroup rows are blank because that pressure is the machine's, the same rule as a `--network=host` container |
 | NETNS RX/TX | last two columns, named for the namespace and not the resource: a blank cell means the row owns no namespace, not that it moved no bytes |

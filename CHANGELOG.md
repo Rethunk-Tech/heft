@@ -4,6 +4,11 @@
 
 ### Fixed
 
+- The `--once` table counted characters where it meant terminal columns, so a
+  process named in CJK or carrying an emoji pushed every column to its right
+  out by one per wide character. `trunc` and the row layout measure columns
+  now, which is what the exact-width claim always said they did.
+
 - The key-help overlay drew its cursor keys as literal arrow characters
   regardless of `--glyphs`, so the one screen explaining the keys rendered as
   tofu on the bare console that flag exists for.

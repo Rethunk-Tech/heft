@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 use std::io::{self, Write};
 use std::time::Duration;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::config::{self, View};
 use crate::proc;
@@ -448,12 +449,17 @@ fn layout(cols: &Columns, cell: impl Fn(&Column) -> String) -> String {
         let w = usize::from(col.width);
         let text = cell(col);
         // The name column is the only left-aligned one, and it cannot be
-        // hidden, so the first rendered column is always it.
-        line.push_str(&if i == 0 {
-            format!("{text:<w$}")
+        // hidden, so the first rendered column is always it. Padded by column
+        // rather than by `{:<w$}`, which counts chars: the two differ for any
+        // wide character and the table is built to land on exact columns.
+        let pad = w.saturating_sub(text.width());
+        if i == 0 {
+            line.push_str(&text);
+            line.extend(std::iter::repeat_n(' ', pad));
         } else {
-            format!("{text:>w$}")
-        });
+            line.extend(std::iter::repeat_n(' ', pad));
+            line.push_str(&text);
+        }
     }
     line
 }
@@ -752,11 +758,26 @@ fn write_rows(out: &mut impl Write, cols: &Columns, rows: &[TableRow]) -> io::Re
     Ok(())
 }
 
+/// Cut to an exact number of terminal *columns*, not chars: a CJK or emoji
+/// name is one char per two columns, and counting chars pushed every column
+/// right of the name out by the difference. The ellipsis is one column, so it
+/// costs one; a wide character that will not fit in what is left is dropped
+/// rather than half-drawn.
 fn trunc(s: &str, width: usize) -> String {
-    if s.chars().count() <= width {
+    if s.width() <= width {
         return s.to_string();
     }
-    let mut out: String = s.chars().take(width.saturating_sub(1)).collect();
+    let budget = width.saturating_sub(1);
+    let mut out = String::new();
+    let mut used = 0;
+    for ch in s.chars() {
+        let w = ch.width().unwrap_or(0);
+        if used + w > budget {
+            break;
+        }
+        out.push(ch);
+        used += w;
+    }
     out.push(crate::glyph::ellipsis());
     out
 }
@@ -972,6 +993,49 @@ mod tests {
 
     fn every_column() -> Columns {
         Columns::from_view(&View::default())
+    }
+
+    #[test]
+    fn the_table_lands_on_columns_not_chars() {
+        // Two chars, four columns: counting chars is what pushed everything
+        // right of a CJK or emoji name out by the difference.
+        assert_eq!("\u{65e5}\u{672c}".chars().count(), 2);
+        assert_eq!("\u{65e5}\u{672c}".width(), 4);
+
+        for s in [
+            "abcdef",
+            "\u{65e5}\u{672c}\u{8a9e}\u{3067}\u{3059}",
+            "a\u{65e5}b\u{672c}c",
+            "\u{1f642}\u{1f642}\u{1f642}",
+        ] {
+            for w in 1..=10 {
+                assert!(trunc(s, w).width() <= w, "{s:?} truncated to {w} columns");
+            }
+        }
+        // A name that already fits keeps every character.
+        assert_eq!(trunc("\u{65e5}\u{672c}", 4), "\u{65e5}\u{672c}");
+
+        // Every rendered line is the same column count whatever the name is.
+        let cols = every_column();
+        let plain = layout(&cols, |c| {
+            if c.label == "name" {
+                "app".to_string()
+            } else {
+                String::new()
+            }
+        });
+        let wide = layout(&cols, |c| {
+            if c.label == "name" {
+                "\u{65e5}\u{672c}".to_string()
+            } else {
+                String::new()
+            }
+        });
+        assert_eq!(
+            plain.width(),
+            wide.width(),
+            "a wide name changed the layout"
+        );
     }
 
     #[test]

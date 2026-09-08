@@ -135,6 +135,14 @@ locale, or a container with no locale set at all gets one-column ASCII
 substitutes instead of tofu. `unicode` and `ascii` force it either way, for a
 terminal whose environment undersells or oversells what its font has.
 
+`NO_COLOR` is honoured: set it to anything that is not the empty string and the
+TUI draws without hue. Presence decides, not the value, so `NO_COLOR=0` and
+`NO_COLOR=false` disable colour too — that is the no-color.org rule, and a
+shell that exports one of those meant it. Nothing is lost by it: every bar
+segment already carries its own fill character, and the legend prints that
+character beside the label, so the distinction the colour was making is still
+on the screen. `--once` and `--json` never emitted colour to begin with.
+
 `--follow` keeps sampling instead of exiting after one. `--json --follow`
 emits one compact document per line — NDJSON, so a reader takes a line at a
 time without a streaming parser — and `--once --follow` reprints the table each

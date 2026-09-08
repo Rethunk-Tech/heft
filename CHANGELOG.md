@@ -26,6 +26,12 @@
 
 ### Added
 
+- `NO_COLOR` is honoured. Presence and non-emptiness decide, not the value, so
+  `NO_COLOR=0` disables hue as well, which is what no-color.org specifies. The
+  bars lose nothing by it: each segment's fill character already carried the
+  distinction, which is why the variable could be answered by dropping styling
+  rather than by adding a second render path.
+
 - A `D` column counting the processes on a row in uninterruptible sleep. The
   stall columns answer "was this row waiting", but only on the ~82% of rows
   that resolve to one cgroup, and never on a folder, User or Host row, because

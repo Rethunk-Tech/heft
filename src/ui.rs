@@ -1,6 +1,7 @@
 use std::collections::HashSet;
+use std::ffi::OsStr;
 use std::io::{self, stdout};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use crossterm::cursor::{Hide, Show};
@@ -731,22 +732,44 @@ fn legend(labels: &[(&str, Color, char)]) -> (Vec<Span<'static>>, usize) {
             spans.push(Span::raw("/"));
             cols += 1;
         }
-        spans.push(Span::styled(
-            format!("{glyph}{text}"),
-            Style::default().fg(*color),
-        ));
+        spans.push(Span::styled(format!("{glyph}{text}"), fg(*color)));
         cols += text.chars().count() + 1;
     }
     (spans, cols)
 }
 
+/// `NO_COLOR` (no-color.org): set to anything that is not the empty string
+/// disables hue, whatever the value -- `0` and `false` disable it too. Kept
+/// separate from the read so the rule can be checked without touching the
+/// process environment.
+fn no_color(var: Option<&OsStr>) -> bool {
+    var.is_some_and(|v| !v.is_empty())
+}
+
+/// Read once. The environment cannot change while heft runs, the same reason
+/// `glyph` resolves its character set once.
+fn colored() -> bool {
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| !no_color(std::env::var_os("NO_COLOR").as_deref()))
+}
+
+/// Hue is the redundant half of every distinction heft draws, so honouring
+/// `NO_COLOR` costs a reader nothing: the fill glyph stays either way.
+fn fg(color: Color) -> Style {
+    if colored() {
+        Style::default().fg(color)
+    } else {
+        Style::default()
+    }
+}
+
 /// Each segment carries its own fill glyph as well as its own colour, and the
 /// legend prints that glyph beside the label. Hue alone cannot carry the
-/// distinction: cyan against magenta is the pair deuteranopia collapses, a
-/// piped or recorded frame keeps the characters and loses the styling, and
-/// `NO_COLOR` is a request nobody should have to make to read a bar. Doing it
-/// unconditionally keeps one render path rather than a colour one and a
-/// monochrome one that drift.
+/// distinction: cyan against magenta is the pair deuteranopia collapses, and a
+/// piped or recorded frame keeps the characters and loses the styling. Drawing
+/// the glyphs unconditionally keeps one render path rather than a colour one
+/// and a monochrome one that drift -- and it is what makes `NO_COLOR` a
+/// styling question rather than a second layout.
 fn stacked_bar(width: usize, parts: &[(u64, Color, char)], capacity: u64) -> Vec<Span<'static>> {
     if width == 0 {
         return Vec::new();
@@ -757,17 +780,14 @@ fn stacked_bar(width: usize, parts: &[(u64, Color, char)], capacity: u64) -> Vec
     let mut out = Vec::new();
     for (n, (_, color, glyph)) in cells.into_iter().zip(parts.iter()) {
         if n > 0 {
-            out.push(Span::styled(
-                glyph.to_string().repeat(n),
-                Style::default().fg(*color),
-            ));
+            out.push(Span::styled(glyph.to_string().repeat(n), fg(*color)));
         }
     }
     let rest = width.saturating_sub(filled);
     if rest > 0 {
         out.push(Span::styled(
             glyph::light().to_string().repeat(rest),
-            Style::default().fg(Color::DarkGray),
+            fg(Color::DarkGray),
         ));
     }
     out
@@ -907,6 +927,17 @@ mod tests {
     /// Every ASCII substitute has to be one column, because the header lines
     /// are built to land on an exact width. `stacked_bar` takes its glyphs as
     /// arguments, so this checks the real render path rather than the table.
+    /// no-color.org: presence and non-emptiness decide, never the value, so a
+    /// shell that exports `NO_COLOR=0` still means it.
+    #[test]
+    fn no_color_reads_presence_not_value() {
+        assert!(!no_color(None));
+        assert!(!no_color(Some(OsStr::new(""))));
+        for v in ["1", "0", "false", "no", "yes"] {
+            assert!(no_color(Some(OsStr::new(v))), "{v}");
+        }
+    }
+
     #[test]
     fn an_ascii_bar_fills_exactly_as_many_cells_as_a_unicode_one() {
         let parts = |a: char, b: char, c: char| {
@@ -1088,12 +1119,7 @@ mod tests {
             !text.contains("vram/"),
             "discrete vram is not a MEM segment"
         );
-        assert!(
-            line.spans
-                .iter()
-                .any(|s| s.style.fg == Some(Color::LightCyan) && s.content.contains('▙')),
-            "{text}"
-        );
+        assert!(line.spans.iter().any(|s| s.content.contains('▙')), "{text}");
         assert_eq!(text.chars().count(), 100);
     }
 

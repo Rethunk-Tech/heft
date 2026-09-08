@@ -124,7 +124,6 @@ fn gui_and_docker_fixture() {
 
     for name in [
         "ghostty",
-        "bash",
         "chrome",
         "claude",
         "code",
@@ -140,6 +139,11 @@ fn gui_and_docker_fixture() {
             titles(&user.applications)
         );
     }
+    assert!(
+        !has(&user.applications, "bash"),
+        "interactive bash bills to ghostty or to the app it launched: {:?}",
+        titles(&user.applications)
+    );
     assert!(
         !has(&user.applications, "bunx"),
         "bunx must bill to payload"
@@ -247,6 +251,10 @@ fn gui_and_docker_fixture() {
             .iter()
             .any(|n| n == "node-24" || n == "MainThread" || n == "node"),
         "context7-mcp process must remain visible under claude: {claude_procs:?}"
+    );
+    assert!(
+        claude_procs.iter().any(|n| n == "bash"),
+        "the bash that launched claude bills to claude, not ghostty: {claude_procs:?}"
     );
 
     assert!(has(&user.user_services, "node-red"));
@@ -555,6 +563,49 @@ fn gui_and_docker_fixture() {
     assert!(!has(&tree.system, "acme-encoder"));
     assert!(!has(&tree.system, "supabase:demo"));
     assert!(!tree.system.iter().any(|n| n.title.starts_with("docker-")));
+}
+
+#[test]
+fn idle_interactive_bash_under_ghostty_bills_to_ghostty() {
+    let tree = tree_of(GUI, &Overrides::default());
+    let user = user_of(&tree, 1000);
+    assert!(
+        !has(&user.applications, "bash"),
+        "idle --posix bash must not be an Applications row: {:?}",
+        titles(&user.applications)
+    );
+    let ghostty = user
+        .applications
+        .iter()
+        .find(|n| n.id == "ghostty")
+        .expect("ghostty");
+    assert!(
+        proc_names(ghostty).iter().any(|n| n == "bash"),
+        "idle bash must remain visible under ghostty: {:?}",
+        proc_names(ghostty)
+    );
+}
+
+#[test]
+fn claude_under_bash_under_ghostty_owns_the_shell() {
+    let tree = tree_of(GUI, &Overrides::default());
+    let user = user_of(&tree, 1000);
+    let claude = user
+        .applications
+        .iter()
+        .find(|n| n.id == "claude")
+        .expect("claude");
+    let claude_procs = proc_names(claude);
+    assert!(
+        claude_procs.iter().any(|n| n == "bash")
+            && claude_procs.iter().any(|n| n == "bun" || n == "bunx"),
+        "launching bash and bunx bill to claude, not only ghostty: {claude_procs:?}"
+    );
+    assert!(
+        has(&user.applications, "claude") && has(&user.applications, "ghostty"),
+        "claude stays its own Applications row beside ghostty: {:?}",
+        titles(&user.applications)
+    );
 }
 
 fn user_of(tree: &HostTree, uid: u32) -> &heft::UserNode {

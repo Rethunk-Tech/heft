@@ -146,6 +146,19 @@ fn compute_place(
                 };
             }
         }
+        // Idle interactive shell: not an application. The resolved parent
+        // identity is the terminal that owns the tty. A unique payload child
+        // already returned above, same walk as a launcher.
+        if classify::is_interactive_shell(p)
+            && let Some(parent) = resolve_one(p.ppid, curr, ctx, memo, walking)
+            && parent.folder != Folder::System
+            && classify::is_terminal_name(&parent.key)
+        {
+            return Place {
+                instance: identity::instance_key(p, None),
+                ..parent
+            };
+        }
     }
 
     if classify::is_generic(p)

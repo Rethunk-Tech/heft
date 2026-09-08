@@ -1107,6 +1107,21 @@
       "stime": 1
     },
     {
+      "pid": 409,
+      "ppid": 400,
+      "pgrp": 409,
+      "uid": 1000,
+      "comm": "bash",
+      "exe": "/usr/bin/bash",
+      "cmdline": [
+        "/bin/bash",
+        "--posix"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-ghostty-surface-transient-409.scope",
+      "utime": 10,
+      "stime": 1
+    },
+    {
       "pid": 408,
       "ppid": 300,
       "pgrp": 408,

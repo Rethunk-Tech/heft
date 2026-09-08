@@ -257,8 +257,9 @@ an empty gap — and becomes one when a row appears.
   pages are not in RAM. A machine with `SwapTotal: 0` gets no swap tank and no
   `SWAP` figures at all.
 
-- **User** is a unix uid, shown by login name. Terminals, shells, and the
-  compositor live under that user — not as Host.
+- **User** is a unix uid, shown by login name. Terminals and the compositor
+  live under that user — not as Host. An idle interactive shell folds into
+  that terminal; a shell that launched an app bills to the app.
 - Folder headings — Applications, User Services, Containers, System — carry
   the count of identities under them, including zero. That count is the
   entries, not `N` (processes).
@@ -486,12 +487,13 @@ kernel thread: those rows ignore it.
 heft --once
 ```
 
-`--once` should list your terminal, your interactive shells, and each running
-desktop app as its own Applications row — an Electron app appears once, not
-once per helper process. User Services should hold your compositor and any
-user `*.service` units. Containers should sum a compose project under one row
-and bill `containerd-shim` / `conmon` / `runc` to their container, never to
-`dockerd`.
+`--once` should list your terminal and each running desktop app as its own
+Applications row — idle shells in that terminal fold into it, and a shell
+that launched an app (claude, …) bills to that app. An Electron app appears
+once, not once per helper process. User Services should hold your compositor
+and any user `*.service` units. Containers should sum a compose project under
+one row and bill `containerd-shim` / `conmon` / `runc` to their container,
+never to `dockerd`.
 
 Contributor gates live in [CONTRIBUTING.md](CONTRIBUTING.md).
 

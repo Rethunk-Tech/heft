@@ -121,10 +121,12 @@ fn is_shell(p: &Process) -> bool {
     names_match(&names_of(p), is_shell_name)
 }
 
+pub(crate) fn is_terminal_name(name: &str) -> bool {
+    TERMINALS.iter().any(|t| t.eq_ignore_ascii_case(name))
+}
+
 pub(crate) fn is_terminal(p: &Process) -> bool {
-    names_match(&names_of(p), |n| {
-        TERMINALS.iter().any(|t| t.eq_ignore_ascii_case(n))
-    })
+    names_match(&names_of(p), is_terminal_name)
 }
 
 pub(crate) fn is_compositor(p: &Process) -> bool {
@@ -426,7 +428,7 @@ pub(crate) fn absorbs_generic(parent: &Process) -> bool {
     !names_match(&names_of(parent), |n| n == "systemd")
 }
 
-fn is_interactive_shell(p: &Process) -> bool {
+pub(crate) fn is_interactive_shell(p: &Process) -> bool {
     if !is_shell(p) {
         return false;
     }
@@ -448,8 +450,12 @@ pub(crate) fn is_worker(p: &Process) -> bool {
         || p.cmdline.iter().any(|a| a.starts_with("--type="))
 }
 
+/// Launchers and shells share unique-payload folding: the helper has no
+/// top-level row when a single child identity exists. Interactive shells
+/// are included so a `bash` that launched `claude` bills there; an idle
+/// leftover folds into the terminal in `group`, not here.
 pub(crate) fn is_foldable_helper(p: &Process) -> bool {
-    is_launcher(p) || (is_shell(p) && !is_interactive_shell(p))
+    is_launcher(p) || is_shell(p)
 }
 
 pub(crate) fn is_launcher_name(name: &str) -> bool {
@@ -569,6 +575,16 @@ mod tests {
         assert!(is_session_noise(&p("cat", &["cat"])));
         assert!(is_worker(&p("cursor", &["cursor", "--type=renderer"])));
         assert!(is_interactive_shell(&p("bash", &["-bash"])));
+        assert!(
+            is_interactive_shell(&p("bash", &["/bin/bash", "--posix"])),
+            "ghostty's login bash is interactive"
+        );
+        assert!(
+            is_foldable_helper(&p("bash", &["-bash"])),
+            "interactive shells share unique-payload folding with launchers"
+        );
+        assert!(is_terminal_name("ghostty"));
+        assert!(is_terminal(&p("ghostty", &["/usr/bin/ghostty"])));
         let wrapper = p(
             "bash",
             &["bash", "/app/bin/zypak-wrapper", "/app/extra/vscode/code"],

@@ -73,6 +73,11 @@
 
 ### Changed
 
+- Idle interactive shells fold into their terminal (Ghostty and the other
+  names in `TERMINALS`). A shell that launched a single real app still bills
+  to that app, the same unique-payload walk launchers use. They are no longer
+  their own Applications row.
+
 - Folder headings (Applications, User Services, Containers, System) show how
   many identities sit under them, including zero. User rows are the login name
   only: the uid in parentheses looked like a count.

@@ -97,7 +97,10 @@ runtime ever reports a truncated id.
   app-bound `xdg-dbus-proxy` bills to that app, unbound folds into `flatpak`;
   `gcr-ssh-agent` absorbs `ssh-agent` only in that unit.
 - Split when the child's resolved identity differs and the child is a real app.
-  Idle interactive shells stay their own Applications row.
+  Idle interactive shells fold into their terminal (`classify::is_terminal`);
+  a unique payload child (claude, dstat) takes the owning shell, the same
+  walk as a launcher. A shell with no terminal parent and no unique payload
+  stays Applications.
 - Generic interpreters (`classify.rs` `GENERICS`) fall back to the user unit or
   a distinctive script basename (`identity::generic_fallback`) so they do not
   collapse into one interpreter row. Non-distinctive script basenames live in

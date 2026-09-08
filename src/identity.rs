@@ -52,7 +52,7 @@ pub(crate) fn user_unit(cgroup: &str) -> Option<String> {
 /// Latin-1 and turns `\\xc3\\xa9` into `Ã©` instead of `é`. Lossy at the end
 /// rather than fallible, because a unit name heft cannot decode is still a row
 /// worth drawing.
-pub(crate) fn systemd_unescape(s: &str) -> String {
+fn systemd_unescape(s: &str) -> String {
     let b = s.as_bytes();
     let mut out: Vec<u8> = Vec::with_capacity(b.len());
     let mut i = 0;
@@ -92,7 +92,7 @@ pub(crate) fn is_user_service_unit(unit: &str) -> bool {
     service && !u.starts_with("app-")
 }
 
-pub(crate) fn unit_stem(unit: &str) -> String {
+fn unit_stem(unit: &str) -> String {
     let mut s = unit.to_string();
     if let Some(stripped) = s.strip_suffix(".scope") {
         s = stripped.to_string();

@@ -45,7 +45,7 @@ impl Default for View {
     }
 }
 
-pub fn config_dir() -> PathBuf {
+fn config_dir() -> PathBuf {
     let base = match std::env::var("XDG_CONFIG_HOME") {
         Ok(v) if !v.is_empty() => PathBuf::from(v),
         _ => std::env::var("HOME")
@@ -55,7 +55,7 @@ pub fn config_dir() -> PathBuf {
     base.join("heft")
 }
 
-pub fn view_path() -> PathBuf {
+pub(crate) fn view_path() -> PathBuf {
     config_dir().join("view.json")
 }
 
@@ -71,7 +71,7 @@ pub fn load_view() -> View {
 ///
 /// Returns an error if the XDG config directory cannot be created or
 /// permissioned, the view cannot be serialized, or the file cannot be written.
-pub fn save_view(view: &View) -> Result<(), Error> {
+pub(crate) fn save_view(view: &View) -> Result<(), Error> {
     let dir = config_dir();
     fs::DirBuilder::new()
         .recursive(true)
@@ -154,13 +154,13 @@ impl Overrides {
     }
 
     #[must_use]
-    pub fn container_owner(&self, name: &str) -> Option<u32> {
+    pub(crate) fn container_owner(&self, name: &str) -> Option<u32> {
         self.container_owners.get(name).copied()
     }
 }
 
 #[must_use]
-pub fn overrides_path() -> PathBuf {
+fn overrides_path() -> PathBuf {
     config_dir().join("grouping.json")
 }
 
@@ -169,7 +169,7 @@ pub fn overrides_path() -> PathBuf {
 /// A monitor that dies on a typo in a config file is worse than one with no
 /// config at all, so a parse failure warns once and grouping continues.
 #[must_use]
-pub fn load_overrides() -> Overrides {
+pub(crate) fn load_overrides() -> Overrides {
     let path = overrides_path();
     let Ok(text) = fs::read_to_string(&path) else {
         return Overrides::default();

@@ -84,7 +84,7 @@ fn push_drm_text(texts: &mut Vec<String>, path: impl AsRef<Path>) {
     }
 }
 
-pub(crate) fn parse_fdinfo(text: &str) -> Option<ClientView> {
+fn parse_fdinfo(text: &str) -> Option<ClientView> {
     let mut driver_ok = false;
     let mut id = None;
     let mut vram = None;
@@ -166,7 +166,7 @@ pub(crate) struct ClientView {
     pub total_cycles: Option<u64>,
 }
 
-pub(crate) fn merge_fdinfo_texts(texts: &[String]) -> GpuCounters {
+fn merge_fdinfo_texts(texts: &[String]) -> GpuCounters {
     let mut by_client: HashMap<u64, ClientView> = HashMap::new();
     for text in texts {
         if let Some(c) = parse_fdinfo(text) {

@@ -116,11 +116,11 @@ pub(crate) fn is_generic(p: &Process) -> bool {
     })
 }
 
-pub(crate) fn is_shell_name(name: &str) -> bool {
+fn is_shell_name(name: &str) -> bool {
     SHELLS.iter().any(|s| s.eq_ignore_ascii_case(name))
 }
 
-pub(crate) fn is_shell(p: &Process) -> bool {
+fn is_shell(p: &Process) -> bool {
     names_match(&names_of(p), is_shell_name)
 }
 
@@ -374,7 +374,7 @@ pub(crate) fn absorbs_generic(parent: &Process) -> bool {
     !names_match(&names_of(parent), |n| n == "systemd")
 }
 
-pub(crate) fn is_interactive_shell(p: &Process) -> bool {
+fn is_interactive_shell(p: &Process) -> bool {
     if !is_shell(p) {
         return false;
     }
@@ -433,7 +433,7 @@ pub(crate) fn launcher_payload_hint(p: &Process) -> Option<String> {
     None
 }
 
-pub(crate) fn looks_script(arg: &str) -> bool {
+fn looks_script(arg: &str) -> bool {
     let b = basename(arg);
     matches!(
         b.rsplit_once('.').map(|(_, e)| e),

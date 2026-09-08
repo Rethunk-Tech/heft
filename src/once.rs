@@ -533,7 +533,7 @@ pub(crate) fn keep_top<T>(rows: &mut Vec<T>, n: usize, row: impl Fn(&T) -> (u16,
 /// System and Host-level Containers stay either way. They are the machine's
 /// cost and belong to nobody, so hiding them would leave a tree that no longer
 /// explains the header above it.
-pub fn keep_users(tree: &mut HostTree, uids: &[u32]) {
+pub(crate) fn keep_users(tree: &mut HostTree, uids: &[u32]) {
     if uids.is_empty() {
         return;
     }
@@ -803,7 +803,7 @@ pub(crate) fn fmt_bytes(n: Option<u64>) -> String {
     scale_1024(b as f64).unwrap_or_else(|| b.to_string())
 }
 
-pub(crate) fn fmt_rate(n: Option<f64>) -> String {
+fn fmt_rate(n: Option<f64>) -> String {
     n.map(|v| {
         if v <= 0.0 {
             "0".into()
@@ -817,7 +817,7 @@ pub(crate) fn fmt_rate(n: Option<f64>) -> String {
 /// at a glance to place a process in time, so the coarse unit is the whole
 /// point — `2d` beats `191243s` and beats a start timestamp, which would make
 /// the reader do the subtraction.
-pub(crate) fn fmt_age(secs: Option<u64>) -> String {
+fn fmt_age(secs: Option<u64>) -> String {
     let Some(s) = secs else {
         return String::new();
     };
@@ -839,7 +839,7 @@ pub(crate) fn fmt_pct(v: f64) -> String {
     format!("{v:.1}")
 }
 
-pub(crate) fn fmt_opt_pct(v: Option<f64>) -> String {
+fn fmt_opt_pct(v: Option<f64>) -> String {
     v.map(fmt_pct).unwrap_or_default()
 }
 

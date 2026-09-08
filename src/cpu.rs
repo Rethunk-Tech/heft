@@ -111,7 +111,7 @@ pub(crate) fn parse_host_cpu(line: &str) -> Option<HostCpu> {
     })
 }
 
-pub(crate) fn host_split(a: &HostCpu, b: &HostCpu) -> HostSplit {
+fn host_split(a: &HostCpu, b: &HostCpu) -> HostSplit {
     let dt = b.total.saturating_sub(a.total) as f64;
     if dt <= 0.0 {
         return HostSplit::default();

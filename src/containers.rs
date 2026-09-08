@@ -249,10 +249,7 @@ pub(crate) fn helper_id(p: &Process) -> Option<String> {
         .iter()
         .find_map(|arg| hex_id(arg).map(str::to_ascii_lowercase))
 }
-pub(crate) fn project_identity(
-    name: &str,
-    labels: &HashMap<String, String>,
-) -> (String, Option<String>) {
+fn project_identity(name: &str, labels: &HashMap<String, String>) -> (String, Option<String>) {
     if let Some(p) = labels.get("com.supabase.cli.project") {
         return (format!("supabase:{p}"), Some(name.to_string()));
     }
@@ -264,7 +261,7 @@ pub(crate) fn project_identity(
     }
     (name.to_string(), None)
 }
-pub(crate) fn supabase_project_from_name(name: &str) -> Option<&str> {
+fn supabase_project_from_name(name: &str) -> Option<&str> {
     let rest = name.strip_prefix("supabase_")?;
     let (_, proj) = rest.rsplit_once('_')?;
     if proj.is_empty() { None } else { Some(proj) }

@@ -69,7 +69,7 @@ extern "C" fn on_signal(sig: libc::c_int) {
 }
 
 /// Idempotent, and a no-op when `guard` never armed.
-pub(crate) fn restore() {
+fn restore() {
     if !ARMED.swap(false, Ordering::SeqCst) {
         return;
     }

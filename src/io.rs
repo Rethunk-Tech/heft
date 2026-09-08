@@ -9,7 +9,7 @@ pub(crate) fn read_io(pid: u32) -> (Option<u64>, Option<u64>) {
     }
 }
 
-pub(crate) fn parse_io(text: &str) -> (Option<u64>, Option<u64>) {
+fn parse_io(text: &str) -> (Option<u64>, Option<u64>) {
     let mut r = None;
     let mut w = None;
     for line in text.lines() {
@@ -40,7 +40,7 @@ pub(crate) fn parse_pss_kb(text: &str) -> Option<u64> {
     text.lines().find_map(|l| field_u64(l, "Pss:"))
 }
 
-pub(crate) fn parse_swap_pss_kb(text: &str) -> Option<u64> {
+fn parse_swap_pss_kb(text: &str) -> Option<u64> {
     // `SwapPss:`, not `Swap:` — see the `Metrics::swap_bytes` comment.
     text.lines().find_map(|l| field_u64(l, "SwapPss:"))
 }

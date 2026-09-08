@@ -291,20 +291,6 @@ pub fn sort_labels() -> Vec<&'static str> {
     COLUMNS.iter().map(|c| c.label).collect()
 }
 
-/// Keeps a row when its own name contains `filter`, or when it is an ancestor
-/// of a row below that does. `filter` is already lowercased; the name is
-/// lowercased here.
-///
-/// One definition for every surface: the TUI reads it over the flattened rows
-/// it draws, `--once` over the rows it prints. Ancestor rows keep the metrics
-/// they were built with, so a filtered Host line still totals the machine
-/// rather than the match.
-///
-/// `want` is the depth still needed to complete the ancestor chain of the
-/// nearest match below. Tightening it to each kept row's own depth is what
-/// limits the walk to that chain: a shallower row on another branch is always
-/// preceded by the deeper rows of its own subtree, which do not match and do
-/// not lower `want`, so it never becomes an empty header.
 /// A compiled `--filter` pattern.
 ///
 /// Case-insensitive by default, via a `(?i)` the pattern never sees: a bare
@@ -334,6 +320,20 @@ impl Filter {
     }
 }
 
+/// Keeps a row when its own name matches `filter`, or when it is an ancestor
+/// of a row below that does. The match is the `Filter`'s own, so the case rule
+/// lives with the pattern rather than here.
+///
+/// One definition for every surface: the TUI reads it over the flattened rows
+/// it draws, `--once` over the rows it prints. Ancestor rows keep the metrics
+/// they were built with, so a filtered Host line still totals the machine
+/// rather than the match.
+///
+/// `want` is the depth still needed to complete the ancestor chain of the
+/// nearest match below. Tightening it to each kept row's own depth is what
+/// limits the walk to that chain: a shallower row on another branch is always
+/// preceded by the deeper rows of its own subtree, which do not match and do
+/// not lower `want`, so it never becomes an empty header.
 pub(crate) fn keep_matches<T>(rows: &mut Vec<T>, filter: &Filter, row: impl Fn(&T) -> (u16, &str)) {
     let mut want = 0;
     let mut keep = vec![false; rows.len()];

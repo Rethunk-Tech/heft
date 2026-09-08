@@ -12,7 +12,7 @@ Read [AGENTS.md](AGENTS.md) first — grouping invariants live there, not here.
 ## Setup
 
 [HUMANS.md](HUMANS.md) is the runbook. Toolchain: stable Rust (CI uses current
-stable). MSRV is `rust-version` in [Cargo.toml](Cargo.toml).
+stable). MSRV is `rust-version` in [Cargo.toml](Cargo.toml), and CI checks it.
 
 ```sh
 lefthook install     # per clone; hooks are not committed by git
@@ -37,6 +37,20 @@ cargo machete
 
 The suite must stay under 30 seconds. Do not add live-GPU or live-docker
 requirements to `cargo test`; put those walks in fixtures.
+
+Two CI jobs check what a stable toolchain on a full runner cannot. Neither is
+a pre-push hook, but both are worth running by hand when you touch what they
+cover:
+
+```sh
+cargo +1.98 check --locked --all-targets   # the MSRV in Cargo.toml, not stable
+```
+
+`rust-toolchain.toml` outranks a `rustup override`, so the toolchain has to be
+named on the cargo invocation. The other job runs `tests/live_proc.rs` as a
+static musl binary inside an image with nothing installed, because those
+invariants are documented to hold in a bare container -- no `/etc/passwd`
+entry, no docker socket, no DRM, and a `/proc` with one process in it.
 
 `heft --once` on this machine is the product check, not a CI job.
 

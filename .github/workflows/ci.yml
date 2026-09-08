@@ -52,3 +52,53 @@ jobs:
         with:
           key: aarch64
       - run: cargo check --locked --all-targets --target aarch64-unknown-linux-gnu
+
+  # Cargo.toml declares rust-version = "1.98" and AGENTS.md leans on that floor
+  # to keep the hand-rolled helpers, but every other job runs stable, so the
+  # floor was asserted and never tested. rust-toolchain.toml outranks a rustup
+  # override, so the toolchain has to be named on the cargo invocation itself.
+  msrv:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master
+        with:
+          toolchain: "1.98"
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: msrv
+      - run: cargo +1.98 check --locked --all-targets
+
+  # AGENTS.md says tests/live_proc.rs must hold in a bare container: no
+  # /etc/passwd entry for the uid it sees, no docker socket, no DRM, no
+  # systemd cgroups, and a /proc holding one process rather than a machine's
+  # worth. Every other job runs it where all of that exists, so the one
+  # environment heft documents as supported was the one never exercised.
+  # A static musl test binary keeps the container to the test rather than to
+  # a toolchain, so the image needs nothing installed in it.
+  bare-container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master
+        with:
+          toolchain: stable
+          targets: x86_64-unknown-linux-musl
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: musl
+      - run: |
+          bin=$(cargo test --locked --target x86_64-unknown-linux-musl \
+                  --test live_proc --no-run --message-format=json \
+                | jq -r 'select(.target.name == "live_proc" and .executable != null)
+                          | .executable')
+          test -n "$bin"
+          docker run --rm --network none -v "$bin:/live_proc:ro" \
+            alpine@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b \
+            /live_proc

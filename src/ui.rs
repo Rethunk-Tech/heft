@@ -800,20 +800,21 @@ fn share_cells(parts: &[u64], capacity: u64, width: usize) -> Vec<usize> {
 }
 
 fn help_text() -> String {
-    const ROWS: &[(&str, &str)] = &[
-        ("q  Esc  Ctrl-C", "quit"),
-        ("↑ ↓  j k", "move"),
-        ("← →  h l", "expand / collapse"),
-        ("Enter  Space", "expand / collapse"),
-        ("/", "filter by regex (Enter apply, Esc cancel)"),
-        ("c", "cycle sort column"),
-        ("d", "reverse sort"),
-        ("s", "save view"),
-        ("[ ]", "scroll columns"),
-        ("?  F1", "toggle this help"),
+    let (up, down, left, right) = glyph::arrows();
+    let rows: [(String, &str); 10] = [
+        ("q  Esc  Ctrl-C".to_string(), "quit"),
+        (format!("{up} {down}  j k"), "move"),
+        (format!("{left} {right}  h l"), "expand / collapse"),
+        ("Enter  Space".to_string(), "expand / collapse"),
+        ("/".to_string(), "filter by regex (Enter apply, Esc cancel)"),
+        ("c".to_string(), "cycle sort column"),
+        ("d".to_string(), "reverse sort"),
+        ("s".to_string(), "save view"),
+        ("[ ]".to_string(), "scroll columns"),
+        ("?  F1".to_string(), "toggle this help"),
     ];
-    ROWS.iter()
-        .map(|(k, d)| format!("{k:<16} {d}"))
+    rows.iter()
+        .map(|(k, desc)| format!("{k:<16} {desc}"))
         .collect::<Vec<_>>()
         .join("\n")
 }

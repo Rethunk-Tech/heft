@@ -103,6 +103,16 @@ pub(crate) fn ellipsis() -> char {
     if ascii() { '~' } else { '…' }
 }
 
+/// The four cursor keys, for the help overlay. One column each, so the
+/// overlay's key column keeps its width under either set.
+pub(crate) fn arrows() -> (char, char, char, char) {
+    if ascii() {
+        ('^', 'v', '<', '>')
+    } else {
+        ('\u{2191}', '\u{2193}', '\u{2190}', '\u{2192}')
+    }
+}
+
 pub(crate) fn expanded() -> &'static str {
     if ascii() { "v " } else { "▼ " }
 }

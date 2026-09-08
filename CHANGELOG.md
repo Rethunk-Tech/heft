@@ -4,6 +4,10 @@
 
 ### Fixed
 
+- The key-help overlay drew its cursor keys as literal arrow characters
+  regardless of `--glyphs`, so the one screen explaining the keys rendered as
+  tofu on the bare console that flag exists for.
+
 - An AppImage launcher whose filename is not all lowercase took a top-level row
   of its own, titled with the full `Cursor-x86_64.AppImage` filename, instead of
   billing to its payload. The suffix is now matched case-insensitively wherever

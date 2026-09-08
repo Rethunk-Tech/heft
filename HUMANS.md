@@ -79,10 +79,11 @@ almost all of its time is spent waiting on the kernel to produce one small
 about 120ms to about 20ms, which is what makes the 0.05s floor usable. A PSS
 tick gains less — roughly 850ms to 340ms — because `smaps_rollup` makes the
 kernel walk each process's page tables, so it still stretches its interval.
-This is also why heft shows itself holding more than one thread. `--pss-interval` (default 5s,
-at least `--interval`) is TUI-only; between those reads heft reuses last
-per-PID PSS (vanished PIDs drop). New PIDs show a blank PSS until the next
-rollup.
+This is also why heft shows itself holding more than one thread.
+
+`--pss-interval` (default 5s, at least `--interval`) is TUI-only; between
+those reads heft reuses last per-PID PSS (vanished PIDs drop). New PIDs show a
+blank PSS until the next rollup.
 
 A one-shot `--json` / `--once` takes two `/proc` walks separated by
 `--interval` so rates exist, and always reads PSS on the published sample
@@ -110,13 +111,16 @@ flashing the whole tree back between two keystrokes.
 drop, while System and Host-level Containers stay, since those are the
 machine's own cost and belong to nobody. A bare number is always accepted as a
 uid even with no `/etc/passwd` entry, which is the ordinary case inside a
-container; a name nothing answers to is a usage error. Unlike `--filter` it
-works with `--json`, because the JSON tree does have User nodes to prune, and
-unlike `--filter` the Host row totals what survived rather than what it was
-built with — asking for one user is asking what the top row should count. It is
-never written to `view.json`, not even by `s`: a saved user cut would hide most
-of the machine on every later run for a reason the file, not the command, was
-keeping.
+container; a name nothing answers to is a usage error.
+
+Unlike `--filter` it works with `--json`, because the JSON tree does have User
+nodes to prune, and unlike `--filter` the Host row totals what survived rather
+than what it was built with — asking for one user is asking what the top row
+should count.
+
+It is never written to `view.json`, not even by `s`: a saved user cut would
+hide most of the machine on every later run for a reason the file, not the
+command, was keeping.
 
 `--glyphs` chooses the characters the bars, rules and expand markers use.
 `auto`, the default, reads `LC_ALL`, `LC_CTYPE` then `LANG` and uses block
@@ -143,12 +147,16 @@ never trims Host, a User, or a folder header: those are the shape of the tree
 rather than entries competing to be heaviest, and neither Users nor the
 host-level folders are ordered by the sort at all, so trimming them would drop
 whichever came last — losing the whole System section on a machine that happens
-to have two users. Cutting a row cuts its subtree with it. Like `--filter`, a
-surviving parent still shows the total it was built with, so `Host` keeps
-counting the whole machine, and `--top` applies after `--filter`, so
-`--filter chrome --top 3` is the three heaviest rows that match. Also like
-`--filter`, it is refused with `--json`: the JSON shape is a contract and a
-row limit is a human's presentation preference — slice it with `jq` instead.
+to have two users. Cutting a row cuts its subtree with it.
+
+Like `--filter`, a surviving parent still shows the total it was built with,
+so `Host` keeps counting the whole machine, and `--top` applies after
+`--filter`, so `--filter chrome --top 3` is the three heaviest rows that
+match.
+
+Also like `--filter`, it is refused with `--json`: the JSON shape is a
+contract and a row limit is a human's presentation preference — slice it with
+`jq` instead.
 
 `--desc` and `--asc` set the direction the `d` key toggles. Without one,
 `--sort age` meant whichever direction the saved view happened to hold, so the
@@ -187,19 +195,28 @@ Other users, User Services, Host-level Containers, and System start collapsed.
   own fill character as well as its own colour, and the legend prints that
   character beside the label (`█usr/▓sys/▒wait`), so the bars stay readable
   without colour — piped, recorded, on a monochrome terminal, or to anyone for
-  whom cyan and magenta are the same hue. Where memory is unified,
-  VRAM and GTT are carve-outs of that same pool, not a second tank, so the row
-  is one MEMORY bar whose width is MemTotal. Both header bars are drawn to the
-  same width, so the two `]` line up in one column rather than each row sizing
-  its bar to whatever text happens to sit beside it. With a discrete card the
+  whom cyan and magenta are the same hue. Where memory is unified, VRAM and
+  GTT are carve-outs of that same pool, not a second tank, so the row is one
+  MEMORY bar whose width is MemTotal. Both header bars are drawn to the same
+  width, so the two `]` line up in one column rather than each row sizing its
+  bar to whatever text happens to sit beside it. With a discrete card the
   MEMORY row splits in half: MEM against MemTotal, and VRAM against the card's
-  own total, and it is the first of those the CPU bar matches. GTT stays in the MEM bar either way — it is system RAM pinned for the
-  GPU, not card memory. That GTT slice, and the unified VRAM slice
-  beside it, add up only the drm clients heft can see, the same caveat as the Host row,
-  which sums only visible PIDs and so can sit below the header. Swap, when the
-  machine has any, is a third tank on that same row rather than a segment of
-  MEM: swapped pages are not in RAM. A machine with `SwapTotal: 0` gets no
-  swap tank and no `SWAP` figures at all.
+  own total, and it is the first of those the CPU bar matches. GTT stays in
+  the MEM bar either way — it is system RAM pinned for the GPU, not card
+  memory. That GTT slice, and the unified VRAM slice beside it, add up only
+  the drm clients heft can see, the same caveat as the Host row, which sums
+  only visible PIDs and so can sit below the header. How far below is not a
+  rounding error. An unprivileged reader cannot open `/proc/<pid>/fdinfo` for
+  a process it does not own, so every drm client inside a root-owned container
+  is invisible: measured on one desktop with a single such container running,
+  the kernel reported 45.7 GiB of GTT in use while heft's Host row accounted
+  for 18.1 GiB of it. When the question is how much of the card is in use
+  rather than which application is using it, read the kernel's own
+  `/sys/class/drm/card*/device/mem_info_*` totals. Swap, when the machine has
+  any, is a third tank on that same row rather than a segment of MEM: swapped
+  pages are not in RAM. A machine with `SwapTotal: 0` gets no swap tank and no
+  `SWAP` figures at all.
+
 - **User** is a unix uid. Terminals, shells, and the compositor live under that
   user — not as Host.
 - **Applications** vs **User Services**: a user-instance `*.service` whose name

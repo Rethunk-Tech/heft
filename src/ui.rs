@@ -550,10 +550,10 @@ fn cpu_header_line(tree: &HostTree, width: usize, bar_w: usize) -> Line<'static>
     ]);
     // No host `psi` tail here: it is text on the row whose point is a bar.
     // `--once` and `--json` still carry the figures, where nothing is drawn to
-    // scale. Measured before removing it: the tail was cancelling most of the
-    // suffix difference above, so taking it out alone moved the bars from four
-    // columns apart to fourteen — the alignment is what `bar_w` is for, not a
-    // side effect of the text that used to sit here.
+    // scale. Nor is a tail here a way to line the two bars up: measured, one
+    // cancels most of the suffix difference above by accident, and with no
+    // tail the bars sit fourteen columns apart rather than four. `bar_w` is
+    // what closes them.
     let fits = width.saturating_sub(prefix.len() + mid.len() + legend_len);
     let bar_w = bar_w.min(fits);
     let parts = [

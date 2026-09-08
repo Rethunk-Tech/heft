@@ -309,7 +309,8 @@ the `/proc/<pid>/stat` heft already reads for CPU, so neither costs a read.
 call that cannot be interrupted, which in practice means waiting on storage or
 a network filesystem. Such a process cannot be killed and gets no work done,
 but `%CORE` reads it as idle, so a machine grinding to a halt on a stuck NFS
-mount looks in every other column exactly like one that is quiet.
+mount looks in every other column exactly like one that is quiet. The column
+sits left of `%CORE` for that reason.
 
 It is field 3 of `/proc/<pid>/stat`, the line heft already reads for CPU and
 `THR`, so it costs no extra read.
@@ -425,8 +426,8 @@ repeatable, and overwrites whatever `view.json` held. `s` writes the list.
 ```
 
 Labels are the ones `c` cycles and `--sort` / `--hide` take: `name`, `nproc`,
-`threads`, `age`, `core`, `machine`, `pss`, `rss`, `swap`, `diskr`, `diskw`,
-`vram`, `gtt`, `gfx`, `compute`, `dstate`, `cpustall`, `iostall`, `memstall`,
+`threads`, `age`, `dstate`, `core`, `machine`, `pss`, `rss`, `swap`, `vram`,
+`gtt`, `gfx`, `compute`, `diskr`, `diskw`, `cpustall`, `iostall`, `memstall`,
 `netns_rx`, `netns_tx`. No file, or no key, shows every column. An unknown label
 in the file warns on stderr and is ignored; on `--hide` it is a usage error,
 the same split as `--sort`. `name` is refused — a table of numbers with no

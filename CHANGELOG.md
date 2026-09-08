@@ -66,6 +66,10 @@
   many identities sit under them, including zero. User rows are the login name
   only: the uid in parentheses looked like a count.
 
+- `D` sits left of `%CORE`, and `DISK R` / `DISK W` sit after `CMP`. `%CORE`
+  reads D-state as idle, so the count belongs beside it; disk rates belong
+  with the other per-interval costs, after GPU engine percentages.
+
 - The two header bars are drawn to one width, so the CPU and MEMORY brackets
   stack instead of each row sizing its bar around its own text. The MEM group
   spends more of its row on `] used/total` and a fourth legend label, so it

@@ -84,7 +84,7 @@ fn push_drm_text(texts: &mut Vec<String>, path: impl AsRef<Path>) {
     }
 }
 
-fn parse_fdinfo(text: &str) -> Option<ClientView> {
+fn parse_fdinfo(text: &str) -> Option<(u64, GpuCounters)> {
     let mut driver_ok = false;
     let mut id = None;
     let mut vram = None;
@@ -137,46 +137,37 @@ fn parse_fdinfo(text: &str) -> Option<ClientView> {
     if !(driver_ok || (text.contains("drm-client-id") && text.contains("drm-resident"))) {
         return None;
     }
-    Some(ClientView {
-        id: id?,
-        vram,
-        gtt,
-        gfx_ns,
-        compute_ns,
-        // xe sums run_ticks over every engine instance of the class while
-        // drm-total-cycles is one clock, so capacity is the divisor
-        // (docs.kernel.org/gpu/drm-usage-stats.html; xe/xe_drm_client.c `show_run_ticks` prints
-        // it only when it exceeds one). Dividing here rather than carrying
-        // capacity to the rate costs under one count in the ~1e10 that a
-        // second of GPU timestamp spans.
-        gfx_cycles: gfx_cycles.map(|c| c / gfx_capacity),
-        compute_cycles: compute_cycles.map(|c| c / compute_capacity),
-        total_cycles,
-    })
-}
-
-pub(crate) struct ClientView {
-    pub id: u64,
-    pub vram: Option<u64>,
-    pub gtt: Option<u64>,
-    pub gfx_ns: Option<u64>,
-    pub compute_ns: Option<u64>,
-    pub gfx_cycles: Option<u64>,
-    pub compute_cycles: Option<u64>,
-    pub total_cycles: Option<u64>,
+    Some((
+        id?,
+        GpuCounters {
+            vram_bytes: vram,
+            gtt_bytes: gtt,
+            gfx_ns,
+            compute_ns,
+            // xe sums run_ticks over every engine instance of the class while
+            // drm-total-cycles is one clock, so capacity is the divisor
+            // (docs.kernel.org/gpu/drm-usage-stats.html; xe/xe_drm_client.c `show_run_ticks` prints
+            // it only when it exceeds one). Dividing here rather than carrying
+            // capacity to the rate costs under one count in the ~1e10 that a
+            // second of GPU timestamp spans.
+            gfx_cycles: gfx_cycles.map(|c| c / gfx_capacity),
+            compute_cycles: compute_cycles.map(|c| c / compute_capacity),
+            total_cycles,
+        },
+    ))
 }
 
 fn merge_fdinfo_texts(texts: &[String]) -> GpuCounters {
-    let mut by_client: HashMap<u64, ClientView> = HashMap::new();
+    let mut by_client: HashMap<u64, GpuCounters> = HashMap::new();
     for text in texts {
-        if let Some(c) = parse_fdinfo(text) {
-            by_client.entry(c.id).or_insert(c);
+        if let Some((id, c)) = parse_fdinfo(text) {
+            by_client.entry(id).or_insert(c);
         }
     }
     let mut out = GpuCounters::default();
     for c in by_client.into_values() {
-        out.vram_bytes = sum_opt(out.vram_bytes, c.vram);
-        out.gtt_bytes = sum_opt(out.gtt_bytes, c.gtt);
+        out.vram_bytes = sum_opt(out.vram_bytes, c.vram_bytes);
+        out.gtt_bytes = sum_opt(out.gtt_bytes, c.gtt_bytes);
         out.gfx_ns = sum_opt(out.gfx_ns, c.gfx_ns);
         out.compute_ns = sum_opt(out.compute_ns, c.compute_ns);
         out.gfx_cycles = sum_opt(out.gfx_cycles, c.gfx_cycles);

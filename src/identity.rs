@@ -28,18 +28,14 @@ pub(crate) fn in_user_slice(cgroup: &str) -> bool {
 }
 
 pub(crate) fn user_unit(cgroup: &str) -> Option<String> {
-    let after = if let Some(i) = cgroup.find("user@") {
-        let rest = &cgroup[i..];
-        let slash = rest.find('/')?;
-        let rest = &rest[slash + 1..];
-        if rest.is_empty() {
-            return None;
+    let after = match cgroup.find("user@") {
+        Some(i) => {
+            let rest = &cgroup[i..];
+            &rest[rest.find('/')? + 1..]
         }
-        rest
-    } else {
-        cgroup.rsplit('/').next()?
+        None => cgroup,
     };
-    let leaf = after.rsplit('/').next().unwrap_or(after);
+    let leaf = after.rsplit('/').next()?;
     if leaf.is_empty() {
         return None;
     }

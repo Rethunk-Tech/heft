@@ -414,7 +414,7 @@ container title is `docker-<12hex>`. Stopped containers (no PID) do not appear.
 
 | tree | path | what |
 | --- | --- | --- |
-| config | `$XDG_CONFIG_HOME/heft/view.json` (default `~/.config/heft/view.json`) | saved sort, direction, filter, and hidden columns (after `s`). `--user` and `--top` are deliberately never saved |
+| config | `$XDG_CONFIG_HOME/heft/view.json` (default `~/.config/heft/view.json`) | saved sort, direction, filter, hidden columns, and column order (after `s`). `--user` and `--top` are deliberately never saved |
 | config | `$XDG_CONFIG_HOME/heft/grouping.json` | your grouping overrides, if you write one |
 
 v1 creates no `$XDG_STATE_HOME/heft` or `$XDG_CACHE_HOME/heft`. The only file

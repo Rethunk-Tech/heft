@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.5.0 - 2026-09-08
+
 ### Fixed
 
 - The TUI highlight followed a raw index into the flattened list, so a new

@@ -97,7 +97,12 @@ pub fn parse_fdinfo(text: &str) -> Option<ClientView> {
     let mut gfx_capacity = 1;
     let mut compute_capacity = 1;
     for line in text.lines() {
-        let (k, v) = split_kv(line)?;
+        // A line that is not `key: value` is skipped, not fatal: `?` here
+        // discarded every key already read and lost the whole client, where
+        // everything else in heft renders what it could not read as blank.
+        let Some((k, v)) = split_kv(line) else {
+            continue;
+        };
         // amdgpu, i915 and xe all implement the same DRM fdinfo interface
         // (docs.kernel.org/gpu/drm-usage-stats.html)
         // but name their regions and engines differently. i915 regions are
@@ -225,6 +230,16 @@ mod tests {
 
     /// Shape taken from the example in drivers/gpu/drm/xe/xe_drm_client.c.
     const XE_SAMPLE: &str = "drm-driver:\txe\ndrm-client-id:\t3\ndrm-pdev:\t0000:03:00.0\ndrm-total-gtt:\t192 KiB\ndrm-resident-gtt:\t192 KiB\ndrm-total-vram0:\t23992 KiB\ndrm-resident-vram0:\t23992 KiB\ndrm-cycles-rcs:\t28257900\ndrm-total-cycles-rcs:\t7655183225\n";
+
+    #[test]
+    fn a_line_without_a_colon_does_not_lose_the_client() {
+        let mut text = SAMPLE.to_string();
+        text.insert_str(0, "not a key value line\n");
+        let g = merge_fdinfo_texts(&[text]);
+        assert_eq!(g.vram_bytes, Some(48596 * 1024));
+        assert_eq!(g.gtt_bytes, Some(100 * 1024));
+        assert_eq!(g.gfx_ns, Some(1000));
+    }
 
     #[test]
     fn i915_keys_map_onto_the_amdgpu_shape() {

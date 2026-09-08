@@ -191,7 +191,7 @@ fn flatten(
             rows.push(Flat {
                 id: id.clone(),
                 depth: 1,
-                name: format!("{} ({uid})", user.name),
+                name: user.name.clone(),
                 nproc: user_nproc(user),
                 metrics: user_metrics(user),
                 expandable: true,
@@ -245,7 +245,7 @@ fn push_folder(
     rows.push(Flat {
         id: id.to_string(),
         depth,
-        name: title.to_string(),
+        name: format!("{title} ({})", idents.len()),
         nproc: folder_nproc(idents),
         metrics: sum_idents(idents),
         expandable: !idents.is_empty(),
@@ -1550,8 +1550,29 @@ mod tests {
                 .unwrap_or_else(|| panic!("missing {id}"))
         };
         assert!(find("apps").expandable);
+        assert_eq!(find("apps").name, "Applications (1)");
         assert!(!find("services").expandable);
+        assert_eq!(find("services").name, "User Services (0)");
         assert!(!find("containers").expandable);
+        assert_eq!(find("containers").name, "Containers (0)");
+        assert_eq!(
+            rows.iter()
+                .find(|r| r.id == format!("user:{me}"))
+                .unwrap()
+                .name,
+            "me"
+        );
+        assert_eq!(
+            rows.iter()
+                .find(|r| r.id == "host/containers")
+                .unwrap()
+                .name,
+            "Containers (0)"
+        );
+        assert_eq!(
+            rows.iter().find(|r| r.id == "host/system").unwrap().name,
+            "System (0)"
+        );
         assert!(
             !rows
                 .iter()

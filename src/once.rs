@@ -670,7 +670,7 @@ fn table_rows(tree: &HostTree) -> Vec<TableRow> {
     for user in &tree.users {
         rows.push(TableRow {
             depth: 1,
-            name: format!("{} ({})", user.name, user.uid),
+            name: user.name.clone(),
             nproc: user_nproc(user),
             metrics: user_metrics(user),
             trimmable: false,
@@ -687,7 +687,7 @@ fn table_rows(tree: &HostTree) -> Vec<TableRow> {
 fn push_folder(rows: &mut Vec<TableRow>, depth: u16, name: &str, idents: &[IdentNode]) {
     rows.push(TableRow {
         depth,
-        name: name.into(),
+        name: format!("{name} ({})", idents.len()),
         nproc: folder_nproc(idents),
         metrics: sum_idents(idents),
         trimmable: false,
@@ -1156,7 +1156,7 @@ mod tests {
         write_rows(&mut out, &cols, &folder_rows(1536.0)).unwrap();
         assert_eq!(
             String::from_utf8(out).unwrap(),
-            "NAME                           %CORE   %MACH      PSS      RSS   SWAP     VRAM      GTT\n  Applications                  12.2     1.5     1.5K     2.0K            1.0M         \n    an-identity-name-long-e\u{2026}    12.2     1.5     1.5K     2.0K            1.0M         \n"
+            "NAME                           %CORE   %MACH      PSS      RSS   SWAP     VRAM      GTT\n  Applications (1)              12.2     1.5     1.5K     2.0K            1.0M         \n    an-identity-name-long-e\u{2026}    12.2     1.5     1.5K     2.0K            1.0M         \n"
         );
     }
 
@@ -1234,7 +1234,7 @@ mod tests {
         let filter = Filter::new("firefox").expect("test patterns compile");
         keep_matches(&mut rows, &filter, |r| (r.depth, r.name.as_str()));
         let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
-        assert_eq!(names, ["Host", "u (1000)", "Applications", "firefox"]);
+        assert_eq!(names, ["Host", "u", "Applications (2)", "firefox"]);
         assert_eq!(rows[0].metrics.pss_bytes, Some(3072));
     }
 
@@ -1329,14 +1329,14 @@ mod tests {
         write_rows(&mut out, &cols, &folder_rows(1536.0)).unwrap();
         assert_eq!(
             String::from_utf8(out).unwrap(),
-            "NAME                            N   THR   AGE   %CORE   %MACH      PSS      RSS   SWAP   DISK R   DISK W     VRAM      GTT   GFX   CMP    D CPU ST  IO ST MEM ST NETNS RX NETNS TX\n  Applications                  7    19    3h    12.2     1.5     1.5K     2.0K          1.5K/s              1.0M            3.0          2                                       \n    an-identity-name-long-e\u{2026}    7    19    3h    12.2     1.5     1.5K     2.0K          1.5K/s              1.0M            3.0          2    0.5   12.0                         \n"
+            "NAME                            N   THR   AGE   %CORE   %MACH      PSS      RSS   SWAP   DISK R   DISK W     VRAM      GTT   GFX   CMP    D CPU ST  IO ST MEM ST NETNS RX NETNS TX\n  Applications (1)              7    19    3h    12.2     1.5     1.5K     2.0K          1.5K/s              1.0M            3.0          2                                       \n    an-identity-name-long-e\u{2026}    7    19    3h    12.2     1.5     1.5K     2.0K          1.5K/s              1.0M            3.0          2    0.5   12.0                         \n"
         );
 
         let mut out = Vec::new();
         write_rows(&mut out, &cols, &folder_rows(1_030_963.0)).unwrap();
         assert_eq!(
             String::from_utf8(out).unwrap(),
-            "  Applications                  7    19    3h    12.2     1.5     1.5K     2.0K        1006.8K/s              1.0M            3.0          2                                       \n    an-identity-name-long-e\u{2026}    7    19    3h    12.2     1.5     1.5K     2.0K        1006.8K/s              1.0M            3.0          2    0.5   12.0                         \n"
+            "  Applications (1)              7    19    3h    12.2     1.5     1.5K     2.0K        1006.8K/s              1.0M            3.0          2                                       \n    an-identity-name-long-e\u{2026}    7    19    3h    12.2     1.5     1.5K     2.0K        1006.8K/s              1.0M            3.0          2    0.5   12.0                         \n"
         );
     }
 

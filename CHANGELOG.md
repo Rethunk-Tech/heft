@@ -62,6 +62,10 @@
 
 ### Changed
 
+- Folder headings (Applications, User Services, Containers, System) show how
+  many identities sit under them, including zero. User rows are the login name
+  only: the uid in parentheses looked like a count.
+
 - The two header bars are drawn to one width, so the CPU and MEMORY brackets
   stack instead of each row sizing its bar around its own text. The MEM group
   spends more of its row on `] used/total` and a fourth legend label, so it

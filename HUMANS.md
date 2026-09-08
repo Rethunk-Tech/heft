@@ -255,8 +255,11 @@ an empty gap — and becomes one when a row appears.
   pages are not in RAM. A machine with `SwapTotal: 0` gets no swap tank and no
   `SWAP` figures at all.
 
-- **User** is a unix uid. Terminals, shells, and the compositor live under that
-  user — not as Host.
+- **User** is a unix uid, shown by login name. Terminals, shells, and the
+  compositor live under that user — not as Host.
+- Folder headings — Applications, User Services, Containers, System — carry
+  the count of identities under them, including zero. That count is the
+  entries, not `N` (processes).
 - **Applications** vs **User Services**: a user-instance `*.service` whose name
   does not start with `app-` is a user service (`syncthing.service`,
   `org.gnome.Shell@user.service`). Known compositors and session plumbing sit

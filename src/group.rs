@@ -268,7 +268,9 @@ fn raw_place(p: &Process, ctx: &Ctx<'_>) -> Place {
 /// beats every built-in table; they run only on the two user-owned folders, so
 /// no override can pull a container or a kernel thread out of where it belongs.
 fn override_place(ov: &Overrides, place: Place) -> Place {
-    if ov.is_empty() || !matches!(place.folder, Folder::Applications | Folder::UserServices) {
+    if ov.no_placement_overrides()
+        || !matches!(place.folder, Folder::Applications | Folder::UserServices)
+    {
         return place;
     }
     // Fold first: the pin then names the row the user is left looking at.

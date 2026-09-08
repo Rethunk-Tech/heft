@@ -170,6 +170,13 @@ flattened rows, `--once` over `once::table_rows`. Rows are built from the whole
 tree and filtered afterwards, so an ancestor row keeps the total it was built
 with rather than the total of what survived.
 
+The two walkers do not emit the same rows, deliberately: `ui::push_folder`
+descends folder → identity → instance → process, gated on what is expanded,
+while `once::push_folder` stops at folder → identity → member container. So
+`--filter` searches strictly fewer rows than `/` does, and the filter is the
+same function over two different row sets rather than one behaviour on two
+surfaces.
+
 `glyph` resolves the character set once in `main` into a `OnceLock` rather
 than threading it through every render site, since it cannot change while heft
 runs. Every ASCII substitute is one column wide: the header lines are built to

@@ -144,9 +144,12 @@ impl Overrides {
         self.fold.get(ident).map(String::as_str)
     }
 
-    /// True when nothing is overridden, so the per-process path can skip the
-    /// lookups entirely on the overwhelmingly common no-config run.
-    pub(crate) fn is_empty(&self) -> bool {
+    /// True when no override can move a row between folders, so the
+    /// per-process path skips the lookups on the common no-config run.
+    /// `container_owners` is deliberately not counted: it is consulted in
+    /// `containers::insert_resolved`, and an override can never move a
+    /// container row anyway.
+    pub(crate) fn no_placement_overrides(&self) -> bool {
         self.applications.is_empty() && self.user_services.is_empty() && self.fold.is_empty()
     }
 

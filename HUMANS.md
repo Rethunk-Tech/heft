@@ -97,6 +97,12 @@ way a stale saved view does. `--filter` is the `/` key: it keeps matching rows
 **and their parents**, so the tree stays a tree, and a parent still shows the
 total it always did rather than the total of what survived.
 
+The two do not search the same rows, because the two surfaces do not have the
+same rows. `--once` prints down to an identity and its containers; the TUI also
+has an instance row under an identity, and the individual processes under that
+once you expand them. So `/firefox` in the TUI can match a row that
+`--filter firefox` never sees, and the flag is the narrower of the two.
+
 The pattern is a regex, so `--filter '^(code|claude)$'` picks exactly two rows
 where a substring would also drag in every `code-helper` beside them. It is
 case-insensitive unless you say otherwise — a bare `firefox` matches `Firefox`

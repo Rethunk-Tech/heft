@@ -273,7 +273,9 @@ pub(crate) fn host_avg10(tree: &mut HostTree) {
 }
 
 /// `  psi 1.2/0.4/0.0` — cpu, io, memory, in the kernel's own 10-second
-/// average, for the `--once` header and the TUI's CPU row alike. Empty when
+/// average, for the `--once` and `--json` host line. Not the TUI header: that
+/// row exists to draw a bar to scale, and a text tail on it costs the bar the
+/// columns it needs to line up with the one below. Empty when
 /// the kernel publishes no pressure at all, the way a swapless host gets no
 /// swap tank rather than a zeroed one; a single resource the kernel does not
 /// account shows `-` rather than shifting the other two along.

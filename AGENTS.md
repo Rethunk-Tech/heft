@@ -45,6 +45,15 @@ The hand-rolled helpers — the `/proc` and fdinfo field parsers,
 `containers::unix_get` — have no std equivalent at the 1.98 floor. That is
 checked, not assumed, so replacing them is not pending work.
 
+Three further consolidations are measured and refused. The `once` and `ui`
+walkers look duplicated but emit deliberately different row sets, which is
+what makes `--filter` narrower than `/`. The test-module node builders are
+shared by nothing because sharing them needs a production `#[cfg(test)] pub
+mod` to serve four eight-line helpers. `containers::index_ids` keys both the
+full and the 12-hex id while `get` also falls back through `hex12`; the
+redundancy costs two lines and the alternative silently loses a row if a
+runtime ever reports a truncated id.
+
 ## Grouping invariants
 
 - **Host** is the machine, not the compositor or a terminal.

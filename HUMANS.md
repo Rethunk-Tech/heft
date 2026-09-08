@@ -11,7 +11,21 @@ install -Dm755 heft-x86_64-unknown-linux-musl ~/.local/bin/heft
 
 Every release carries four binaries — `x86_64` and `aarch64`, each in a `musl`
 and a `gnu` build — with a `.sha256` beside each
-(`sha256sum -c heft-<target>.sha256`).
+(`sha256sum -c heft-<target>.sha256`). Completions (bash, zsh, fish) and a
+man page are `heft-completions-man.tar.gz` on that same release, generated from
+the same clap definition the binary parses:
+
+```sh
+curl -fsSLO https://github.com/Rethunk-Tech/heft/releases/latest/download/heft-completions-man.tar.gz
+curl -fsSLO https://github.com/Rethunk-Tech/heft/releases/latest/download/heft-completions-man.tar.gz.sha256
+sha256sum -c heft-completions-man.tar.gz.sha256
+mkdir -p /tmp/heft-assets
+tar -xzf heft-completions-man.tar.gz -C /tmp/heft-assets
+install -Dm644 /tmp/heft-assets/heft.bash ~/.local/share/bash-completion/completions/heft
+install -Dm644 /tmp/heft-assets/_heft     ~/.local/share/zsh/site-functions/_heft
+install -Dm644 /tmp/heft-assets/heft.fish ~/.config/fish/completions/heft.fish
+install -Dm644 /tmp/heft-assets/heft.1    ~/.local/share/man/man1/heft.1
+```
 
 The checksum proves the download arrived intact. To also prove it is the
 binary this repository built, every release binary carries a signed provenance
@@ -21,7 +35,7 @@ statement:
 gh attestation verify heft-x86_64-unknown-linux-musl --repo Rethunk-Tech/heft
 ```
 
-Or build it, which is also how you get completions and the man page:
+Or build it:
 
 ```sh
 git clone https://github.com/Rethunk-Tech/heft.git && cd heft
@@ -29,11 +43,14 @@ cargo build --release
 install -Dm755 target/release/heft ~/.local/bin/heft
 ```
 
-`cargo build` also generates shell completions and a man page from the same
-flag definitions the binary uses, under a hashed `OUT_DIR`:
+A local `cargo build` writes the same four files under a hashed `OUT_DIR`.
+Take the newest `heft.1`, not the first directory named `assets`: an earlier
+crate build leaves its hashed dir in `target/`, and `head -1` can install
+stale completions that predate `src/cli.rs`.
 
 ```sh
-assets=$(find target/release/build -type d -name assets | head -1)
+man=$(find target/release/build -name heft.1 -printf '%T@ %p\n' | sort -rn | head -1 | cut -d' ' -f2-)
+assets=$(dirname "$man")
 install -Dm644 "$assets/heft.bash" ~/.local/share/bash-completion/completions/heft
 install -Dm644 "$assets/_heft"     ~/.local/share/zsh/site-functions/_heft
 install -Dm644 "$assets/heft.fish" ~/.config/fish/completions/heft.fish
@@ -450,4 +467,8 @@ Contributor gates live in [CONTRIBUTING.md](CONTRIBUTING.md).
 ```sh
 rm -f ~/.local/bin/heft
 rm -rf ~/.config/heft
+rm -f ~/.local/share/bash-completion/completions/heft
+rm -f ~/.local/share/zsh/site-functions/_heft
+rm -f ~/.config/fish/completions/heft.fish
+rm -f ~/.local/share/man/man1/heft.1
 ```

@@ -208,7 +208,8 @@ fn opt_u(v: Option<u64>) -> Option<f64> {
     v.map(|x| x as f64)
 }
 
-/// The columns one surface renders, as indices into `COLUMNS` in table order.
+/// The columns one surface renders, as indices into `COLUMNS` in display
+/// order.
 ///
 /// Visibility is resolved once, here, so no render site branches on it — and
 /// nothing about it reaches sampling: heft reads `/proc` files, not columns, so
@@ -217,15 +218,16 @@ fn opt_u(v: Option<u64>) -> Option<f64> {
 pub(crate) struct Columns(Vec<usize>);
 
 impl Columns {
-    /// `view.hide_columns` applied to `COLUMNS`.
+    /// `view.hide_columns` and `view.column_order` applied to `COLUMNS`.
     ///
-    /// An unknown label warns and is ignored, the way a malformed
+    /// An unknown or duplicate label warns and is ignored, the way a malformed
     /// `grouping.json` warns and leaves grouping alone: a monitor that refuses
     /// to start over a stale config entry is worse than one with no config.
     /// This is deliberately not `Sort::from_label`'s silent fallback — a
-    /// mistyped sort still produces a usable table, a mistyped hide entry would
-    /// hide nothing and say nothing.
+    /// mistyped sort still produces a usable table, a mistyped hide or order
+    /// entry would hide nothing / move nothing and say nothing.
     pub(crate) fn from_view(view: &View) -> Self {
+        let path = config::view_path();
         let mut hidden: Vec<&str> = Vec::new();
         for label in &view.hide_columns {
             if label == COLUMNS[0].label {
@@ -238,12 +240,44 @@ impl Columns {
             } else {
                 eprintln!(
                     "heft: ignoring unknown column {label:?} in {}",
-                    config::view_path().display()
+                    path.display()
                 );
             }
         }
+        let mut used = vec![false; COLUMNS.len()];
+        let mut listed = Vec::new();
+        for label in &view.column_order {
+            match COLUMNS.iter().position(|c| c.label == label.as_str()) {
+                Some(i) if used[i] => {
+                    eprintln!(
+                        "heft: ignoring duplicate column {label:?} in {}",
+                        path.display()
+                    );
+                }
+                Some(i) => {
+                    used[i] = true;
+                    listed.push(i);
+                }
+                None => {
+                    eprintln!(
+                        "heft: ignoring unknown column {label:?} in {}",
+                        path.display()
+                    );
+                }
+            }
+        }
+        let mut idxs = Vec::with_capacity(COLUMNS.len());
+        // `name` stays first unless the list placed it. `--order pss` then
+        // reads as "pss after the tree names", not a table with no labels on
+        // the left.
+        if !used[0] {
+            idxs.push(0);
+            used[0] = true;
+        }
+        idxs.extend(listed);
+        idxs.extend((0..COLUMNS.len()).filter(|&i| !used[i]));
         Self(
-            (0..COLUMNS.len())
+            idxs.into_iter()
                 .filter(|&i| !hidden.contains(&COLUMNS[i].label))
                 .collect(),
         )
@@ -295,19 +329,6 @@ impl Sort {
             return Sort(cols.0[0]);
         };
         Sort(cols.0[(p + 1) % cols.0.len()])
-    }
-
-    /// Visible column after `self` in table order, wrapping. `H` uses this
-    /// rather than `next`: hiding the default PSS sort must land on RSS, not
-    /// jump to `name` the way a stale saved view does on `c`.
-    pub(crate) fn after_hiding(self, cols: &Columns) -> Self {
-        cols.0
-            .iter()
-            .copied()
-            .find(|&i| i > self.0)
-            .or(cols.0.first().copied())
-            .map(Sort)
-            .unwrap_or(Sort(0))
     }
 }
 
@@ -470,8 +491,11 @@ fn sort_procs(procs: &mut [ProcNode], sort: Sort, desc: bool) {
     sort_rows(procs, sort, desc, |x| (&x.name, 1, &x.metrics));
 }
 
-/// The fixed-width layout: name left-aligned, every other column right, one
-/// space between. Header and body share it so they cannot drift apart.
+/// The fixed-width layout: name left-aligned wherever it sits, every other
+/// column right, one space between. Header and body share it so they cannot
+/// drift apart. Padded by column rather than by `{:<w$}`, which counts chars:
+/// the two differ for any wide character and the table is built to land on
+/// exact columns.
 fn layout(cols: &Columns, cell: impl Fn(&Column) -> String) -> String {
     let mut line = String::new();
     for (i, col) in cols.iter().enumerate() {
@@ -480,12 +504,8 @@ fn layout(cols: &Columns, cell: impl Fn(&Column) -> String) -> String {
         }
         let w = usize::from(col.width);
         let text = cell(col);
-        // The name column is the only left-aligned one, and it cannot be
-        // hidden, so the first rendered column is always it. Padded by column
-        // rather than by `{:<w$}`, which counts chars: the two differ for any
-        // wide character and the table is built to land on exact columns.
         let pad = w.saturating_sub(text.width());
-        if i == 0 {
+        if col.label == "name" {
             line.push_str(&text);
             line.extend(std::iter::repeat_n(' ', pad));
         } else {
@@ -1114,6 +1134,38 @@ mod tests {
     }
 
     #[test]
+    fn column_order_pins_listed_after_name() {
+        let cols = Columns::from_view(&View {
+            column_order: vec!["pss".into(), "rss".into()],
+            ..View::default()
+        });
+        let got = labels(&cols);
+        assert_eq!(&got[..4], ["name", "pss", "rss", "nproc"]);
+        assert_eq!(got.len(), COLUMNS.len());
+        assert_eq!(got.iter().filter(|l| **l == "pss").count(), 1);
+    }
+
+    #[test]
+    fn column_order_can_move_name() {
+        let cols = Columns::from_view(&View {
+            column_order: vec!["pss".into(), "name".into()],
+            ..View::default()
+        });
+        assert_eq!(&labels(&cols)[..3], ["pss", "name", "nproc"]);
+    }
+
+    #[test]
+    fn column_order_then_hide_drops_the_pinned_column() {
+        let cols = Columns::from_view(&View {
+            column_order: vec!["pss".into(), "rss".into()],
+            hide_columns: vec!["rss".into()],
+            ..View::default()
+        });
+        assert_eq!(&labels(&cols)[..3], ["name", "pss", "nproc"]);
+        assert!(!labels(&cols).contains(&"rss"));
+    }
+
+    #[test]
     fn hide_column_refuses_name_and_unhide_pops() {
         let mut view = View::default();
         assert!(!hide_column(&mut view, "name"));
@@ -1131,14 +1183,16 @@ mod tests {
     }
 
     #[test]
-    fn hiding_the_sort_column_lands_on_the_next_in_table_order() {
-        let cols = hiding(&["pss"]);
-        assert_eq!(Sort::from_label("pss").after_hiding(&cols).label(), "rss");
+    fn hiding_the_sort_column_lands_on_the_next_in_display_order() {
+        let cols = every_column();
+        assert_eq!(Sort::from_label("pss").next(&cols).label(), "rss");
+        let cols = Columns::from_view(&View {
+            column_order: vec!["pss".into(), "core".into()],
+            ..View::default()
+        });
+        assert_eq!(Sort::from_label("pss").next(&cols).label(), "core");
         let cols = hiding(&["netns_tx"]);
-        assert_eq!(
-            Sort::from_label("netns_tx").after_hiding(&cols).label(),
-            "name"
-        );
+        assert_eq!(Sort::from_label("netns_tx").next(&cols).label(), "name");
     }
 
     /// Hiding is presentation: the cells disappear, the widths of what is left

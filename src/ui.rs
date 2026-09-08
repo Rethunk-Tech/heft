@@ -392,13 +392,11 @@ fn handle_key(
         KeyCode::Char('d') => app.view.desc = !app.view.desc,
         KeyCode::Char('H') => {
             let label = app.view.sort.clone();
+            let next = Sort::from_label(&label).next(&app.cols);
             if hide_column(&mut app.view, &label) {
                 refresh_columns(app);
                 if app.cols.iter().all(|c| c.label != app.view.sort) {
-                    app.view.sort = Sort::from_label(&app.view.sort)
-                        .after_hiding(&app.cols)
-                        .label()
-                        .into();
+                    app.view.sort = next.label().into();
                 }
                 app.status = format!("hidden {label}");
             } else {
@@ -479,7 +477,6 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &App, rows: &[Flat]) {
     render_rule(f, chunks[1]);
 
     let skip = (app.col_off as usize).min(app.cols.len().saturating_sub(1));
-    let shown: Vec<&str> = app.cols.iter().map(|c| c.header).skip(skip).collect();
     let start = app.row_off.min(rows.len());
     let end = start.saturating_add(app.row_vis.max(1)).min(rows.len());
     let mut table_rows = Vec::new();
@@ -507,23 +504,23 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &App, rows: &[Flat]) {
             row
         });
     }
-    // Only the unscrolled view keeps the declared widths; once the name column
-    // is off-screen every remaining column is numeric and shares one width.
-    let widths: Vec<Constraint> = if skip == 0 {
-        app.cols
-            .iter()
-            .enumerate()
-            .map(|(i, c)| {
-                if i == 0 {
-                    Constraint::Min(c.width)
-                } else {
-                    Constraint::Length(c.width)
-                }
-            })
-            .collect()
-    } else {
-        shown.iter().map(|_| Constraint::Length(8)).collect()
-    };
+    // Name keeps Min so the tree can use leftover width. Once it is scrolled
+    // off, every remaining column is numeric and shares one width.
+    let name_on_screen = app.cols.iter().skip(skip).any(|c| c.label == "name");
+    let widths: Vec<Constraint> = app
+        .cols
+        .iter()
+        .skip(skip)
+        .map(|c| {
+            if c.label == "name" {
+                Constraint::Min(c.width)
+            } else if name_on_screen {
+                Constraint::Length(c.width)
+            } else {
+                Constraint::Length(8)
+            }
+        })
+        .collect();
     let table = Table::new(table_rows, widths)
         .header(sort_header(app.cols.iter().skip(skip), &app.view.sort));
     f.render_widget(table, chunks[2]);

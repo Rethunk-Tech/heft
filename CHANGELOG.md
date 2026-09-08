@@ -37,6 +37,11 @@
   distinction, which is why the variable could be answered by dropping styling
   rather than by adding a second render path.
 
+- `--order` / `column_order` in `view.json`: left-to-right column order,
+  repeatable, overwriting a saved list the way `--hide` does. Unlisted columns
+  keep compiled order after the named ones; `name` stays first unless the
+  list includes it. `--json` refuses the flag.
+
 - `H` hides the current sort column and `u` puts the last hidden one back;
   `--hide` does the same on `--once` (repeatable) and overwrites a saved list.
   `hide_columns` in `view.json` was already the store; it was only writable by

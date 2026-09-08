@@ -74,6 +74,7 @@ heft --once --user 1000   # only this user's branch (name or uid, repeatable)
 heft --once --sort age --asc   # low to high, rather than the saved direction
 heft --once --top 5       # the five heaviest rows under each parent
 heft --once --hide vram --hide gtt
+heft --once --order pss --order rss --order core
 heft --json --follow      # one JSON document per line, per interval, forever
 heft --glyphs ascii       # bars and markers without block characters
 ```
@@ -109,7 +110,7 @@ A one-shot `--json` / `--once` takes two `/proc` walks separated by
 instead, and there `--pss-interval` applies.
 
 `--sort` takes the labels the `c` key cycles and `view.json` saves (listed
-under [Hiding columns](#hiding-columns)); a name that is not one of them is a
+under [Columns](#columns)); a name that is not one of them is a
 usage error, so a typo is told to you rather than quietly sorting by PSS the
 way a stale saved view does. `--filter` is the `/` key: it keeps matching rows
 **and their parents**, so the tree stays a tree, and a parent still shows the
@@ -213,13 +214,14 @@ folder rows for "keep the parents" to mean anything (filter it with `jq`).
 | `d` | reverse the sort direction |
 | `H` | hide the current sort column (`name` is refused) |
 | `u` | unhide the last hidden column |
-| `s` | save sort, filter, and hidden columns to `$XDG_CONFIG_HOME/heft/view.json` |
+| `s` | save sort, filter, hidden columns, and column order to `$XDG_CONFIG_HOME/heft/view.json` |
 | `?` / `F1` | toggle the key help overlay |
 
 Sorting applies to every level of the tree. The TUI reverses the header of
 the column `c` is sorting by, so the sort is on the table as well as in the
-footer (`c sort (pss)`). Sort, filter, and hidden columns last only for this
-session until you press `s`; starting heft again loads that file if it exists.
+footer (`c sort (pss)`). Sort, filter, hidden columns, and column order last
+only for this session until you press `s`; starting heft again loads that file
+if it exists.
 
 Default expand: Host, your user, Applications, and that user's Containers.
 Other users, User Services, Host-level Containers, and System start collapsed.
@@ -414,28 +416,43 @@ heft writes is that config directory; the only other state it touches is the
 terminal it is drawing on — the alternate screen, and the termios settings it
 restores on the way out. Never `/proc`, sysfs, or cgroup files.
 
-### Hiding columns
+### Columns
 
 The table has twenty columns and most terminals cannot hold them. `H` hides
-the column you are sorting by (and moves the sort to the next visible one);
-`u` puts the last hidden column back. `--hide` does the same for `--once`,
-repeatable, and overwrites whatever `view.json` held. `s` writes the list.
+the column you are sorting by (and moves the sort to the next visible one in
+the order on screen); `u` puts the last hidden column back. `--hide` does the
+same for `--once`, repeatable, and overwrites whatever `view.json` held.
+
+`--order` sets left-to-right order, also repeatable, and also overwrites the
+saved list. Columns you name come first, in that order; anything you leave out
+keeps its default place after them. `name` stays first unless you include it,
+so `--order pss --order rss` is "those two after the tree names" rather than a
+table with no labels on the left. A label listed twice on the command line is a
+usage error; in the file the extra is warned and ignored.
+
+`s` writes both lists.
 
 ```json
-{ "sort": "pss", "desc": true, "hide_columns": ["vram", "gtt", "gfx", "compute"] }
+{
+  "sort": "pss",
+  "desc": true,
+  "hide_columns": ["vram", "gtt", "gfx", "compute"],
+  "column_order": ["pss", "rss", "core"]
+}
 ```
 
-Labels are the ones `c` cycles and `--sort` / `--hide` take: `name`, `nproc`,
-`threads`, `age`, `dstate`, `core`, `machine`, `pss`, `rss`, `swap`, `vram`,
-`gtt`, `gfx`, `compute`, `diskr`, `diskw`, `cpustall`, `iostall`, `memstall`,
-`netns_rx`, `netns_tx`. No file, or no key, shows every column. An unknown label
-in the file warns on stderr and is ignored; on `--hide` it is a usage error,
-the same split as `--sort`. `name` is refused — a table of numbers with no
-labels is unreadable.
+Labels are the ones `c` cycles and `--sort` / `--hide` / `--order` take:
+`name`, `nproc`, `threads`, `age`, `dstate`, `core`, `machine`, `pss`, `rss`,
+`swap`, `vram`, `gtt`, `gfx`, `compute`, `diskr`, `diskw`, `cpustall`,
+`iostall`, `memstall`, `netns_rx`, `netns_tx`. No file, or no key, shows every
+column in compiled order. An unknown label in the file warns on stderr and is
+ignored; on `--hide` or `--order` it is a usage error, the same split as
+`--sort`. `name` cannot be hidden — a table of numbers with no labels is
+unreadable — but it can be moved.
 
-Hiding is presentation only: heft reads the same `/proc` files either way, `c`
-skips over what it cannot show, and `--json` ignores the list entirely. The
-flag is refused with `--json`.
+Hiding and order are presentation only: heft reads the same `/proc` files
+either way, `c` skips over what it cannot show, and `--json` ignores both lists
+entirely. Both flags are refused with `--json`.
 
 ## Grouping overrides
 

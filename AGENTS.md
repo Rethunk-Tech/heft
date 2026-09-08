@@ -26,7 +26,7 @@ src/classify.rs      launcher / worker / shell / terminal / compositor tables
 src/identity.rs      cgroup parse, merge key + display name
 src/containers.rs    GET-only docker/podman; project vs per-container
 src/group.rs         Host → User → Applications | User Services | Containers, System
-src/config.rs        XDG view.json (sort, filter, hide_columns; write on save) and grouping.json (read-only)
+src/config.rs        XDG view.json (sort, filter, hide_columns, column_order; write on save) and grouping.json (read-only)
 src/once.rs          columns, tree ordering, table and JSON
 src/ui.rs            ratatui header + tree table
 src/tty.rs           panic hook + signal handler; restores the terminal
@@ -131,14 +131,15 @@ record.
 
 `main` resolves one `View` and hands it to whichever surface runs, so
 precedence lives in one place: `--sort`, `--asc` / `--desc`, `--filter`,
-`--user`, `--top` and `--hide` overwrite whatever the saved view held, and only
-`sort`, `desc`, `filter` and `hide_columns` are ever read back from it —
-`users` and `top` are `#[serde(skip)]`. `--once` starts from `config::load_view()`; `--json` starts
-from `View::default()` and never reads the file, because a human's saved
-preference must not reshape a documented contract. `--filter` and `--top`
-are `conflicts_with = "json"` because the JSON tree has no folder rows, so
-"keep the ancestors" has nothing to mean there. `--hide` is too: a column
-preference is not part of the contract.
+`--user`, `--top`, `--hide` and `--order` overwrite whatever the saved view
+held, and only `sort`, `desc`, `filter`, `hide_columns` and `column_order` are
+ever read back from it — `users` and `top` are `#[serde(skip)]`. `--once`
+starts from `config::load_view()`; `--json` starts from `View::default()` and
+never reads the file, because a human's saved preference must not reshape a
+documented contract. `--filter` and `--top` are `conflicts_with = "json"`
+because the JSON tree has no folder rows, so "keep the ancestors" has nothing
+to mean there. `--hide` and `--order` are too: a column preference is not
+part of the contract.
 
 An unknown `--sort` label is a clap `InvalidValue` exit, not
 `Sort::from_label`'s fallback — a stale `view.json` must not stop the monitor,
@@ -197,13 +198,15 @@ three-character `...` for `…` would overflow both. `Cli::Glyphs` lives in
 ## Columns
 
 `once::COLUMNS` is the one column model; `once::Columns` is that list with
-`view.hide_columns` applied. The TUI and `--once` resolve it at start; the TUI
-rebuilds it when `H` / `u` change the list, so no render site branches on
-visibility. `name` is refused and an
-unknown label in `view.json` warns (`config::view_path()` named); an unknown
-`--hide` is a clap `InvalidValue`, the same split as `--sort`. `Sort::next`
-cycles over the visible list only; `H` advances with `Sort::after_hiding` so
-hiding PSS lands on RSS rather than `name`.
+`view.hide_columns` and `view.column_order` applied. The TUI and `--once`
+resolve it at start; the TUI rebuilds it when `H` / `u` change the list, so
+no render site branches on visibility. Listed order labels come first, in that
+sequence; unlisted keep compiled order after them; `name` stays first unless
+the list names it. `name` is refused for hide and an unknown label in
+`view.json` warns (`config::view_path()` named); an unknown `--hide` or
+`--order` is a clap `InvalidValue`, the same split as `--sort`. `Sort::next`
+cycles over the visible list only, which is also how `H` picks the next sort
+so hiding PSS lands on RSS in the default table rather than `name`.
 
 Visibility is a **view** preference, so it lives in `view.json` beside sort and
 filter, never in the read-only `grouping.json`, which is about identity. It

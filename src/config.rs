@@ -19,11 +19,16 @@ pub struct View {
     /// column added after the file was written.
     #[serde(default)]
     pub hide_columns: Vec<String>,
-    /// uids from `--user`. Deliberately not serialized: sort, filter and hidden
-    /// columns are preferences a `s` press should outlive the session, but a
-    /// saved user cut would hide most of the machine on every later run for a
-    /// reason the file, not the command line, was keeping. It rides in `View`
-    /// only because every surface already takes one.
+    /// Column labels left to right. Listed columns come first, in this order;
+    /// anything not listed keeps its default place after them. `name` stays
+    /// first unless this list names it. Empty is the compiled table order.
+    #[serde(default)]
+    pub column_order: Vec<String>,
+    /// uids from `--user`. Deliberately not serialized: sort, filter, hidden
+    /// columns and column order are preferences a `s` press should outlive the
+    /// session, but a saved user cut would hide most of the machine on every
+    /// later run for a reason the file, not the command line, was keeping. It
+    /// rides in `View` only because every surface already takes one.
     #[serde(skip)]
     pub users: Vec<u32>,
     /// `--top`, and not serialized for the same reason `users` is not: a saved
@@ -39,6 +44,7 @@ impl Default for View {
             desc: true,
             filter: String::new(),
             hide_columns: Vec::new(),
+            column_order: Vec::new(),
             users: Vec::new(),
             top: None,
         }

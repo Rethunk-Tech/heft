@@ -69,6 +69,25 @@ fn main() -> ExitCode {
             .map(|label| check_hide(label).to_string())
             .collect();
     }
+    if !cli.order.is_empty() {
+        let mut seen = std::collections::HashSet::new();
+        view.column_order = cli
+            .order
+            .iter()
+            .map(|label| {
+                let label = check_order(label);
+                if !seen.insert(label) {
+                    Cli::command()
+                        .error(
+                            ErrorKind::InvalidValue,
+                            format!("invalid value '{label}' for '--order <COLUMN>': listed more than once"),
+                        )
+                        .exit()
+                }
+                label.to_string()
+            })
+            .collect();
+    }
     // Unlike `--filter`, this one applies to `--json` too: it prunes User
     // nodes, which the JSON tree has, where "keep the ancestors" had nothing
     // to mean there.
@@ -96,7 +115,7 @@ fn main() -> ExitCode {
 /// A typo on the command line is told to the user, where `Sort::from_label`
 /// silently falls back for a saved view: a stale `view.json` must not stop the
 /// monitor, but an argument just typed can still be corrected.
-fn check_sort(label: &str) -> &str {
+fn check_column<'a>(flag: &str, label: &'a str) -> &'a str {
     let labels = heft::once::sort_labels();
     if labels.contains(&label) {
         return label;
@@ -105,11 +124,19 @@ fn check_sort(label: &str) -> &str {
         .error(
             ErrorKind::InvalidValue,
             format!(
-                "invalid value '{label}' for '--sort <COLUMN>'\n  [possible values: {}]",
+                "invalid value '{label}' for '--{flag} <COLUMN>'\n  [possible values: {}]",
                 labels.join(", ")
             ),
         )
         .exit()
+}
+
+fn check_sort(label: &str) -> &str {
+    check_column("sort", label)
+}
+
+fn check_order(label: &str) -> &str {
+    check_column("order", label)
 }
 
 /// Same split as `--sort`: a typo on the command line is a usage error, a

@@ -59,4 +59,7 @@ pub(crate) struct Cli {
     /// Leave this column out of the table; repeat. The labels `c` cycles. Refused with --json
     #[arg(long, value_name = "COLUMN", conflicts_with = "json")]
     pub hide: Vec<String>,
+    /// Left-to-right column order; repeat. Unlisted keep default order after these. name stays first unless listed. Refused with --json
+    #[arg(long, value_name = "COLUMN", conflicts_with = "json")]
+    pub order: Vec<String>,
 }

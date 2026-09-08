@@ -9,6 +9,17 @@
   a neighbour moved the cursor onto a different identity. It now tracks the
   row's id, and lands on the nearest remaining parent when that row is gone.
 
+- The `/proc` walk spawned a `thread::scope` every sample, and glibc created
+  new malloc arenas for those threads. RSS climbed ~15 MiB every 5s PSS tick
+  to ~488 MiB. The same `available_parallelism` workers now live on the
+  Sampler for as long as it does. `MALLOC_ARENA_MAX=2` plateaued at 39 MiB;
+  pooling is the product fix, not that knob.
+
+- PSS/`--once` GPU collection slurped every fdinfo when no fd name contained
+  dri/drm, including a 16,038,344-byte `anon_inode:[fanotify]` dump on
+  `localsearch-3` with no `drm-client-id`. Files above 64 KiB are not read
+  (real drm fdinfo on this host topped out at 14 KiB).
+
 - An AppImage Chromium crash helper reparented to user systemd
   (`chrome_crashpad_handler` under `/tmp/.mount_…/usr/share/cursor/`) took its
   own Applications row instead of billing to the app. The mount directory is
@@ -82,6 +93,11 @@
   names in `TERMINALS`). A shell that launched a single real app still bills
   to that app, the same unique-payload walk launchers use. They are no longer
   their own Applications row.
+
+- `--once` and PSS ticks no longer walk every fdinfo when the dri/drm name
+  prefilter is empty. That walk was ~318 ms of ~760 ms serial PSS-tick kernel
+  work on 308 pids with no dri/drm fd. GPU clients whose fd names omit
+  dri/drm stay blank.
 
 - Folder headings (Applications, User Services, Containers, System) show how
   many identities sit under them, including zero. User rows are the login name

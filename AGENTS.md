@@ -21,7 +21,7 @@ src/mem.rs           meminfo used/Buffers/Cached/Swap, unified APU clip, host VR
 src/io.rs            /proc/pid/io rates and smaps_rollup PSS + SwapPss
 src/net.rs           per-netns rx/tx from /proc/pid/net/dev; container rows only
 src/psi.rs           cgroup cpu/io/memory.pressure; single-cgroup rows only
-src/gpu.rs           amdgpu/i915/xe fdinfo; dri/drm prefilter; full walk on PSS/--once; drm-client-id dedupe
+src/gpu.rs           amdgpu/i915/xe fdinfo; dri/drm prefilter; no empty-prefilter walk; oversized fdinfo skipped; drm-client-id dedupe
 src/classify.rs      launcher / worker / shell / terminal / compositor tables
 src/identity.rs      cgroup parse, merge key + display name
 src/containers.rs    GET-only docker/podman; project vs per-container
@@ -276,10 +276,16 @@ stderr from `config::load_overrides` and grouping continues built-in.
 | Ordering | one comparator in `once.rs` for every level; a `None` metric sorts last in either direction, name breaks ties, stable over `group::proc_forest` pid order |
 
 TUI sampling runs on a background thread; the ratatui loop only swaps in the
-last complete tree and never blocks on `/proc` I/O. `proc::collect` then splits
-the pid list across a `thread::scope` sized by `available_parallelism`, because
-the walk is latency-bound on procfs rather than compute-bound. Measured numbers
-and which tick actually gains live on that function. Sample cadence (`--interval`,
+last complete tree and never blocks on `/proc` I/O. `proc::collect` splits the
+pid list across a long-lived pool sized by `available_parallelism` and reused
+every sample (the pool lives on the Sampler, so `--once` / `--json` still pool
+their two walks and `sample_stream` drop joins them), because the walk is
+latency-bound on procfs rather than compute-bound and a `thread::scope` per
+tick grew glibc arenas (~15 MiB every 5s PSS tick to ~488 MiB). Measured
+numbers and which tick actually gains live on that function. PSS/`--once`
+fdinfo reads skip files above 64 KiB (a 16 MiB fanotify dump, not drm) and do
+not walk every fdinfo when the dri/drm prefilter is empty — GPU clients whose
+fd names omit dri/drm stay blank. Sample cadence (`--interval`,
 `--pss-interval`, `--once` / `--json`): [HUMANS.md](HUMANS.md).
 
 JSON shape (`src/types.rs` `HostTree`): `host.users[].applications|user_services|containers`,

@@ -1,26 +1,30 @@
 use std::collections::HashMap;
 use std::fs;
-use std::io;
+use std::io::{self, Read};
 use std::path::Path;
 
 use crate::types::{GpuCounters, sum_opt};
 
-/// `full_scan` is the PSS / `--once` published pass. Prime and TUI catch-all
-/// ticks pass false: dri/drm symlink names are enough, and a first sighting
-/// must not walk every fdinfo. Clients whose fd names omit dri/drm show up
-/// on the next `full_scan` (up to `--pss-interval`).
+/// Dri/drm symlink names select which fdinfo to read on every tick.
+/// `full_scan` (PSS / `--once`) used to walk every fdinfo when that
+/// prefilter was empty, so a GPU client whose fd name omitted dri/drm still
+/// appeared. That walk was ~318 ms of ~760 ms serial PSS-tick kernel work
+/// on 308 pids with no dri/drm fd; those clients now stay blank. A residual
+/// full walk still runs when the prefilter found fds but they yielded no
+/// GPU metrics.
 pub(crate) fn read_pid(pid: u32, full_scan: bool) -> GpuCounters {
     let drm_fds = match drm_fd_nums(pid) {
         Err(e) if e.kind() == io::ErrorKind::PermissionDenied => return GpuCounters::default(),
         Err(_) => Vec::new(),
         Ok(v) => v,
     };
-    let filtered = if drm_fds.is_empty() {
+    let prefilter_empty = drm_fds.is_empty();
+    let filtered = if prefilter_empty {
         GpuCounters::default()
     } else {
         read_fdinfo_files(pid, &drm_fds)
     };
-    if !needs_full_fdinfo(full_scan, &filtered) {
+    if !needs_full_fdinfo(full_scan, prefilter_empty, &filtered) {
         return filtered;
     }
     read_all_fdinfo(pid)
@@ -31,8 +35,9 @@ fn fd_target_looks_like_drm(target: &str) -> bool {
     target.contains("dri") || target.contains("drm")
 }
 
-fn needs_full_fdinfo(full_scan: bool, filtered: &GpuCounters) -> bool {
+fn needs_full_fdinfo(full_scan: bool, prefilter_empty: bool, filtered: &GpuCounters) -> bool {
     full_scan
+        && !prefilter_empty
         && filtered.vram_bytes.is_none()
         && filtered.gtt_bytes.is_none()
         && filtered.gfx_ns.is_none()
@@ -77,9 +82,26 @@ fn read_all_fdinfo(pid: u32) -> GpuCounters {
     merge_fdinfo_texts(&texts)
 }
 
+/// Observed drm fdinfo on this host: vivaldi max 7 KiB, cursor 14 KiB.
+/// `localsearch-3` has a 16_038_344-byte `anon_inode:[fanotify]` fdinfo
+/// with 0 `drm-client-id`. 64 KiB is well above real drm and well below
+/// that dump. `/proc/<pid>/fdinfo/*` often reports `st_size` 0 (measured
+/// 0 on `/proc/self/fdinfo/0`), so a metadata cap alone would not skip
+/// the fanotify file; `Read::take` enforces the same bound after open.
+const FDINFO_MAX_BYTES: u64 = 64 * 1024;
+
 fn push_drm_text(texts: &mut Vec<String>, path: impl AsRef<Path>) {
-    match fs::read_to_string(path) {
-        Ok(t) if t.contains("drm-client-id") => texts.push(t),
+    let Ok(file) = fs::File::open(path) else {
+        return;
+    };
+    if file.metadata().is_ok_and(|m| m.len() > FDINFO_MAX_BYTES) {
+        return;
+    }
+    let mut buf = String::new();
+    let mut limited = file.take(FDINFO_MAX_BYTES + 1);
+    match limited.read_to_string(&mut buf) {
+        Ok(n) if n as u64 > FDINFO_MAX_BYTES => {}
+        Ok(_) if buf.contains("drm-client-id") => texts.push(buf),
         _ => {}
     }
 }
@@ -308,9 +330,35 @@ mod tests {
             vram_bytes: Some(1),
             ..GpuCounters::default()
         };
-        assert!(!needs_full_fdinfo(false, &empty));
-        assert!(!needs_full_fdinfo(false, &live));
-        assert!(needs_full_fdinfo(true, &empty));
-        assert!(!needs_full_fdinfo(true, &live));
+        assert!(!needs_full_fdinfo(false, true, &empty));
+        assert!(!needs_full_fdinfo(false, false, &live));
+        // Empty dri/drm prefilter never full-walks, including PSS / --once.
+        assert!(!needs_full_fdinfo(true, true, &empty));
+        assert!(!needs_full_fdinfo(true, true, &live));
+        assert!(!needs_full_fdinfo(true, false, &live));
+        // Residual: names were found but they yielded no GPU metrics.
+        assert!(needs_full_fdinfo(true, false, &empty));
+    }
+
+    #[test]
+    fn oversized_fdinfo_is_not_slurped() {
+        let dir = std::env::temp_dir();
+        let tag = std::process::id();
+        let huge = dir.join(format!("heft-fdinfo-huge-{tag}"));
+        let small = dir.join(format!("heft-fdinfo-small-{tag}"));
+        fs::write(&huge, vec![b'x'; (FDINFO_MAX_BYTES as usize) + 1]).unwrap();
+        fs::write(&small, SAMPLE).unwrap();
+        let mut texts = Vec::new();
+        push_drm_text(&mut texts, &huge);
+        assert!(
+            texts.is_empty(),
+            "oversize without drm-client-id is skipped"
+        );
+        push_drm_text(&mut texts, &small);
+        assert_eq!(texts.len(), 1);
+        let g = merge_fdinfo_texts(&texts);
+        assert_eq!(g.vram_bytes, Some(48596 * 1024));
+        let _ = fs::remove_file(&huge);
+        let _ = fs::remove_file(&small);
     }
 }

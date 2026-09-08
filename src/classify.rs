@@ -199,17 +199,14 @@ pub(crate) fn names_of(p: &Process) -> [String; 2] {
 }
 
 fn gnome_shell_helper(names: &[String], p: &Process) -> bool {
-    for n in names {
-        if n.starts_with("gdm-")
+    if names_match(names, |n| {
+        n.starts_with("gdm-")
             || n.starts_with("gnome-session")
             || n.starts_with("gnome-keyring")
             || n.starts_with("gnome-shell-")
-            || n == "gnome-calendar"
-            || n == "gnome-clocks"
-            || n == "xwayland"
-        {
-            return true;
-        }
+            || matches!(n, "gnome-calendar" | "gnome-clocks" | "xwayland")
+    }) {
+        return true;
     }
     if names_match(names, |n| n == "gjs" || n == "gjs-console") {
         return p.cmdline.iter().any(|a| {

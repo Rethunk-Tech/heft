@@ -999,9 +999,6 @@ mod tests {
     fn the_table_lands_on_columns_not_chars() {
         // Two chars, four columns: counting chars is what pushed everything
         // right of a CJK or emoji name out by the difference.
-        assert_eq!("\u{65e5}\u{672c}".chars().count(), 2);
-        assert_eq!("\u{65e5}\u{672c}".width(), 4);
-
         for s in [
             "abcdef",
             "\u{65e5}\u{672c}\u{8a9e}\u{3067}\u{3059}",

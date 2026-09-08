@@ -211,7 +211,7 @@ impl ContainerIndex {
         let id = hex_id(raw)?.to_ascii_lowercase();
         self.by_id
             .get(&id)
-            .or_else(|| id.get(..12).and_then(|s| self.by_id.get(s)))
+            .or_else(|| hex12(&id).and_then(|s| self.by_id.get(s)))
     }
     pub(crate) fn by_ip(&self, ip: &str) -> Option<&ContainerInfo> {
         self.by_ip.get(ip).and_then(|id| self.get(id))

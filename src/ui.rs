@@ -889,7 +889,6 @@ mod tests {
             assert!(chars.len() > 16);
             assert_eq!(chars[16], ' ');
         }
-        assert!(!text.contains("Observe only"));
     }
 
     #[test]

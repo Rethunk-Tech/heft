@@ -223,6 +223,8 @@ session until you press `s`; starting heft again loads that file if it exists.
 
 Default expand: Host, your user, Applications, and that user's Containers.
 Other users, User Services, Host-level Containers, and System start collapsed.
+A folder with nothing in it is not expandable — it does not draw as open over
+an empty gap — and becomes one when a row appears.
 
 ## What the tree means
 

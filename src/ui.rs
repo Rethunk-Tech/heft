@@ -248,10 +248,10 @@ fn push_folder(
         name: title.to_string(),
         nproc: folder_nproc(idents),
         metrics: sum_idents(idents),
-        expandable: true,
+        expandable: !idents.is_empty(),
         trimmable: false,
     });
-    if !expand.contains(id) {
+    if idents.is_empty() || !expand.contains(id) {
         return;
     }
     for ident in idents {
@@ -1522,5 +1522,42 @@ mod tests {
                 "host/system".to_string(),
             ]
         );
+    }
+
+    /// Reproduced on a user with no containers: `user:{uid}/containers` is in
+    /// the default expand set, so the empty folder drew the expanded marker
+    /// over nothing. A folder with no identities is not expandable; the id
+    /// stays in the set so the first container that appears still opens.
+    #[test]
+    fn empty_folders_do_not_draw_as_expanded() {
+        use crate::types::UserNode;
+        let me = cpu::euid();
+        let tree = HostTree {
+            users: vec![UserNode {
+                uid: me,
+                name: "me".into(),
+                applications: vec![ident("app")],
+                user_services: Vec::new(),
+                containers: Vec::new(),
+            }],
+            ..HostTree::default()
+        };
+        let rows = flatten(&tree, &default_expand(), &View::default(), None);
+        let find = |suffix: &str| {
+            let id = format!("user:{me}/{suffix}");
+            rows.iter()
+                .find(|r| r.id == id)
+                .unwrap_or_else(|| panic!("missing {id}"))
+        };
+        assert!(find("apps").expandable);
+        assert!(!find("services").expandable);
+        assert!(!find("containers").expandable);
+        assert!(
+            !rows
+                .iter()
+                .any(|r| r.id.starts_with(&format!("user:{me}/containers/"))),
+            "an empty Containers folder must not grow child rows"
+        );
+        assert!(default_expand().contains(&format!("user:{me}/containers")));
     }
 }

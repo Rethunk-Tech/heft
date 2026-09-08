@@ -4,6 +4,11 @@
 
 ### Fixed
 
+- An empty folder in the default expand set (your user's Containers, with no
+  containers) drew the expanded marker over a blank gap. Folders with no
+  identities are not expandable; the id stays in the set so the first row
+  that appears still opens.
+
 - A crash helper that was a launcher's only child took an application row of
   its own, titled `crashhelper`, instead of billing to the app its own path
   names. The sandbox fallback in the grouping walk now reaches the same verdict

@@ -4,6 +4,12 @@
 
 ### Fixed
 
+- An AppImage Chromium crash helper reparented to user systemd
+  (`chrome_crashpad_handler` under `/tmp/.mount_…/usr/share/cursor/`) took its
+  own Applications row instead of billing to the app. The mount directory is
+  still refused; a stable directory nested under it is the same owner an
+  `/opt/cursor/…` path already named.
+
 - An empty folder in the default expand set (your user's Containers, with no
   containers) drew the expanded marker over a blank gap. Folders with no
   identities are not expandable; the id stays in the set so the first row

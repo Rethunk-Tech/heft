@@ -381,23 +381,32 @@ fn app_from_crash_helper_path(s: &str) -> Option<String> {
     if !is_crash_helper_name(&norm(&basename(s))) {
         return None;
     }
-    // AppImages and self-extracting bundles unpack under a temp root, so the
-    // directory name is per-run (`/tmp/mount`, `/tmp/.mount_cursorAb12Cd`) and
-    // never an app identity. Declining here lets `group` bill the helper to the
-    // ancestor that launched it; the `/firefox/` rule above still answers when
-    // that ancestor is user systemd.
-    if ["/tmp/", "/var/tmp/", "/run/"]
-        .iter()
-        .any(|root| lower.starts_with(root))
-    {
-        return None;
-    }
     let dir = s.rsplit_once('/')?.0;
     let owner = basename(dir);
     if owner.is_empty() || matches!(owner.as_str(), "bin" | "libexec" | "lib" | "lib64") {
         return None;
     }
+    // AppImage mounts are per-run (`/tmp/mount`, `/tmp/.mount_cursorAb12Cd`)
+    // and never an identity. A stable directory nested under the mount
+    // (`…/usr/share/cursor/chrome_crashpad_handler`) is the same owner
+    // `/opt/cursor/…` would name. Chromium reparents the helper to user
+    // systemd, so there is no ancestor to fall back to when the parent dir
+    // *is* the mount — declining that case still lets `group` walk PPID.
+    if is_temp_unpack_root(&lower) && is_ephemeral_mount_dir(&owner) {
+        return None;
+    }
     Some(owner)
+}
+
+fn is_temp_unpack_root(lower: &str) -> bool {
+    ["/tmp/", "/var/tmp/", "/run/"]
+        .iter()
+        .any(|root| lower.starts_with(root))
+}
+
+fn is_ephemeral_mount_dir(owner: &str) -> bool {
+    let n = norm(owner);
+    n == "mount" || n.starts_with(".mount") || n == "appimage"
 }
 
 /// Interpreters fold into Electron/browser parents, never into a shell or systemd.
@@ -876,6 +885,22 @@ mod tests {
                 "a temp mount directory is not an app identity: {temp}"
             );
         }
+        assert_eq!(
+            crash_helper_app(&Process {
+                comm: "chrome_crashpad".into(),
+                exe: Some(
+                    "/tmp/.mount_cursorIDenmC/usr/share/cursor/chrome_crashpad_handler".into()
+                ),
+                cmdline: vec![
+                    "/tmp/.mount_cursorIDenmC/usr/share/cursor/chrome_crashpad_handler".into()
+                ],
+                ppid: 6475,
+                ..Process::default()
+            })
+            .as_deref(),
+            Some("cursor"),
+            "a nested owner under an AppImage mount still names the app"
+        );
         let zypak = p(
             "bwrap",
             &[

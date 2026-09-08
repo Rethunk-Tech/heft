@@ -78,9 +78,12 @@ runtime ever reports a truncated id.
   launchers and other generics; do not invent a script-basename identity
   (`context7-mcp`) when a launching agent (`claude`, `cursor`) is above.
   Processes stay visible on expand. `crash_helper_app` matches exe/cmdline
-  even when PPID is user systemd, but never derives an identity from a path
-  under `/tmp`, `/var/tmp`, or `/run`: an AppImage mount directory is per-run,
-  so those fall back to the ancestor walk.
+  even when PPID is user systemd. The mount directory itself under `/tmp`,
+  `/var/tmp`, or `/run` (`/tmp/mount`, `/tmp/.mount_cursorAb12Cd`) is per-run
+  and never an identity; a stable directory nested under it
+  (`…/usr/share/cursor/chrome_crashpad_handler`) names the app the same way
+  `/opt/cursor/…` does. A helper whose parent dir is the mount falls back
+  to the ancestor walk.
 - User Services grouping is one identity for processes that share a systemd
   unit family, RPM/package family, D-Bus well-known name family, or documented
   process architecture — not a comm prefix. Mappings live in

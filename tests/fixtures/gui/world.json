@@ -1623,6 +1623,20 @@
       "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/flatpak-session-helper.service",
       "utime": 10,
       "stime": 1
+    },
+    {
+      "pid": 3992502,
+      "ppid": 300,
+      "pgrp": 3992502,
+      "uid": 1000,
+      "comm": "chrome_crashpad",
+      "exe": "/tmp/.mount_cursorIDenmC/usr/share/cursor/chrome_crashpad_handler",
+      "cmdline": [
+        "/tmp/.mount_cursorIDenmC/usr/share/cursor/chrome_crashpad_handler"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/flatpak-session-helper.service",
+      "utime": 10,
+      "stime": 1
     }
   ]
 }

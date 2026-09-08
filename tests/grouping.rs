@@ -479,12 +479,19 @@ fn gui_and_docker_fixture() {
         "p11-kit must not bill to Cursor: {:?}",
         proc_names(cursor)
     );
-    assert!(
+    assert_eq!(
         proc_names(cursor)
             .iter()
-            .any(|n| n == "chrome_crashpad_handler"),
-        "the AppImage crash helper bills to Cursor: {:?}",
+            .filter(|n| *n == "chrome_crashpad_handler")
+            .count(),
+        2,
+        "both AppImage crash helpers bill to Cursor, including the one reparented to user systemd: {:?}",
         proc_names(cursor)
+    );
+    assert!(
+        !has(&user.applications, "chrome_crashpad_handler"),
+        "a crash helper is never its own application row: {:?}",
+        titles(&user.applications)
     );
     assert!(
         !has(&user.applications, "mount"),

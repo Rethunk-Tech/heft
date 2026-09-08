@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Fixed
+
+- An AppImage launcher whose filename is not all lowercase took a top-level row
+  of its own, titled with the full `Cursor-x86_64.AppImage` filename, instead of
+  billing to its payload. The suffix is now matched case-insensitively wherever
+  it is matched at all; shipping AppImages are mixed case.
+
 ### Changed
 
 - The two header bars are drawn to one width, so the CPU and MEMORY brackets

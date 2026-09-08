@@ -409,10 +409,16 @@ pub fn is_launcher_name(name: &str) -> bool {
 
 pub fn launcher_payload_hint(p: &Process) -> Option<String> {
     let named = name_of(p);
-    if let Some(stem) = named.strip_suffix(".appimage")
-        && !stem.is_empty()
-    {
-        return Some(stem.to_string());
+    // Case-folded the way `is_launcher_name` folds it: real AppImages ship as
+    // `Cursor-x86_64.AppImage`, and `name_of` does not lowercase. A launcher
+    // that yields no hint falls through to `user_place` and takes the
+    // top-level row launchers are not supposed to have. The stem keeps its
+    // own casing because it becomes the displayed identity.
+    if norm(&named).ends_with(".appimage") {
+        let stem = &named[..named.len() - ".appimage".len()];
+        if !stem.is_empty() {
+            return Some(stem.to_string());
+        }
     }
     if let Some(i) = p.cmdline.iter().rposition(|a| a == "--") {
         for arg in &p.cmdline[i + 1..] {
@@ -483,6 +489,22 @@ mod tests {
             cmdline: cmd.iter().map(|s| (*s).to_string()).collect(),
             ..Process::default()
         }
+    }
+
+    #[test]
+    fn appimage_launcher_hint_ignores_case() {
+        // Shipping AppImages are mixed case; every other fixture here is not.
+        let cursor = Process {
+            comm: "Cursor-x86_64.AppImage".into(),
+            exe: Some("/opt/Cursor-x86_64.AppImage".into()),
+            ..Process::default()
+        };
+        assert!(is_launcher(&cursor));
+        assert_eq!(
+            launcher_payload_hint(&cursor).as_deref(),
+            Some("Cursor-x86_64"),
+            "a launcher with no hint takes a top-level row of its own"
+        );
     }
 
     #[test]

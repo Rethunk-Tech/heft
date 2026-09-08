@@ -2,8 +2,10 @@ use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::num::NonZero;
+use std::panic::AssertUnwindSafe;
+use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
-use std::thread;
+use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use crate::config::Overrides;
@@ -27,51 +29,128 @@ use crate::{gpu, io as pio, net, psi};
 /// latency-bound. So a PSS tick still stretches its interval, exactly as
 /// HUMANS.md says it does — this made the ordinary tick cheap, not that one.
 ///
-/// A scope per sample rather than a pool: the threads are spawned once a
-/// second at the default interval and cost tens of microseconds each, so a
-/// pool would be state to keep alive and drain for no measurable gain.
-fn collect(
+/// Workers live on the Sampler (so `--once` / `--json` still pool their two
+/// walks) and `sample_stream` drop joins them. A `thread::scope` per sample
+/// was refused because spawn cost tens of microseconds; the RSS is why a
+/// pool exists now. New glibc arenas each tick climbed ~15 MiB every 5s PSS
+/// tick to ~488 MiB. `MALLOC_ARENA_MAX=2` plateaued at 39 MiB, so arenas
+/// dominate the HostTree.
+struct WalkPool {
+    job_txs: Vec<mpsc::Sender<WalkJob>>,
+    result_rx: mpsc::Receiver<WalkChunk>,
+    handles: Vec<JoinHandle<()>>,
+}
+
+struct WalkJob {
+    pids: Vec<u32>,
     want_pss: bool,
     want_swap: bool,
-    prev: Option<&HashMap<u32, Process>>,
-) -> HashMap<u32, Process> {
-    let Ok(dir) = fs::read_dir("/proc") else {
-        return HashMap::new();
-    };
-    let pids: Vec<u32> = dir
-        .flatten()
-        .filter_map(|e| e.file_name().to_str().and_then(|s| s.parse::<u32>().ok()))
-        .collect();
-    if pids.is_empty() {
-        return HashMap::new();
+    prev: Option<Arc<HashMap<u32, Process>>>,
+}
+
+enum WalkChunk {
+    Done(Vec<(u32, Process)>),
+    Panicked,
+}
+
+impl WalkPool {
+    fn new() -> Self {
+        let n = thread::available_parallelism().map_or(1, NonZero::get);
+        let (result_tx, result_rx) = mpsc::channel();
+        let mut job_txs = Vec::with_capacity(n);
+        let mut handles = Vec::with_capacity(n);
+        for i in 0..n {
+            let (job_tx, job_rx) = mpsc::channel();
+            let result_tx = result_tx.clone();
+            let handle = thread::Builder::new()
+                .name(format!("heft-walk-{i}"))
+                .spawn(move || walk_worker(job_rx, result_tx))
+                .expect("walk worker");
+            job_txs.push(job_tx);
+            handles.push(handle);
+        }
+        Self {
+            job_txs,
+            result_rx,
+            handles,
+        }
     }
-    let threads = thread::available_parallelism()
-        .map_or(1, NonZero::get)
-        .min(pids.len());
-    let chunk = pids.len().div_ceil(threads);
-    thread::scope(|scope| {
-        let workers: Vec<_> = pids
-            .chunks(chunk)
-            .map(|chunk| {
-                scope.spawn(move || {
-                    chunk
-                        .iter()
-                        .filter_map(|&pid| {
-                            let p =
-                                read_pid(pid, want_pss, want_swap, prev.and_then(|m| m.get(&pid)))?;
-                            Some((pid, p))
-                        })
-                        .collect::<Vec<_>>()
-                })
-            })
+
+    fn collect(
+        &mut self,
+        want_pss: bool,
+        want_swap: bool,
+        prev: Option<&Arc<HashMap<u32, Process>>>,
+    ) -> HashMap<u32, Process> {
+        let Ok(dir) = fs::read_dir("/proc") else {
+            return HashMap::new();
+        };
+        let pids: Vec<u32> = dir
+            .flatten()
+            .filter_map(|e| e.file_name().to_str().and_then(|s| s.parse::<u32>().ok()))
             .collect();
-        workers
-            .into_iter()
-            // A panic here is a bug in a `/proc` parser, and swallowing it
-            // would publish a tree quietly missing a chunk of the machine.
-            .flat_map(|w| w.join().expect("a /proc walk thread panicked"))
-            .collect()
-    })
+        if pids.is_empty() {
+            return HashMap::new();
+        }
+        let workers = self.job_txs.len().min(pids.len());
+        let chunk = pids.len().div_ceil(workers);
+        let n_jobs = pids.chunks(chunk).len();
+        for (i, slice) in pids.chunks(chunk).enumerate() {
+            self.job_txs[i]
+                .send(WalkJob {
+                    pids: slice.to_vec(),
+                    want_pss,
+                    want_swap,
+                    prev: prev.cloned(),
+                })
+                .expect("a /proc walk thread exited");
+        }
+        let mut out = HashMap::with_capacity(pids.len());
+        for _ in 0..n_jobs {
+            match self.result_rx.recv().expect("a /proc walk thread exited") {
+                WalkChunk::Done(v) => out.extend(v),
+                // A panic here is a bug in a `/proc` parser, and swallowing it
+                // would publish a tree quietly missing a chunk of the machine.
+                WalkChunk::Panicked => panic!("a /proc walk thread panicked"),
+            }
+        }
+        out
+    }
+}
+
+impl Drop for WalkPool {
+    fn drop(&mut self) {
+        self.job_txs.clear();
+        for h in self.handles.drain(..) {
+            let _ = h.join();
+        }
+    }
+}
+
+fn walk_worker(job_rx: mpsc::Receiver<WalkJob>, result_tx: mpsc::Sender<WalkChunk>) {
+    while let Ok(job) = job_rx.recv() {
+        let chunk = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            job.pids
+                .iter()
+                .filter_map(|&pid| {
+                    let p = read_pid(
+                        pid,
+                        job.want_pss,
+                        job.want_swap,
+                        job.prev.as_ref().and_then(|m| m.get(&pid)),
+                    )?;
+                    Some((pid, p))
+                })
+                .collect::<Vec<_>>()
+        }));
+        let msg = match chunk {
+            Ok(v) => WalkChunk::Done(v),
+            Err(_) => WalkChunk::Panicked,
+        };
+        if result_tx.send(msg).is_err() {
+            break;
+        }
+    }
 }
 
 fn read_pid(pid: u32, want_pss: bool, want_swap: bool, prev: Option<&Process>) -> Option<Process> {
@@ -94,7 +173,8 @@ fn read_pid(pid: u32, want_pss: bool, want_swap: bool, prev: Option<&Process>) -
         (None, None, GpuCounters::default())
     } else {
         let (r, w) = pio::read_io(pid);
-        // want_pss is also the GPU full fdinfo walk (PSS tick / --once publish).
+        // want_pss is the residual GPU fdinfo walk (PSS / --once) when dri/drm
+        // names were found but yielded no metrics; empty prefilter skips it.
         (r, w, gpu::read_pid(pid, want_pss))
     };
     Some(Process {
@@ -283,7 +363,8 @@ pub(crate) fn placeholder_tree() -> HostTree {
 }
 
 struct Sampler {
-    prev: HashMap<u32, Process>,
+    pool: WalkPool,
+    prev: Arc<HashMap<u32, Process>>,
     cpu0: cpu::HostCpu,
     t0: Instant,
     last_pss: Option<Instant>,
@@ -300,7 +381,8 @@ impl Sampler {
         let overrides = crate::config::load_overrides();
         let mut inspect_cache = InspectCache::default();
         let mut net = net::Sampler::default();
-        let prev = collect(false, false, None);
+        let mut pool = WalkPool::new();
+        let prev = Arc::new(pool.collect(false, false, None));
         // Netns counters are levels, so the first published tick needs a
         // baseline here or `--once` and `--json` would always print a blank
         // rate. The inspect cache makes the tick's own load a no-op.
@@ -318,6 +400,7 @@ impl Sampler {
         Self {
             consts: cpu::host_consts(),
             cpu0: cpu::read_host(),
+            pool,
             prev,
             t0,
             last_pss: None,
@@ -338,7 +421,9 @@ impl Sampler {
         // at all; it reads only world-readable host files, so the order is free.
         let mut header = cpu::header_from(&self.consts, &self.cpu0, &cpu1);
         psi::host_avg10(&mut header);
-        let curr = collect(want_pss, header.swap_total_bytes > 0, Some(&self.prev));
+        let curr = self
+            .pool
+            .collect(want_pss, header.swap_total_bytes > 0, Some(&self.prev));
         if want_pss {
             self.last_pss = Some(t1);
         }
@@ -359,7 +444,7 @@ impl Sampler {
         // Applied after the tree exists, because a row's cgroup is only
         // knowable from the processes the grouping put under it.
         stalls.apply(&mut tree, &curr);
-        self.prev = curr;
+        self.prev = Arc::new(curr);
         self.cpu0 = cpu1;
         self.t0 = t1;
         tree

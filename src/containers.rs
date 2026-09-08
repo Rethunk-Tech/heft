@@ -30,6 +30,13 @@ fn inspect_for<'a>(item: &ListItem, inspects: &'a HashMap<String, Inspect>) -> O
     hex_id(&item.id).and_then(|id| inspects.get(&id.to_ascii_lowercase()))
 }
 
+/// The title a container with no name is shown under. It is also that row's
+/// merge key, so the two builders that need it must spell it the same way or
+/// one container becomes two rows.
+pub(crate) fn docker_title(id: &str) -> String {
+    format!("docker-{}", hex12(id).unwrap_or(id))
+}
+
 fn live_hex_ids(list: &[ListItem]) -> Vec<String> {
     let mut ids: Vec<String> = list
         .iter()
@@ -147,7 +154,7 @@ impl ContainerIndex {
             .first()
             .map(|n| n.trim_start_matches('/').to_string())
             .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| format!("docker-{}", hex12(&id).unwrap_or(id.as_str())));
+            .unwrap_or_else(|| docker_title(&id));
         let labels = item.labels.clone().unwrap_or_default();
         let (ident_key, member_name) = project_identity(&name, &labels);
         let workdir = labels.get("com.supabase.cli.workdir").cloned().or_else(|| {

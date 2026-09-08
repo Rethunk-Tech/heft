@@ -172,13 +172,12 @@ fn container_place(p: &Process, containers: &ContainerIndex) -> Option<Place> {
     }
     let scope = docker_scope_id(&p.cgroup);
     if let Some(id) = scope.clone().or_else(|| containers::helper_id(p)) {
-        let short = containers::hex12(&id).unwrap_or(&id);
         return Some(Place {
             folder: Folder::Containers,
             // Only a cgroup id is known on this path, so there is no name or
             // label to attribute an owner from; lookup_process does that.
             uid: None,
-            key: format!("docker-{short}"),
+            key: containers::docker_title(&id),
             instance: identity::instance_key(p, scope.as_deref()),
             member: None,
         });

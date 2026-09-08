@@ -26,7 +26,14 @@ const FAST: &str = "0.05";
 /// cell HUMANS.md promises; `0` would be a lie about a metric heft could not
 /// read, so these are only ever compared against each other, never to a
 /// number.
-const COUNTERS: [&str; 4] = ["rss_bytes", "pss_bytes", "vram_bytes", "gtt_bytes"];
+const COUNTERS: [&str; 6] = [
+    "rss_bytes",
+    "pss_bytes",
+    "swap_bytes",
+    "threads",
+    "vram_bytes",
+    "gtt_bytes",
+];
 const RATES: [&str; 6] = [
     "cpu_core_pct",
     "cpu_machine_pct",

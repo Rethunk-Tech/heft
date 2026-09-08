@@ -13,6 +13,7 @@ src/cli.rs           clap Cli; build.rs includes it so completions/man cannot dr
 src/main.rs          dispatch: TUI default, --once, --json
 src/lib.rs           modules
 build.rs             clap_complete + clap_mangen → OUT_DIR/assets (build-deps only)
+demo.tape            vhs script for README.md's demo.gif; regenerate with `vhs demo.tape`
 src/types.rs         Process, Metrics, HostTree, JSON shape
 src/proc.rs          every visible PID; blank metrics on EACCES
 src/cpu.rs           /proc/stat split (usr/sys/wait) + per-pid utime/stime rates
@@ -229,7 +230,7 @@ stderr from `config::load_overrides` and grouping continues built-in.
 | GPU mem | prefer `drm-resident-*` over `drm-total-*`; regions `vram`/`gtt` (amdgpu), `local0`/`system0` (i915), `vram0`/`gtt` (xe) |
 | NETNS RX/TX | Δ non-`lo` bytes from `/proc/<container-scope-pid>/net/dev`; a new pid or a counter that went backwards discards the interval |
 | CPU/IO/MEM ST | Δ `some ... total=` microseconds from that cgroup's `{cpu,io,memory}.pressure` over wall clock. `some`, not `full`: `full` on a one-process cgroup is the same number twice. A counter that went backwards (a recreated cgroup) discards the interval |
-| Host `psi` | `some avg10` from `/proc/pressure/{cpu,io,memory}`. Deliberately a different time base from the columns — a machine-wide trend reads better smoothed, a row's rate has to match the `%core` and disk rates beside it |
+| Host `psi` | `some avg10` from `/proc/pressure/{cpu,io,memory}`, on the `--once` and `--json` host line only. Deliberately a different time base from the columns — a machine-wide trend reads better smoothed, a row's rate has to match the `%core` and disk rates beside it. `psi::header_tail` is not in the TUI header: `ui::cpu_header_line` sized its bar around the tail, so the CPU bar came up short of the MEMORY bar on every PSI-capable kernel |
 | gfx% / compute% | `drm-engine-gfx`/`-render` and `-compute` ns deltas over wall clock. xe has no ns key: `drm-cycles-rcs`/`-ccs` delta over the `drm-total-cycles-*` GPU-clock delta, each divided by `drm-engine-capacity-*`. Two formulas, deliberately not unified |
 
 | surface | rule |
@@ -238,7 +239,7 @@ stderr from `config::load_overrides` and grouping continues built-in.
 | MEM bar | one MemTotal width when APU VRAM is unified; VRAM (unified only) / GTT resident, then Cached/Buffers, then anon; clip so the stack never exceeds `used.min(MemTotal)` (`mem::clip_used`) |
 | Discrete VRAM | own tank against `mem_info_vram_total`, sharing the MEMORY row with the MEM bar; only `vram` drops from that legend — GTT is pinned system RAM and stays in MEM |
 | Swap | own tank against `SwapTotal`, never a MEM segment: swapped pages are not in RAM. Absent entirely when `SwapTotal` is 0, so a swapless host renders as it did before swap existed |
-| Layout | 2 unbordered header rows (extra tanks split the MEMORY row via `ui::tank_widths`, never add a third row); persistent rules: header↔tree and tree↔footer |
+| Layout | 2 unbordered header rows (extra tanks split the MEMORY row via `ui::tank_widths`, never add a third row); persistent rules: header↔tree and tree↔footer. Both rows draw their bar to one width so the two brackets stack: `mem_header_line` returns its first tank's width and `cpu_header_line` takes it, clamped to its own slack and padded on the right. The MEM group spends more of its row on `] used/total  ` and a fourth legend label, so the CPU row is normally the one with columns to spare — only a tree with no memory inverts that, and there the clamp wins |
 | Disk R/W | table columns only (formatted rates change width every tick) |
 | THR / AGE | beside `N`, before the metric columns: all three say what the row *is* rather than what it is currently costing |
 | CPU/IO/MEM ST | a row carries a figure only when every process under it is in one non-root cgroup; a process row only when it is alone in its cgroup. Folder, User, Host and multi-cgroup rows are blank — a percentage of an interval cannot be summed, and `user-<uid>.slice` is not the User row (a rootful container is billed to its owner from `system.slice`) nor `system.slice` the System row (kernel threads are in the root cgroup). Root-cgroup rows are blank because that pressure is the machine's, the same rule as a `--network=host` container |

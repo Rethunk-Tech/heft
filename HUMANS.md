@@ -189,11 +189,12 @@ Other users, User Services, Host-level Containers, and System start collapsed.
   without colour — piped, recorded, on a monochrome terminal, or to anyone for
   whom cyan and magenta are the same hue. Where memory is unified,
   VRAM and GTT are carve-outs of that same pool, not a second tank, so the row
-  is one MEMORY bar whose width is MemTotal. With a discrete card the MEMORY
-  row splits in half: MEM against MemTotal, and VRAM against the card's own
-  total. GTT stays in the MEM bar either way — it is system RAM pinned for the
-  GPU, not card memory. The header also carries `psi`, the machine's
-  own cpu/io/memory stall averages. That GTT slice, and the unified VRAM slice
+  is one MEMORY bar whose width is MemTotal. Both header bars are drawn to the
+  same width, so the two `]` line up in one column rather than each row sizing
+  its bar to whatever text happens to sit beside it. With a discrete card the
+  MEMORY row splits in half: MEM against MemTotal, and VRAM against the card's
+  own total, and it is the first of those the CPU bar matches. GTT stays in the MEM bar either way — it is system RAM pinned for the
+  GPU, not card memory. That GTT slice, and the unified VRAM slice
   beside it, add up only the drm clients heft can see, the same caveat as the Host row,
   which sums only visible PIDs and so can sit below the header. Swap, when the
   machine has any, is a third tank on that same row rather than a segment of
@@ -279,13 +280,15 @@ means what every other blank in heft means: no figure exists, not zero.
   cgroup's stall belongs to the cgroup; showing it beside four sibling pids
   would invite reading it as four separate costs.
 
-The `psi` figures in the host header are a different measurement of the same
-thing: those are the kernel's own 10-second averages for the whole machine, in
-cpu/io/memory order, which is where a smoothed trend reads better than an
-instant. The columns are per-interval deltas so they sit on the same time base
-as `%CORE` and the disk rates beside them. A machine whose kernel was built
-without `CONFIG_PSI`, or booted `psi=0`, gets no header figures and no columns
-at all.
+The `psi` figures on the `--once` and `--json` host line are a different
+measurement of the same thing: those are the kernel's own 10-second averages
+for the whole machine, in cpu/io/memory order, which is where a smoothed trend
+reads better than an instant. The columns are per-interval deltas so they sit
+on the same time base as `%CORE` and the disk rates beside them. The TUI header
+leaves them out — that row exists to draw a bar to scale, and a text tail on
+it made the CPU bar shorter than the MEMORY bar beside it. A machine whose
+kernel was built without `CONFIG_PSI`, or booted `psi=0`, gets no host figures
+and no columns at all.
 
 ## NETNS RX / NETNS TX
 

@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- The two header bars are drawn to one width, so the CPU and MEMORY brackets
+  stack instead of each row sizing its bar around its own text. The MEM group
+  spends more of its row on `] used/total  ` and a fourth legend label, so it
+  sets the width and the CPU row pads on the right; where the MEMORY row splits
+  into tanks it is the first tank that is matched.
+
+- The TUI header no longer prints the host `psi` tail; the figures are
+  unchanged on `--once` and in `--json`, where nothing is drawn to scale.
+  Measured on a 175-column terminal: that tail was cancelling most of the
+  suffix difference above by accident, so removing it on its own took the two
+  brackets from 4 columns apart to 14. The shared bar width is what closes
+  them.
+
 ## 0.4.0 - 2026-09-07
 
 ### Fixed

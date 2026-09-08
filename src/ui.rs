@@ -520,11 +520,9 @@ fn render_rule(f: &mut ratatui::Frame<'_>, area: Rect) {
 
 fn draw_header(f: &mut ratatui::Frame<'_>, area: Rect, app: &App) {
     let width = area.width as usize;
+    let (mem, mem_bar_w) = mem_header_line(&app.tree, width);
     f.render_widget(
-        Paragraph::new(vec![
-            cpu_header_line(&app.tree, width),
-            mem_header_line(&app.tree, width),
-        ]),
+        Paragraph::new(vec![cpu_header_line(&app.tree, width, mem_bar_w), mem]),
         area,
     );
 }
@@ -533,7 +531,16 @@ fn pct_weight(p: f64) -> u64 {
     (p.clamp(0.0, 100.0) * 100.0).round() as u64
 }
 
-fn cpu_header_line(tree: &HostTree, width: usize) -> Line<'static> {
+/// `bar_w` is the MEMORY row's first tank, not this row's own slack. The MEM
+/// group's suffix is the longer of the two — `] 78.2G/125.1G  ` and a
+/// four-label legend against `] 10.3%  ` and three — so left to itself this bar
+/// overruns the one below it by about thirteen columns. Drawing both to the
+/// same width and padding this row on the right is what makes the two brackets
+/// stack. Where the MEMORY row splits into tanks (a discrete card, a host with
+/// swap) it is the first tank that is matched: those are the two brackets in
+/// the same place on the screen, and the pad simply runs under the tanks
+/// beside it.
+fn cpu_header_line(tree: &HostTree, width: usize, bar_w: usize) -> Line<'static> {
     let prefix = " CPU [";
     let mid = format!("] {:>5}%  ", fmt_pct(tree.cpu_pct));
     let (tail, legend_len) = legend(&[
@@ -541,13 +548,14 @@ fn cpu_header_line(tree: &HostTree, width: usize) -> Line<'static> {
         ("sys", Color::Magenta, glyph::dark()),
         ("wait", Color::Yellow, glyph::medium()),
     ]);
-    // The machine's own stall, from `/proc/pressure`, on the row about
-    // contention. Absent entirely when the kernel has no PSI (`CONFIG_PSI=n`
-    // or `psi=0`), the way a swapless host gets no swap tank rather than a
-    // zeroed one. The CPU row pays for it because the MEMORY row is already
-    // splitting itself between MEM, VRAM and swap tanks.
-    let psi = crate::psi::header_tail(tree);
-    let bar_w = width.saturating_sub(prefix.len() + mid.len() + legend_len + psi.len());
+    // No host `psi` tail here: it is text on the row whose point is a bar.
+    // `--once` and `--json` still carry the figures, where nothing is drawn to
+    // scale. Measured before removing it: the tail was cancelling most of the
+    // suffix difference above, so taking it out alone moved the bars from four
+    // columns apart to fourteen — the alignment is what `bar_w` is for, not a
+    // side effect of the text that used to sit here.
+    let fits = width.saturating_sub(prefix.len() + mid.len() + legend_len);
+    let bar_w = bar_w.min(fits);
     let parts = [
         (pct_weight(tree.cpu_user_pct), Color::Cyan, glyph::full()),
         (
@@ -565,12 +573,14 @@ fn cpu_header_line(tree: &HostTree, width: usize) -> Line<'static> {
     spans.extend(stacked_bar(bar_w, &parts, 10_000));
     spans.push(Span::raw(mid));
     spans.extend(tail);
-    spans.push(Span::raw(psi));
+    spans.push(Span::raw(" ".repeat(fits - bar_w)));
     Line::from(spans)
 }
 
 /// `LABEL [bar] used/total  legend` sized to exactly `width` columns (the bar
-/// absorbs the slack), so two of these can share one header row.
+/// absorbs the slack), so two of these can share one header row. Returns the
+/// width the bar settled on as well as the spans, because the CPU row above is
+/// drawn to the same scale.
 fn bar_group(
     label: &str,
     width: usize,
@@ -579,7 +589,7 @@ fn bar_group(
     used: u64,
     total: u64,
     labels: &[(&str, Color, char)],
-) -> Vec<Span<'static>> {
+) -> (Vec<Span<'static>>, usize) {
     let prefix = format!(" {label} [");
     let mid = format!("] {}/{}  ", fmt_bytes(Some(used)), fmt_bytes(Some(total)));
     let (tail, legend_len) = legend(labels);
@@ -588,10 +598,11 @@ fn bar_group(
     spans.extend(stacked_bar(bar_w, parts, cap.max(1)));
     spans.push(Span::raw(mid));
     spans.extend(tail);
-    spans
+    (spans, bar_w)
 }
 
-fn mem_header_line(tree: &HostTree, width: usize) -> Line<'static> {
+/// The line, and the first tank's bar width for `cpu_header_line` to match.
+fn mem_header_line(tree: &HostTree, width: usize) -> (Line<'static>, usize) {
     let host = host_metrics(tree);
     // Discrete VRAM is a second device, so measuring it against MemTotal is
     // meaningless; it gets its own capacity instead. Unified (APU) VRAM/GTT are
@@ -640,7 +651,7 @@ fn mem_header_line(tree: &HostTree, width: usize) -> Line<'static> {
     labels.push(("gtt", Color::LightCyan, glyph::quad_b()));
     labels.push(("cache", Color::Blue, glyph::dark()));
     labels.push(("buf", Color::Green, glyph::medium()));
-    let mut spans = bar_group(
+    let (mut spans, mem_bar_w) = bar_group(
         "MEM",
         mem_width,
         &[
@@ -658,30 +669,36 @@ fn mem_header_line(tree: &HostTree, width: usize) -> Line<'static> {
     let mut next = 1;
     if let Some(vram_total) = discrete {
         let vram_used = tree.vram_used_bytes.unwrap_or(0).min(vram_total);
-        spans.extend(bar_group(
-            "VRAM",
-            tanks[next],
-            &[(vram_used, Color::LightRed, glyph::full())],
-            vram_total,
-            vram_used,
-            vram_total,
-            &[],
-        ));
+        spans.extend(
+            bar_group(
+                "VRAM",
+                tanks[next],
+                &[(vram_used, Color::LightRed, glyph::full())],
+                vram_total,
+                vram_used,
+                vram_total,
+                &[],
+            )
+            .0,
+        );
         next += 1;
     }
     if let Some(swap_total) = swap {
         let swap_used = tree.swap_used_bytes.min(swap_total);
-        spans.extend(bar_group(
-            "SWAP",
-            tanks[next],
-            &[(swap_used, Color::Yellow, glyph::full())],
-            swap_total,
-            swap_used,
-            swap_total,
-            &[],
-        ));
+        spans.extend(
+            bar_group(
+                "SWAP",
+                tanks[next],
+                &[(swap_used, Color::Yellow, glyph::full())],
+                swap_total,
+                swap_used,
+                swap_total,
+                &[],
+            )
+            .0,
+        );
     }
-    Line::from(spans)
+    (Line::from(spans), mem_bar_w)
 }
 
 /// Split one header row across its bar groups so the parts still sum to
@@ -931,6 +948,12 @@ mod tests {
             cpu_user_pct: 5.0,
             cpu_system_pct: 3.0,
             cpu_wait_pct: 1.6,
+            // A host with memory: the MEMORY row's `] used/total  ` is what
+            // makes its suffix the longer of the two, and a zeroed tree prints
+            // `] 0/0  ` instead, which no machine does.
+            mem_used_bytes: 80 * 1024 * 1024 * 1024,
+            mem_total_bytes: 125 * 1024 * 1024 * 1024,
+            mem_cached_bytes: 20 * 1024 * 1024 * 1024,
             system: vec![IdentNode {
                 id: "sys".into(),
                 title: "sys".into(),
@@ -947,7 +970,20 @@ mod tests {
         };
         let mut tree = tree;
         let width = 80;
-        let text = cpu_header_line(&tree, width).to_string();
+        // The two rows as `draw_header` builds them: the CPU bar takes the
+        // MEMORY row's first tank width, so the pair is checked together.
+        let rows = |tree: &HostTree, width: usize| {
+            let (mem, bar_w) = mem_header_line(tree, width);
+            (
+                cpu_header_line(tree, width, bar_w).to_string(),
+                mem.to_string(),
+            )
+        };
+        // The bar's closing bracket, which is the character a reader sees
+        // stacked on the row below.
+        let bracket = |line: &str| line.chars().position(|c| c == ']');
+
+        let (text, mem) = rows(&tree, width);
         assert!(text.contains("usr"));
         assert!(text.contains("wait"));
         assert!(!text.contains("/s R"));
@@ -955,22 +991,37 @@ mod tests {
         // The only check that catches a legend whose labels disagree with the
         // width the bar subtracts: the rendered line must land on `width`.
         assert_eq!(text.chars().count(), width);
-        assert_eq!(cpu_header_line(&tree, 200).to_string().chars().count(), 200);
+        assert_eq!(mem.chars().count(), width);
+        // Given its own slack the CPU bar runs about thirteen columns past the
+        // MEMORY bar, which spends more of its row on `] used/total  ` and a
+        // fourth legend label.
+        assert_eq!(bracket(&text), bracket(&mem), "{text}\n{mem}");
 
-        // The PSI tail is subtracted from the same bar width, so it needs the
-        // same check: a host with pressure must still land on `width`, and a
-        // resource the kernel does not account must not shift the other two.
+        let (wide, wide_mem) = rows(&tree, 200);
+        assert_eq!(wide.chars().count(), 200);
+        assert_eq!(wide_mem.chars().count(), 200);
+        assert_eq!(bracket(&wide), bracket(&wide_mem), "{wide}\n{wide_mem}");
+
+        // A host with pressure renders no differently. The `psi` tail used to
+        // sit on this row and was cancelling most of that suffix difference by
+        // accident, which is why removing it alone widened the gap instead of
+        // closing it.
         tree.psi_cpu_avg10 = Some(12.75);
         tree.psi_io_avg10 = None;
         tree.psi_mem_avg10 = Some(0.0);
-        let withpsi = cpu_header_line(&tree, width).to_string();
-        assert!(withpsi.contains("psi 12.8/-/0.0"), "{withpsi}");
+        let (withpsi, psi_mem) = rows(&tree, width);
+        assert!(!withpsi.contains("psi"), "{withpsi}");
         assert_eq!(withpsi.chars().count(), width);
-        assert_eq!(cpu_header_line(&tree, 200).to_string().chars().count(), 200);
-        assert_eq!(
-            mem_header_line(&tree, width).to_string().chars().count(),
-            width
-        );
+        assert_eq!(bracket(&withpsi), bracket(&psi_mem), "{withpsi}\n{psi_mem}");
+
+        // The one case that does not align, and the ceiling on `bar_w`: with
+        // no memory at all the MEMORY suffix is the shorter of the two, and
+        // this row stops at its own slack rather than overrunning the line to
+        // reach the bracket below.
+        let (cpu0, mem0) = rows(&HostTree::default(), width);
+        assert_eq!(cpu0.chars().count(), width);
+        assert_eq!(mem0.chars().count(), width);
+        assert!(bracket(&cpu0) <= bracket(&mem0), "{cpu0}\n{mem0}");
     }
 
     fn tree_with_gpu(gpu: &mem::GpuPool) -> HostTree {
@@ -994,7 +1045,7 @@ mod tests {
             gtt_total: Some(4 * g),
         });
         assert!(!tree.unified_memory);
-        let text = mem_header_line(&tree, 100).to_string();
+        let text = mem_header_line(&tree, 100).0.to_string();
         // The bug this guards: VRAM measured against MemTotal instead of the
         // card's own 12G.
         assert!(text.contains("VRAM ["), "{text}");
@@ -1022,7 +1073,7 @@ mod tests {
             instances: Vec::new(),
             containers: Vec::new(),
         }];
-        let line = mem_header_line(&tree, 100);
+        let (line, _) = mem_header_line(&tree, 100);
         let text = line.to_string();
         // The bug this guards: GTT dropped entirely once VRAM moved to its own
         // tank, even though it is system RAM sitting inside the MEM bar's used.
@@ -1049,7 +1100,7 @@ mod tests {
             gtt_total: Some(30 * g),
         });
         assert!(tree.unified_memory);
-        let text = mem_header_line(&tree, 100).to_string();
+        let text = mem_header_line(&tree, 100).0.to_string();
         assert!(!text.contains("VRAM ["), "{text}");
         assert!(text.contains("▚vram/▙gtt/▓cache/▒buf"), "{text}");
         assert_eq!(text.chars().count(), 100);
@@ -1074,7 +1125,7 @@ mod tests {
     fn a_swapless_host_gets_no_swap_tank() {
         let tree = tree_with_gpu(&mem::GpuPool::default());
         assert_eq!(tree.swap_total_bytes, 0);
-        let text = mem_header_line(&tree, 100).to_string();
+        let text = mem_header_line(&tree, 100).0.to_string();
         assert!(!text.contains("SWAP"), "{text}");
         assert!(text.starts_with(" MEM ["), "{text}");
         assert_eq!(text.chars().count(), 100);
@@ -1086,7 +1137,7 @@ mod tests {
         let mut tree = tree_with_gpu(&mem::GpuPool::default());
         tree.swap_total_bytes = 8 * g;
         tree.swap_used_bytes = 2 * g;
-        let text = mem_header_line(&tree, 100).to_string();
+        let text = mem_header_line(&tree, 100).0.to_string();
         // The bug this guards: swap painted as a segment of MemTotal, which
         // would put pages that are not in RAM inside the RAM bar.
         assert!(text.contains("SWAP ["), "{text}");
@@ -1097,7 +1148,7 @@ mod tests {
         // Discrete VRAM and swap together still fit the same two-row header.
         tree.vram_total_bytes = Some(12 * g);
         tree.vram_used_bytes = Some(6 * g);
-        let text = mem_header_line(&tree, 120).to_string();
+        let text = mem_header_line(&tree, 120).0.to_string();
         assert!(text.contains("VRAM [") && text.contains("SWAP ["), "{text}");
         assert_eq!(text.chars().count(), 120);
     }

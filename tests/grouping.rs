@@ -28,8 +28,6 @@ struct ProcFix {
     ppid: u32,
     #[serde(default)]
     pgrp: i32,
-    #[serde(default)]
-    sid: i32,
     uid: u32,
     #[serde(default)]
     kthread: bool,
@@ -61,7 +59,6 @@ fn load(path: &str, ov: &Overrides) -> (HashMap<u32, Process>, ContainerIndex, H
                 } else {
                     p.pgrp
                 },
-                sid: p.sid,
                 uid: p.uid,
                 kthread: p.kthread,
                 comm: p.comm,

@@ -101,7 +101,6 @@ fn read_pid(pid: u32, want_pss: bool, want_swap: bool, prev: Option<&Process>) -
         pid,
         ppid: parsed.ppid,
         pgrp: parsed.pgrp,
-        sid: parsed.sid,
         uid,
         kthread: parsed.kthread,
         comm: parsed.comm,
@@ -156,7 +155,6 @@ struct StatFields {
     comm: String,
     ppid: u32,
     pgrp: i32,
-    sid: i32,
     utime: u64,
     stime: u64,
     threads: Option<u64>,
@@ -173,11 +171,10 @@ fn parse_stat(stat: &str) -> Option<StatFields> {
     let comm = stat[open + 1..close].to_string();
     let rest = stat[close + 1..].split_whitespace();
     let fields: Vec<&str> = rest.collect();
-    // after comm: state ppid pgrp session ... flags ... utime stime ...
-    // num_threads ... starttime (0-based: 1,2,3,6,11,12,17,19)
+    // after comm: state ppid pgrp ... flags ... utime stime ...
+    // num_threads ... starttime (0-based: 1,2,6,11,12,17,19)
     let ppid = fields.get(1)?.parse().ok()?;
     let pgrp = fields.get(2)?.parse().ok()?;
-    let sid = fields.get(3)?.parse().ok()?;
     // PF_KTHREAD in include/linux/sched.h — no userspace smaps/io/fdinfo.
     let flags: u32 = fields.get(6).and_then(|s| s.parse().ok()).unwrap_or(0);
     let utime = fields.get(11)?.parse().ok()?;
@@ -188,7 +185,6 @@ fn parse_stat(stat: &str) -> Option<StatFields> {
         comm,
         ppid,
         pgrp,
-        sid,
         utime,
         stime,
         threads: fields.get(17).and_then(|s| s.parse().ok()),

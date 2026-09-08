@@ -50,7 +50,9 @@ cargo +1.98 check --locked --all-targets   # the MSRV in Cargo.toml, not stable
 named on the cargo invocation. The other job runs `tests/live_proc.rs` as a
 static musl binary inside an image with nothing installed, because those
 invariants are documented to hold in a bare container -- no `/etc/passwd`
-entry, no docker socket, no DRM, and a `/proc` with one process in it.
+entry, no docker socket, no DRM, and a `/proc` with one process in it. The
+job bind-mounts the musl `heft` binary at `CARGO_BIN_EXE_heft`, the path the
+tests already use to spawn it.
 
 `heft --once` on this machine is the product check, not a CI job.
 

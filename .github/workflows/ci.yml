@@ -78,7 +78,11 @@ jobs:
   # worth. Every other job runs it where all of that exists, so the one
   # environment heft documents as supported was the one never exercised.
   # A static musl test binary keeps the container to the test rather than to
-  # a toolchain, so the image needs nothing installed in it.
+  # a toolchain, so the image needs nothing installed in it. live_proc then
+  # spawns heft via CARGO_BIN_EXE_heft (an absolute host path), so that file
+  # has to exist at the same path inside the container. A file bind-mount at a
+  # dest Alpine does not have becomes a directory, which is why the parent
+  # debug/ dir is what gets mounted.
   bare-container:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -94,11 +98,16 @@ jobs:
         with:
           key: musl
       - run: |
-          bin=$(cargo test --locked --target x86_64-unknown-linux-musl \
-                  --test live_proc --no-run --message-format=json \
-                | jq -r 'select(.target.name == "live_proc" and .executable != null)
-                          | .executable')
-          test -n "$bin"
-          docker run --rm --network none -v "$bin:/live_proc:ro" \
+          art=$(mktemp)
+          cargo test --locked --target x86_64-unknown-linux-musl \
+            --test live_proc --no-run --message-format=json > "$art"
+          bin=$(jq -r 'select(.target.name == "live_proc" and .executable != null)
+                          | .executable' "$art" | tail -n1)
+          heft=$(jq -r 'select(.target.name == "heft" and .executable != null)
+                          | .executable' "$art" | tail -n1)
+          test -n "$bin" && test -f "$heft"
+          docker run --rm --network none \
+            -v "$bin:/live_proc:ro" \
+            -v "$(dirname "$heft"):$(dirname "$heft"):ro" \
             alpine@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b \
             /live_proc

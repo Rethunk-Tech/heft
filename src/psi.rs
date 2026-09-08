@@ -286,7 +286,7 @@ pub(crate) fn header_tail(tree: &HostTree) -> String {
     {
         return String::new();
     }
-    let f = |v: Option<f64>| v.map_or_else(|| "-".to_string(), |v| format!("{v:.1}"));
+    let f = |v: Option<f64>| v.map_or_else(|| "-".to_string(), crate::once::fmt_pct);
     format!(
         "  psi {}/{}/{}",
         f(tree.psi_cpu_avg10),

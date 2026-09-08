@@ -588,11 +588,11 @@ fn render_table(
     }
     writeln!(
         out,
-        "HOST  cpu {:>5.1}%  usr {:>4.1} sys {:>4.1} wait {:>4.1}  mem {} / {}{}  nproc {}{}",
-        tree.cpu_pct,
-        tree.cpu_user_pct,
-        tree.cpu_system_pct,
-        tree.cpu_wait_pct,
+        "HOST  cpu {:>5}%  usr {:>4} sys {:>4} wait {:>4}  mem {} / {}{}  nproc {}{}",
+        fmt_pct(tree.cpu_pct),
+        fmt_pct(tree.cpu_user_pct),
+        fmt_pct(tree.cpu_system_pct),
+        fmt_pct(tree.cpu_wait_pct),
         fmt_bytes(Some(tree.mem_used_bytes)),
         fmt_bytes(Some(tree.mem_total_bytes)),
         host_swap(&tree),

@@ -839,10 +839,10 @@ fn draw_help(f: &mut ratatui::Frame<'_>, area: Rect) {
     );
 }
 
-/// Body rows that fit in the table pane: term minus header(2), two rules,
-/// column header(1), and footer(1).
+/// Body rows that fit in the table pane: the terminal minus the header, the
+/// two rules, the column header and the footer.
 fn table_body_rows(term_h: u16) -> usize {
-    term_h.saturating_sub(6) as usize
+    term_h.saturating_sub(HEADER_ROWS + 4) as usize
 }
 
 /// First visible index so `selected` stays in `[offset, offset+visible)`.

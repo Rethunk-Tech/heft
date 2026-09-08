@@ -46,6 +46,12 @@ struct App {
     /// flash the whole tree back on screen between two characters. The footer
     /// says when the text on screen is not what is filtering.
     filter_re: Option<Filter>,
+    /// Whether the text on screen compiles. The key handler already has the
+    /// answer when it tries to replace `filter_re`, so the footer reads it
+    /// instead of recompiling the pattern on every frame. Every site that
+    /// edits the text goes through that one branch, which is what keeps this
+    /// from going stale.
+    filter_ok: bool,
     col_off: u16,
     status: String,
     help: bool,
@@ -87,6 +93,7 @@ fn run_loop(
     let _sampler = proc::spawn_sampler(interval, pss_interval, slot.clone())?;
     let tree = proc::placeholder_tree();
     let filter_re = Filter::new(&view.filter);
+    let filter_ok = filter_re.is_some();
     let mut app = App {
         expand: default_expand(),
         tree,
@@ -97,6 +104,7 @@ fn run_loop(
         cols,
         filter_edit: false,
         filter_re,
+        filter_ok,
         col_off: 0,
         status: String::new(),
         help: false,
@@ -363,10 +371,12 @@ fn handle_key(
         // Only replace it when the new text compiles, so a half-written
         // pattern keeps filtering with the last one that worked instead of
         // flashing the whole tree back between two keystrokes.
-        if app.view.filter != before
-            && let Some(f) = Filter::new(&app.view.filter)
-        {
-            app.filter_re = Some(f);
+        if app.view.filter != before {
+            let compiled = Filter::new(&app.view.filter);
+            app.filter_ok = compiled.is_some();
+            if let Some(f) = compiled {
+                app.filter_re = Some(f);
+            }
         }
         return Ok(false);
     }
@@ -491,11 +501,7 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &App, rows: &[Flat]) {
 
     // `?` says the text on screen is not a usable pattern yet, so what is on
     // the table is still the last one that compiled.
-    let stale = if Filter::new(&app.view.filter).is_some() {
-        ""
-    } else {
-        " ?"
-    };
+    let stale = if app.filter_ok { "" } else { " ?" };
     let filter = if app.filter_edit {
         format!("filter> {}_{stale}", app.view.filter)
     } else if app.view.filter.is_empty() {
@@ -1170,6 +1176,7 @@ mod tests {
         App {
             cols: Columns::from_view(&view),
             filter_re: Filter::new(&view.filter),
+            filter_ok: true,
             tree: HostTree::default(),
             cursor: 0,
             row_off: 0,
@@ -1226,6 +1233,36 @@ mod tests {
         app.filter_edit = true;
         assert!(handle_key(&mut app, KeyCode::Char('c'), ctrl, &rows).unwrap());
         assert!(app.view.filter.is_empty(), "ctrl-c must not type a `c`");
+    }
+
+    #[test]
+    fn the_footer_marker_tracks_every_edit_to_the_pattern() {
+        let rows: Vec<Flat> = Vec::new();
+        let none = KeyModifiers::NONE;
+        let mut app = test_app();
+        app.filter_edit = true;
+
+        // Half-written: the table keeps the last pattern that worked, and the
+        // footer has to say so.
+        for c in ['a', 'p', 'p', '['] {
+            handle_key(&mut app, KeyCode::Char(c), none, &rows).unwrap();
+        }
+        assert!(!app.filter_ok, "`app[` is not a pattern");
+
+        // Completing it clears the marker.
+        handle_key(&mut app, KeyCode::Char('a'), none, &rows).unwrap();
+        handle_key(&mut app, KeyCode::Char(']'), none, &rows).unwrap();
+        assert!(app.filter_ok, "`app[a]` is one");
+
+        // Backspacing back into a broken pattern brings it back.
+        handle_key(&mut app, KeyCode::Backspace, none, &rows).unwrap();
+        assert!(!app.filter_ok, "backspace put it back to `app[a`");
+
+        // Esc empties the pattern, and an empty one filters nothing and
+        // compiles fine.
+        handle_key(&mut app, KeyCode::Esc, none, &rows).unwrap();
+        assert!(app.view.filter.is_empty());
+        assert!(app.filter_ok, "an empty pattern is not a broken one");
     }
 
     fn names(rows: &[Flat]) -> Vec<&str> {

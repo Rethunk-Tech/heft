@@ -44,7 +44,7 @@
 
 - The two header bars are drawn to one width, so the CPU and MEMORY brackets
   stack instead of each row sizing its bar around its own text. The MEM group
-  spends more of its row on `] used/total  ` and a fourth legend label, so it
+  spends more of its row on `] used/total` and a fourth legend label, so it
   sets the width and the CPU row pads on the right; where the MEMORY row splits
   into tanks it is the first tank that is matched.
 
@@ -54,6 +54,10 @@
   suffix difference above by accident, so removing it on its own took the two
   brackets from 4 columns apart to 14. The shared bar width is what closes
   them.
+
+- Clap help and usage errors are uncolored. The TUI already honours `NO_COLOR`;
+  clap's default `color` feature was pulling `anstream` for stderr heft does
+  not paint.
 
 ## 0.4.0 - 2026-09-07
 

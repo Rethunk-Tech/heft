@@ -10,7 +10,14 @@ repository = "https://github.com/Rethunk-Tech/heft"
 readme = "README.md"
 
 [dependencies]
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", default-features = false, features = [
+  "std",
+  "derive",
+  "help",
+  "usage",
+  "error-context",
+  "suggestions",
+] }
 crossterm = "0.29"
 libc = "0.2"
 regex-lite = "0.1"
@@ -28,6 +35,13 @@ strip = true
 panic = "abort"
 
 [build-dependencies]
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", default-features = false, features = [
+  "std",
+  "derive",
+  "help",
+  "usage",
+  "error-context",
+  "suggestions",
+] }
 clap_complete = "4.6.9"
 clap_mangen = "0.3.3"

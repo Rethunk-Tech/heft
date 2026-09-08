@@ -152,14 +152,10 @@ impl Overrides {
     pub(crate) fn no_placement_overrides(&self) -> bool {
         self.applications.is_empty() && self.user_services.is_empty() && self.fold.is_empty()
     }
-
-    #[must_use]
     pub(crate) fn container_owner(&self, name: &str) -> Option<u32> {
         self.container_owners.get(name).copied()
     }
 }
-
-#[must_use]
 fn overrides_path() -> PathBuf {
     config_dir().join("grouping.json")
 }
@@ -168,7 +164,6 @@ fn overrides_path() -> PathBuf {
 ///
 /// A monitor that dies on a typo in a config file is worse than one with no
 /// config at all, so a parse failure warns once and grouping continues.
-#[must_use]
 pub(crate) fn load_overrides() -> Overrides {
     let path = overrides_path();
     let Ok(text) = fs::read_to_string(&path) else {

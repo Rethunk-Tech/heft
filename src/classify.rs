@@ -67,11 +67,11 @@ const COMPOSITORS: &[&str] = &[
     "cosmic-comp",
 ];
 
-pub fn basename(path: &str) -> String {
+pub(crate) fn basename(path: &str) -> String {
     path.rsplit('/').next().unwrap_or(path).to_string()
 }
 
-pub fn name_of(p: &Process) -> String {
+pub(crate) fn name_of(p: &Process) -> String {
     if let Some(exe) = &p.exe {
         let b = basename(exe);
         if !b.is_empty() && b != "exe" && !b.starts_with('[') {
@@ -85,7 +85,7 @@ fn norm(s: &str) -> String {
     s.to_ascii_lowercase()
 }
 
-pub fn is_launcher(p: &Process) -> bool {
+pub(crate) fn is_launcher(p: &Process) -> bool {
     if names_match(&names_of(p), is_launcher_name) {
         return true;
     }
@@ -103,11 +103,11 @@ pub fn is_launcher(p: &Process) -> bool {
     false
 }
 
-pub fn is_session_noise(p: &Process) -> bool {
+pub(crate) fn is_session_noise(p: &Process) -> bool {
     names_match(&names_of(p), |n| n == "cat")
 }
 
-pub fn is_generic(p: &Process) -> bool {
+pub(crate) fn is_generic(p: &Process) -> bool {
     names_match(&names_of(p), |n| {
         GENERICS.iter().any(|x| x.eq_ignore_ascii_case(n))
             || n.starts_with("python")
@@ -116,21 +116,21 @@ pub fn is_generic(p: &Process) -> bool {
     })
 }
 
-pub fn is_shell_name(name: &str) -> bool {
+pub(crate) fn is_shell_name(name: &str) -> bool {
     SHELLS.iter().any(|s| s.eq_ignore_ascii_case(name))
 }
 
-pub fn is_shell(p: &Process) -> bool {
+pub(crate) fn is_shell(p: &Process) -> bool {
     names_match(&names_of(p), is_shell_name)
 }
 
-pub fn is_terminal(p: &Process) -> bool {
+pub(crate) fn is_terminal(p: &Process) -> bool {
     names_match(&names_of(p), |n| {
         TERMINALS.iter().any(|t| t.eq_ignore_ascii_case(n))
     })
 }
 
-pub fn is_compositor(p: &Process) -> bool {
+pub(crate) fn is_compositor(p: &Process) -> bool {
     names_match(&names_of(p), |n| {
         COMPOSITORS.iter().any(|t| t.eq_ignore_ascii_case(n))
     })
@@ -144,7 +144,7 @@ fn is_session_bus(n: &[String]) -> bool {
 ///
 /// A logical group is a documented unit/package/D-Bus/architecture family,
 /// not a comm prefix. Prefix-only lookalikes with a different product stay out.
-pub fn session_helper_ident(p: &Process) -> Option<&'static str> {
+pub(crate) fn session_helper_ident(p: &Process) -> Option<&'static str> {
     let n = names_of(p);
     if is_session_bus(&n) {
         return Some("dbus-broker");
@@ -314,7 +314,7 @@ fn is_gcr_ssh_agent(names: &[String], p: &Process) -> bool {
 }
 
 /// Firefox/Chromium crash helper whose parent is often user systemd.
-pub fn crash_helper_app(p: &Process) -> Option<String> {
+pub(crate) fn crash_helper_app(p: &Process) -> Option<String> {
     if !names_match(&names_of(p), is_crash_helper_name) {
         return None;
     }
@@ -361,7 +361,7 @@ fn app_from_crash_helper_path(s: &str) -> Option<String> {
 }
 
 /// Interpreters fold into Electron/browser parents, never into a shell or systemd.
-pub fn absorbs_generic(parent: &Process) -> bool {
+pub(crate) fn absorbs_generic(parent: &Process) -> bool {
     if is_generic(parent)
         || is_launcher(parent)
         || is_shell(parent)
@@ -377,7 +377,7 @@ pub fn absorbs_generic(parent: &Process) -> bool {
     !names_match(&names_of(parent), |n| n == "systemd")
 }
 
-pub fn is_interactive_shell(p: &Process) -> bool {
+pub(crate) fn is_interactive_shell(p: &Process) -> bool {
     if !is_shell(p) {
         return false;
     }
@@ -394,20 +394,20 @@ pub fn is_interactive_shell(p: &Process) -> bool {
     !has_c && !has_path
 }
 
-pub fn is_worker(p: &Process) -> bool {
+pub(crate) fn is_worker(p: &Process) -> bool {
     names_match(&names_of(p), is_crash_helper_name)
         || p.cmdline.iter().any(|a| a.starts_with("--type="))
 }
 
-pub fn is_foldable_helper(p: &Process) -> bool {
+pub(crate) fn is_foldable_helper(p: &Process) -> bool {
     is_launcher(p) || (is_shell(p) && !is_interactive_shell(p))
 }
 
-pub fn is_launcher_name(name: &str) -> bool {
+pub(crate) fn is_launcher_name(name: &str) -> bool {
     LAUNCHERS.iter().any(|x| x.eq_ignore_ascii_case(name)) || norm(name).ends_with(".appimage")
 }
 
-pub fn launcher_payload_hint(p: &Process) -> Option<String> {
+pub(crate) fn launcher_payload_hint(p: &Process) -> Option<String> {
     let named = name_of(p);
     // Case-folded the way `is_launcher_name` folds it: real AppImages ship as
     // `Cursor-x86_64.AppImage`, and `name_of` does not lowercase. A launcher
@@ -436,7 +436,7 @@ pub fn launcher_payload_hint(p: &Process) -> Option<String> {
     None
 }
 
-pub fn looks_script(arg: &str) -> bool {
+pub(crate) fn looks_script(arg: &str) -> bool {
     let b = basename(arg);
     matches!(
         b.rsplit_once('.').map(|(_, e)| e),
@@ -444,7 +444,7 @@ pub fn looks_script(arg: &str) -> bool {
     )
 }
 
-pub fn script_basename(cmdline: &[String]) -> Option<String> {
+pub(crate) fn script_basename(cmdline: &[String]) -> Option<String> {
     for arg in cmdline.iter().skip(1) {
         if arg.starts_with('-') {
             continue;
@@ -462,7 +462,7 @@ pub fn script_basename(cmdline: &[String]) -> Option<String> {
     None
 }
 
-pub fn cmdline_flag_value<'a>(cmdline: &'a [String], flag: &str) -> Option<&'a str> {
+pub(crate) fn cmdline_flag_value<'a>(cmdline: &'a [String], flag: &str) -> Option<&'a str> {
     let mut i = 0;
     while i < cmdline.len() {
         if cmdline[i] == flag {

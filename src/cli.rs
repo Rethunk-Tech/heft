@@ -4,7 +4,7 @@ use clap::{Parser, ValueEnum};
 /// beside the glyph table because `build.rs` compiles this file standalone to
 /// generate the completions and man page.
 #[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
-pub enum Glyphs {
+pub(crate) enum Glyphs {
     /// Unicode when the locale names a UTF-8 charmap, ASCII otherwise
     Auto,
     /// Block and box-drawing characters
@@ -19,7 +19,7 @@ pub enum Glyphs {
     version,
     about = "Read-only Linux application-weight process monitor"
 )]
-pub struct Cli {
+pub(crate) struct Cli {
     /// Print one table and exit
     #[arg(long)]
     pub once: bool,

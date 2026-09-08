@@ -1,7 +1,7 @@
 use crate::classify::{self, script_basename};
 use crate::types::Process;
 
-pub fn docker_scope_id(cgroup: &str) -> Option<String> {
+pub(crate) fn docker_scope_id(cgroup: &str) -> Option<String> {
     scope_hex(cgroup, "docker-").or_else(|| scope_hex(cgroup, "libpod-"))
 }
 
@@ -19,15 +19,15 @@ fn scope_hex(cgroup: &str, prefix: &str) -> Option<String> {
     None
 }
 
-pub fn in_system_slice(cgroup: &str) -> bool {
+pub(crate) fn in_system_slice(cgroup: &str) -> bool {
     cgroup.contains("/system.slice/") || cgroup.ends_with("/system.slice")
 }
 
-pub fn in_user_slice(cgroup: &str) -> bool {
+pub(crate) fn in_user_slice(cgroup: &str) -> bool {
     cgroup.contains("/user.slice/") || cgroup.contains("user@")
 }
 
-pub fn user_unit(cgroup: &str) -> Option<String> {
+pub(crate) fn user_unit(cgroup: &str) -> Option<String> {
     let after = if let Some(i) = cgroup.find("user@") {
         let rest = &cgroup[i..];
         let slash = rest.find('/')?;
@@ -52,7 +52,7 @@ pub fn user_unit(cgroup: &str) -> Option<String> {
 /// Latin-1 and turns `\\xc3\\xa9` into `Ã©` instead of `é`. Lossy at the end
 /// rather than fallible, because a unit name heft cannot decode is still a row
 /// worth drawing.
-pub fn systemd_unescape(s: &str) -> String {
+pub(crate) fn systemd_unescape(s: &str) -> String {
     let b = s.as_bytes();
     let mut out: Vec<u8> = Vec::with_capacity(b.len());
     let mut i = 0;
@@ -73,7 +73,7 @@ pub fn systemd_unescape(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-pub fn lying_unit(unit: &str) -> bool {
+pub(crate) fn lying_unit(unit: &str) -> bool {
     let u = unit.to_ascii_lowercase();
     u.contains("-transient-")
         || u.contains("org.chromium.chromium")
@@ -83,7 +83,7 @@ pub fn lying_unit(unit: &str) -> bool {
         || u.starts_with("flatpak-session-helper")
 }
 
-pub fn is_user_service_unit(unit: &str) -> bool {
+pub(crate) fn is_user_service_unit(unit: &str) -> bool {
     let u = unit.to_ascii_lowercase();
     if u == "init.scope" {
         return true;
@@ -92,7 +92,7 @@ pub fn is_user_service_unit(unit: &str) -> bool {
     service && !u.starts_with("app-")
 }
 
-pub fn unit_stem(unit: &str) -> String {
+pub(crate) fn unit_stem(unit: &str) -> String {
     let mut s = unit.to_string();
     if let Some(stripped) = s.strip_suffix(".scope") {
         s = stripped.to_string();
@@ -109,11 +109,11 @@ pub fn unit_stem(unit: &str) -> String {
 /// `PF_KTHREAD` is the kernel's own answer, so nothing here re-derives it from
 /// uid/ppid/comm. Those two agreed on all 864 live pids of this machine, but
 /// only the flag survives a kthread reparented away from `kthreadd`.
-pub fn is_kernel(p: &Process) -> bool {
+pub(crate) fn is_kernel(p: &Process) -> bool {
     p.kthread
 }
 
-pub fn generic_fallback(p: &Process, unit: Option<&str>) -> String {
+pub(crate) fn generic_fallback(p: &Process, unit: Option<&str>) -> String {
     if let Some(u) = unit
         && !lying_unit(u)
     {
@@ -134,7 +134,7 @@ pub fn generic_fallback(p: &Process, unit: Option<&str>) -> String {
     classify::name_of(p)
 }
 
-pub fn instance_key(p: &Process, container_id: Option<&str>) -> String {
+pub(crate) fn instance_key(p: &Process, container_id: Option<&str>) -> String {
     if let Some(id) = container_id {
         return format!("ctr:{id}");
     }

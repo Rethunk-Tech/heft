@@ -6,7 +6,7 @@ use crate::proc::field_u64;
 use crate::types::{HostHeader, HostTree, Metrics, Process};
 
 #[derive(Clone, Copy, Debug, Default)]
-pub struct HostCpu {
+pub(crate) struct HostCpu {
     /// user + nice (guest already sits inside these kernel counters)
     pub user: u64,
     /// system + irq + softirq
@@ -17,14 +17,14 @@ pub struct HostCpu {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct HostSplit {
+pub(crate) struct HostSplit {
     pub user: f64,
     pub system: f64,
     pub wait: f64,
     pub busy: f64,
 }
 
-pub fn nproc() -> u32 {
+pub(crate) fn nproc() -> u32 {
     match fs::read_to_string("/proc/stat") {
         Ok(text) => {
             let n = text
@@ -55,24 +55,24 @@ fn btime() -> u64 {
     })
 }
 
-pub fn clk_tck() -> u64 {
+pub(crate) fn clk_tck() -> u64 {
     // SAFETY: sysconf is a pure query; a non-positive result is replaced.
     let v = unsafe { libc::sysconf(libc::_SC_CLK_TCK) };
     if v > 0 { v.cast_unsigned() } else { 100 }
 }
 
-pub fn page_size() -> u64 {
+pub(crate) fn page_size() -> u64 {
     // SAFETY: sysconf is a pure query; a non-positive result is replaced.
     let v = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
     if v > 0 { v.cast_unsigned() } else { 4096 }
 }
 
-pub fn euid() -> u32 {
+pub(crate) fn euid() -> u32 {
     // SAFETY: geteuid has no side effects.
     unsafe { libc::geteuid() }
 }
 
-pub fn read_host() -> HostCpu {
+pub(crate) fn read_host() -> HostCpu {
     let Ok(text) = fs::read_to_string("/proc/stat") else {
         return HostCpu::default();
     };
@@ -82,7 +82,7 @@ pub fn read_host() -> HostCpu {
     parse_host_cpu(line).unwrap_or_default()
 }
 
-pub fn parse_host_cpu(line: &str) -> Option<HostCpu> {
+pub(crate) fn parse_host_cpu(line: &str) -> Option<HostCpu> {
     let mut parts = line.split_whitespace();
     if parts.next()? != "cpu" {
         return None;
@@ -111,7 +111,7 @@ pub fn parse_host_cpu(line: &str) -> Option<HostCpu> {
     })
 }
 
-pub fn host_split(a: &HostCpu, b: &HostCpu) -> HostSplit {
+pub(crate) fn host_split(a: &HostCpu, b: &HostCpu) -> HostSplit {
     let dt = b.total.saturating_sub(a.total) as f64;
     if dt <= 0.0 {
         return HostSplit::default();
@@ -130,7 +130,7 @@ pub fn host_split(a: &HostCpu, b: &HostCpu) -> HostSplit {
     }
 }
 
-pub fn process_metrics(
+pub(crate) fn process_metrics(
     prev: Option<&Process>,
     cur: &Process,
     elapsed: Duration,
@@ -254,7 +254,7 @@ fn cycles_pct(prev: Option<u64>, cur: Option<u64>, span: Option<u64>) -> Option<
     Some((busy / span? as f64 * 100.0).clamp(0.0, 100.0))
 }
 
-pub fn host_consts() -> HostHeader {
+pub(crate) fn host_consts() -> HostHeader {
     HostHeader {
         nproc: nproc(),
         clk_tck: clk_tck(),
@@ -263,7 +263,7 @@ pub fn host_consts() -> HostHeader {
 }
 
 /// The header half of the published tree; `group::build_tree` fills the rest.
-pub fn header_from(c: &HostHeader, a: &HostCpu, b: &HostCpu) -> HostTree {
+pub(crate) fn header_from(c: &HostHeader, a: &HostCpu, b: &HostCpu) -> HostTree {
     let ram = crate::mem::read_ram();
     let gpu = crate::mem::read_gpu();
     let split = host_split(a, b);

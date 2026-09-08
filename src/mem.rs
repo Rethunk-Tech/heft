@@ -4,7 +4,7 @@ use std::path::Path;
 use crate::proc::field_u64;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct RamInfo {
+pub(crate) struct RamInfo {
     pub used_bytes: u64,
     pub total_bytes: u64,
     pub buffers_bytes: u64,
@@ -14,14 +14,14 @@ pub struct RamInfo {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct GpuPool {
+pub(crate) struct GpuPool {
     pub vram_used: Option<u64>,
     pub vram_total: Option<u64>,
     pub gtt_total: Option<u64>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct MemParts {
+pub(crate) struct MemParts {
     pub used: u64,
     pub total: u64,
     pub vram: u64,
@@ -31,7 +31,7 @@ pub struct MemParts {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct MemSegments {
+pub(crate) struct MemSegments {
     pub vram: u64,
     pub gtt: u64,
     pub cache: u64,
@@ -39,14 +39,14 @@ pub struct MemSegments {
     pub anon: u64,
 }
 
-pub fn read_ram() -> RamInfo {
+pub(crate) fn read_ram() -> RamInfo {
     let Ok(text) = fs::read_to_string("/proc/meminfo") else {
         return RamInfo::default();
     };
     parse_meminfo(&text)
 }
 
-pub fn parse_meminfo(text: &str) -> RamInfo {
+pub(crate) fn parse_meminfo(text: &str) -> RamInfo {
     let mut total = 0u64;
     let mut avail = 0u64;
     let mut buffers = 0u64;
@@ -81,7 +81,7 @@ pub fn parse_meminfo(text: &str) -> RamInfo {
     }
 }
 
-pub fn read_gpu() -> GpuPool {
+pub(crate) fn read_gpu() -> GpuPool {
     let Ok(entries) = fs::read_dir("/sys/class/drm") else {
         return GpuPool::default();
     };
@@ -123,7 +123,7 @@ fn read_u64(path: &Path) -> Option<u64> {
 /// APU / unified: sysfs VRAM is a carve-out of `MemTotal` (GTT covers most of RAM),
 /// not a second device. False means discrete, which `ui::mem_header_line` renders
 /// as its own tank against `vram_total` rather than folding it into `MemTotal`.
-pub fn is_unified(mem_total: u64, gpu: &GpuPool) -> bool {
+pub(crate) fn is_unified(mem_total: u64, gpu: &GpuPool) -> bool {
     let Some(vram) = gpu.vram_total.filter(|v| *v > 0) else {
         return false;
     };
@@ -139,7 +139,7 @@ pub fn is_unified(mem_total: u64, gpu: &GpuPool) -> bool {
 /// Paint VRAM, GTT, cache, buffers, then anon inside `used`. Clip GPU first when
 /// vram+gtt exceed used; clip cache/buffers afterward. Sum never exceeds
 /// `used.min(total)`.
-pub fn clip_used(p: MemParts) -> MemSegments {
+pub(crate) fn clip_used(p: MemParts) -> MemSegments {
     if p.total == 0 {
         return MemSegments::default();
     }

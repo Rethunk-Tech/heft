@@ -2,14 +2,14 @@ use std::fs;
 
 use crate::proc::field_u64;
 
-pub fn read_io(pid: u32) -> (Option<u64>, Option<u64>) {
+pub(crate) fn read_io(pid: u32) -> (Option<u64>, Option<u64>) {
     match fs::read_to_string(format!("/proc/{pid}/io")) {
         Ok(text) => parse_io(&text),
         Err(_) => (None, None),
     }
 }
 
-pub fn parse_io(text: &str) -> (Option<u64>, Option<u64>) {
+pub(crate) fn parse_io(text: &str) -> (Option<u64>, Option<u64>) {
     let mut r = None;
     let mut w = None;
     for line in text.lines() {
@@ -25,7 +25,7 @@ pub fn parse_io(text: &str) -> (Option<u64>, Option<u64>) {
 /// PSS and swapped-out PSS from one `smaps_rollup` read. `want_swap` is the
 /// host having swap at all: with `SwapTotal: 0` every process reports
 /// `SwapPss: 0`, and a column of zeros claims a figure exists where none does.
-pub fn read_rollup_kb(pid: u32, want_swap: bool) -> (Option<u64>, Option<u64>) {
+pub(crate) fn read_rollup_kb(pid: u32, want_swap: bool) -> (Option<u64>, Option<u64>) {
     match fs::read_to_string(format!("/proc/{pid}/smaps_rollup")) {
         Ok(text) => (
             parse_pss_kb(&text),
@@ -35,12 +35,12 @@ pub fn read_rollup_kb(pid: u32, want_swap: bool) -> (Option<u64>, Option<u64>) {
     }
 }
 
-pub fn parse_pss_kb(text: &str) -> Option<u64> {
+pub(crate) fn parse_pss_kb(text: &str) -> Option<u64> {
     // `Pss:` only — smaps_rollup also carries Pss_Anon/Pss_File/Pss_Shmem.
     text.lines().find_map(|l| field_u64(l, "Pss:"))
 }
 
-pub fn parse_swap_pss_kb(text: &str) -> Option<u64> {
+pub(crate) fn parse_swap_pss_kb(text: &str) -> Option<u64> {
     // `SwapPss:`, not `Swap:` — see the `Metrics::swap_bytes` comment.
     text.lines().find_map(|l| field_u64(l, "SwapPss:"))
 }

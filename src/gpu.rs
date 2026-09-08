@@ -9,7 +9,7 @@ use crate::types::{GpuCounters, sum_opt};
 /// ticks pass false: dri/drm symlink names are enough, and a first sighting
 /// must not walk every fdinfo. Clients whose fd names omit dri/drm show up
 /// on the next `full_scan` (up to `--pss-interval`).
-pub fn read_pid(pid: u32, full_scan: bool) -> GpuCounters {
+pub(crate) fn read_pid(pid: u32, full_scan: bool) -> GpuCounters {
     let drm_fds = match drm_fd_nums(pid) {
         Err(e) if e.kind() == io::ErrorKind::PermissionDenied => return GpuCounters::default(),
         Err(_) => Vec::new(),
@@ -84,7 +84,7 @@ fn push_drm_text(texts: &mut Vec<String>, path: impl AsRef<Path>) {
     }
 }
 
-pub fn parse_fdinfo(text: &str) -> Option<ClientView> {
+pub(crate) fn parse_fdinfo(text: &str) -> Option<ClientView> {
     let mut driver_ok = false;
     let mut id = None;
     let mut vram = None;
@@ -155,7 +155,7 @@ pub fn parse_fdinfo(text: &str) -> Option<ClientView> {
     })
 }
 
-pub struct ClientView {
+pub(crate) struct ClientView {
     pub id: u64,
     pub vram: Option<u64>,
     pub gtt: Option<u64>,
@@ -166,7 +166,7 @@ pub struct ClientView {
     pub total_cycles: Option<u64>,
 }
 
-pub fn merge_fdinfo_texts(texts: &[String]) -> GpuCounters {
+pub(crate) fn merge_fdinfo_texts(texts: &[String]) -> GpuCounters {
     let mut by_client: HashMap<u64, ClientView> = HashMap::new();
     for text in texts {
         if let Some(c) = parse_fdinfo(text) {

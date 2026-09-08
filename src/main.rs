@@ -62,6 +62,13 @@ fn main() -> ExitCode {
     } else if cli.desc {
         view.desc = true;
     }
+    if !cli.hide.is_empty() {
+        view.hide_columns = cli
+            .hide
+            .iter()
+            .map(|label| check_hide(label).to_string())
+            .collect();
+    }
     // Unlike `--filter`, this one applies to `--json` too: it prunes User
     // nodes, which the JSON tree has, where "keep the ancestors" had nothing
     // to mean there.
@@ -99,6 +106,34 @@ fn check_sort(label: &str) -> &str {
             ErrorKind::InvalidValue,
             format!(
                 "invalid value '{label}' for '--sort <COLUMN>'\n  [possible values: {}]",
+                labels.join(", ")
+            ),
+        )
+        .exit()
+}
+
+/// Same split as `--sort`: a typo on the command line is a usage error, a
+/// stale `view.json` entry only warns. `name` is refused rather than listed
+/// among the possible values, because hiding it would leave a table of
+/// numbers with no labels.
+fn check_hide(label: &str) -> &str {
+    if label == "name" {
+        Cli::command()
+            .error(
+                ErrorKind::InvalidValue,
+                "invalid value 'name' for '--hide <COLUMN>': the name column cannot be hidden",
+            )
+            .exit()
+    }
+    let labels = heft::once::hideable_labels();
+    if labels.contains(&label) {
+        return label;
+    }
+    Cli::command()
+        .error(
+            ErrorKind::InvalidValue,
+            format!(
+                "invalid value '{label}' for '--hide <COLUMN>'\n  [possible values: {}]",
                 labels.join(", ")
             ),
         )

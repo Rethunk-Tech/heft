@@ -131,13 +131,14 @@ record.
 
 `main` resolves one `View` and hands it to whichever surface runs, so
 precedence lives in one place: `--sort`, `--asc` / `--desc`, `--filter`,
-`--user` and `--top` overwrite whatever the saved view held, and only `sort`,
-`desc`, `filter` and `hide_columns` are ever read back from it — `users` and
-`top` are `#[serde(skip)]`. `--once` starts from `config::load_view()`; `--json` starts
+`--user`, `--top` and `--hide` overwrite whatever the saved view held, and only
+`sort`, `desc`, `filter` and `hide_columns` are ever read back from it —
+`users` and `top` are `#[serde(skip)]`. `--once` starts from `config::load_view()`; `--json` starts
 from `View::default()` and never reads the file, because a human's saved
-preference must not reshape a documented contract. `--filter` is
-`conflicts_with = "json"`: the JSON tree has no folder rows, so "keep the
-ancestors" has nothing to mean there.
+preference must not reshape a documented contract. `--filter` and `--top`
+are `conflicts_with = "json"` because the JSON tree has no folder rows, so
+"keep the ancestors" has nothing to mean there. `--hide` is too: a column
+preference is not part of the contract.
 
 An unknown `--sort` label is a clap `InvalidValue` exit, not
 `Sort::from_label`'s fallback — a stale `view.json` must not stop the monitor,
@@ -196,12 +197,13 @@ three-character `...` for `…` would overflow both. `Cli::Glyphs` lives in
 ## Columns
 
 `once::COLUMNS` is the one column model; `once::Columns` is that list with
-`view.hide_columns` applied, resolved once per surface and passed into every
-render site so none of them branches on visibility. `name` is refused and an
-unknown label warns (`config::view_path()` named), unlike `Sort::from_label`,
-which falls back silently — a mistyped sort still prints a usable table, a
-mistyped hide entry would do nothing and say nothing. `Sort::next` cycles over
-the visible list only.
+`view.hide_columns` applied. The TUI and `--once` resolve it at start; the TUI
+rebuilds it when `H` / `u` change the list, so no render site branches on
+visibility. `name` is refused and an
+unknown label in `view.json` warns (`config::view_path()` named); an unknown
+`--hide` is a clap `InvalidValue`, the same split as `--sort`. `Sort::next`
+cycles over the visible list only; `H` advances with `Sort::after_hiding` so
+hiding PSS lands on RSS rather than `name`.
 
 Visibility is a **view** preference, so it lives in `view.json` beside sort and
 filter, never in the read-only `grouping.json`, which is about identity. It
@@ -256,7 +258,7 @@ stderr from `config::load_overrides` and grouping continues built-in.
 | MEM bar | one MemTotal width when APU VRAM is unified; VRAM (unified only) / GTT resident, then Cached/Buffers, then anon; clip so the stack never exceeds `used.min(MemTotal)` (`mem::clip_used`) |
 | Discrete VRAM | own tank against `mem_info_vram_total`, sharing the MEMORY row with the MEM bar; only `vram` drops from that legend — GTT is pinned system RAM and stays in MEM |
 | Swap | own tank against `SwapTotal`, never a MEM segment: swapped pages are not in RAM. Absent entirely when `SwapTotal` is 0, so a swapless host renders as it did before swap existed |
-| Layout | 2 unbordered header rows (extra tanks split the MEMORY row via `ui::tank_widths`, never add a third row); persistent rules: header↔tree and tree↔footer. Both rows draw their bar to one width so the two brackets stack: `mem_header_line` returns its first tank's width and `cpu_header_line` takes it, clamped to its own slack and padded on the right. The MEM group spends more of its row on `] used/total  ` and a fourth legend label, so the CPU row is normally the one with columns to spare — only a tree with no memory inverts that, and there the clamp wins |
+| Layout | 2 unbordered header rows (extra tanks split the MEMORY row via `ui::tank_widths`, never add a third row); persistent rules: header↔tree and tree↔footer. Both rows draw their bar to one width so the two brackets stack: `mem_header_line` returns its first tank's width and `cpu_header_line` takes it, clamped to its own slack and padded on the right. The MEM group spends more of its row on `] used/total` and a fourth legend label, so the CPU row is normally the one with columns to spare — only a tree with no memory inverts that, and there the clamp wins |
 | Disk R/W | table columns only (formatted rates change width every tick) |
 | `D` | between the GPU columns and the stall trio: it asks the stall columns' question and, being a count rather than a percentage of an interval, answers it on the folder, User and Host rows they must leave blank |
 | THR / AGE | beside `N`, before the metric columns: all three say what the row *is* rather than what it is currently costing |

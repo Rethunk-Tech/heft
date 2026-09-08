@@ -22,7 +22,8 @@ use crate::cpu;
 use crate::glyph;
 use crate::mem::{self, MemParts};
 use crate::once::{
-    Columns, Filter, Sort, fmt_bytes, fmt_pct, keep_matches, keep_top, keep_users, sort_tree,
+    Columns, Filter, Sort, fmt_bytes, fmt_pct, hide_column, keep_matches, keep_top, keep_users,
+    sort_tree, unhide_last,
 };
 use crate::proc;
 use crate::types::{
@@ -389,6 +390,27 @@ fn handle_key(
             app.view.sort = next.label().into();
         }
         KeyCode::Char('d') => app.view.desc = !app.view.desc,
+        KeyCode::Char('H') => {
+            let label = app.view.sort.clone();
+            if hide_column(&mut app.view, &label) {
+                refresh_columns(app);
+                if app.cols.iter().all(|c| c.label != app.view.sort) {
+                    app.view.sort = Sort::from_label(&app.view.sort)
+                        .after_hiding(&app.cols)
+                        .label()
+                        .into();
+                }
+                app.status = format!("hidden {label}");
+            } else {
+                app.status = "name cannot be hidden".into();
+            }
+        }
+        KeyCode::Char('u' | 'U') => {
+            if let Some(label) = unhide_last(&mut app.view) {
+                refresh_columns(app);
+                app.status = format!("shown {label}");
+            }
+        }
         KeyCode::Up | KeyCode::Char('k') => app.cursor = app.cursor.saturating_sub(1),
         KeyCode::Down | KeyCode::Char('j') => {
             if app.cursor + 1 < rows.len() {
@@ -419,6 +441,14 @@ fn handle_key(
         _ => {}
     }
     Ok(false)
+}
+
+fn refresh_columns(app: &mut App) {
+    app.cols = Columns::from_view(&app.view);
+    let max = app.cols.len().saturating_sub(1) as u16;
+    if app.col_off > max {
+        app.col_off = max;
+    }
 }
 
 fn draw(f: &mut ratatui::Frame<'_>, app: &App, rows: &[Flat]) {
@@ -815,7 +845,7 @@ fn share_cells(parts: &[u64], capacity: u64, width: usize) -> Vec<usize> {
 
 fn help_text() -> String {
     let (up, down, left, right) = glyph::arrows();
-    let rows: [(String, &str); 10] = [
+    let rows: [(String, &str); 12] = [
         ("q  Esc  Ctrl-C".to_string(), "quit"),
         (format!("{up} {down}  j k"), "move"),
         (format!("{left} {right}  h l"), "expand / collapse"),
@@ -823,6 +853,8 @@ fn help_text() -> String {
         ("/".to_string(), "filter by regex (Enter apply, Esc cancel)"),
         ("c".to_string(), "cycle sort column"),
         ("d".to_string(), "reverse sort"),
+        ("H".to_string(), "hide sort column"),
+        ("u".to_string(), "unhide last column"),
         ("s".to_string(), "save view"),
         ("[ ]".to_string(), "scroll columns"),
         ("?  F1".to_string(), "toggle this help"),
@@ -1218,12 +1250,22 @@ mod tests {
             ('c', "sort cycle"),
             ('d', "sort direction"),
             ('s', "view save"),
+            ('H', "hide column"),
+            ('u', "unhide column"),
         ] {
             let mut app = test_app();
-            let before = (app.view.sort.clone(), app.view.desc);
+            let before = (
+                app.view.sort.clone(),
+                app.view.desc,
+                app.view.hide_columns.clone(),
+            );
             let quit = handle_key(&mut app, KeyCode::Char(key), ctrl, &rows).unwrap();
             assert_eq!(
-                (app.view.sort.clone(), app.view.desc),
+                (
+                    app.view.sort.clone(),
+                    app.view.desc,
+                    app.view.hide_columns.clone()
+                ),
                 before,
                 "ctrl-{key} reached the {what} binding"
             );
@@ -1247,6 +1289,20 @@ mod tests {
         app.filter_edit = true;
         assert!(handle_key(&mut app, KeyCode::Char('c'), ctrl, &rows).unwrap());
         assert!(app.view.filter.is_empty(), "ctrl-c must not type a `c`");
+    }
+
+    #[test]
+    fn hide_hides_the_sort_column_and_u_puts_it_back() {
+        let rows = filter_rows();
+        let none = KeyModifiers::NONE;
+        let mut app = test_app();
+        assert_eq!(app.view.sort, "pss");
+        handle_key(&mut app, KeyCode::Char('H'), none, &rows).unwrap();
+        assert_eq!(app.view.hide_columns, ["pss"]);
+        assert_eq!(app.view.sort, "rss");
+        handle_key(&mut app, KeyCode::Char('u'), none, &rows).unwrap();
+        assert!(app.view.hide_columns.is_empty());
+        assert!(app.cols.iter().any(|c| c.label == "pss"));
     }
 
     #[test]

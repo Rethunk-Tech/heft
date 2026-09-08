@@ -298,6 +298,44 @@ impl Sort {
         };
         Sort(cols.0[(p + 1) % cols.0.len()])
     }
+
+    /// Visible column after `self` in table order, wrapping. `H` uses this
+    /// rather than `next`: hiding the default PSS sort must land on RSS, not
+    /// jump to `name` the way a stale saved view does on `c`.
+    pub(crate) fn after_hiding(self, cols: &Columns) -> Self {
+        cols.0
+            .iter()
+            .copied()
+            .find(|&i| i > self.0)
+            .or(cols.0.first().copied())
+            .map(Sort)
+            .unwrap_or(Sort(0))
+    }
+}
+
+/// Every hideable label, so `--hide` can name the valid ones in its usage
+/// error. `name` is not among them: a table of numbers with no labels is
+/// unreadable.
+#[must_use]
+pub fn hideable_labels() -> Vec<&'static str> {
+    COLUMNS.iter().skip(1).map(|c| c.label).collect()
+}
+
+/// Hide `label` for this session. `false` when it is `name` or not a column.
+/// A label already hidden is still `true`: `H` is not how you unhide, `u` is.
+pub(crate) fn hide_column(view: &mut View, label: &str) -> bool {
+    if label == COLUMNS[0].label || COLUMNS.iter().all(|c| c.label != label) {
+        return false;
+    }
+    if !view.hide_columns.iter().any(|h| h == label) {
+        view.hide_columns.push(label.to_string());
+    }
+    true
+}
+
+/// Show the most recently hidden column. `None` when the list is empty.
+pub(crate) fn unhide_last(view: &mut View) -> Option<String> {
+    view.hide_columns.pop()
 }
 
 /// Every sort label, so `--sort` can name the valid ones in its usage error.
@@ -1075,6 +1113,34 @@ mod tests {
         );
         assert_eq!(labels(&hiding(&["name"])), all_labels());
         assert_eq!(labels(&hiding(&["cpu", ""])), all_labels());
+    }
+
+    #[test]
+    fn hide_column_refuses_name_and_unhide_pops() {
+        let mut view = View::default();
+        assert!(!hide_column(&mut view, "name"));
+        assert!(view.hide_columns.is_empty());
+        assert!(!hide_column(&mut view, "not-a-column"));
+        assert!(hide_column(&mut view, "vram"));
+        assert!(hide_column(&mut view, "vram"));
+        assert_eq!(view.hide_columns, ["vram"]);
+        assert!(hide_column(&mut view, "gtt"));
+        assert_eq!(unhide_last(&mut view).as_deref(), Some("gtt"));
+        assert_eq!(unhide_last(&mut view).as_deref(), Some("vram"));
+        assert_eq!(unhide_last(&mut view), None);
+        assert_eq!(hideable_labels().len(), COLUMNS.len() - 1);
+        assert!(!hideable_labels().contains(&"name"));
+    }
+
+    #[test]
+    fn hiding_the_sort_column_lands_on_the_next_in_table_order() {
+        let cols = hiding(&["pss"]);
+        assert_eq!(Sort::from_label("pss").after_hiding(&cols).label(), "rss");
+        let cols = hiding(&["netns_tx"]);
+        assert_eq!(
+            Sort::from_label("netns_tx").after_hiding(&cols).label(),
+            "name"
+        );
     }
 
     /// Hiding is presentation: the cells disappear, the widths of what is left

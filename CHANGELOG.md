@@ -32,6 +32,12 @@
   distinction, which is why the variable could be answered by dropping styling
   rather than by adding a second render path.
 
+- `H` hides the current sort column and `u` puts the last hidden one back;
+  `--hide` does the same on `--once` (repeatable) and overwrites a saved list.
+  `hide_columns` in `view.json` was already the store; it was only writable by
+  hand. `name` is refused. `--json` refuses the flag, the same contract as
+  `--filter`.
+
 - A `D` column counting the processes on a row in uninterruptible sleep. The
   stall columns answer "was this row waiting", but only on the ~82% of rows
   that resolve to one cgroup, and never on a folder, User or Host row, because

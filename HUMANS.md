@@ -73,6 +73,7 @@ heft --once --filter '^(code|claude)$'  # keep rows matching this regex, and the
 heft --once --user 1000   # only this user's branch (name or uid, repeatable)
 heft --once --sort age --asc   # low to high, rather than the saved direction
 heft --once --top 5       # the five heaviest rows under each parent
+heft --once --hide vram --hide gtt
 heft --json --follow      # one JSON document per line, per interval, forever
 heft --glyphs ascii       # bars and markers without block characters
 ```
@@ -210,11 +211,14 @@ folder rows for "keep the parents" to mean anything (filter it with `jq`).
 | `/` | filter by regex on the name (Enter applies, Esc cancels) |
 | `c` | cycle the sort column (default PSS descending) |
 | `d` | reverse the sort direction |
-| `s` | save the current sort and filter to `$XDG_CONFIG_HOME/heft/view.json` |
+| `H` | hide the current sort column (`name` is refused) |
+| `u` | unhide the last hidden column |
+| `s` | save sort, filter, and hidden columns to `$XDG_CONFIG_HOME/heft/view.json` |
 | `?` / `F1` | toggle the key help overlay |
 
-Sorting applies to every level of the tree. Sort and filter last only for this
-session until you press `s`; starting heft again loads that file if it exists.
+Sorting applies to every level of the tree. Sort, filter, and hidden columns
+last only for this session until you press `s`; starting heft again loads that
+file if it exists.
 
 Default expand: Host, your user, Applications, and that user's Containers.
 Other users, User Services, Host-level Containers, and System start collapsed.
@@ -395,7 +399,7 @@ container title is `docker-<12hex>`. Stopped containers (no PID) do not appear.
 
 | tree | path | what |
 | --- | --- | --- |
-| config | `$XDG_CONFIG_HOME/heft/view.json` (default `~/.config/heft/view.json`) | saved sort, direction and filter (after `s`), plus `hide_columns` if you write one. `--user` and `--top` are deliberately never saved |
+| config | `$XDG_CONFIG_HOME/heft/view.json` (default `~/.config/heft/view.json`) | saved sort, direction, filter, and hidden columns (after `s`). `--user` and `--top` are deliberately never saved |
 | config | `$XDG_CONFIG_HOME/heft/grouping.json` | your grouping overrides, if you write one |
 
 v1 creates no `$XDG_STATE_HOME/heft` or `$XDG_CACHE_HOME/heft`. The only file
@@ -405,21 +409,26 @@ restores on the way out. Never `/proc`, sysfs, or cgroup files.
 
 ### Hiding columns
 
-The table has twenty columns and most terminals cannot hold them. Add
-`hide_columns` to `view.json` by hand; `s` keeps whatever is already there.
+The table has twenty columns and most terminals cannot hold them. `H` hides
+the column you are sorting by (and moves the sort to the next visible one);
+`u` puts the last hidden column back. `--hide` does the same for `--once`,
+repeatable, and overwrites whatever `view.json` held. `s` writes the list.
 
 ```json
 { "sort": "pss", "desc": true, "hide_columns": ["vram", "gtt", "gfx", "compute"] }
 ```
 
-Labels are the ones `c` cycles and `--sort` takes: `name`, `nproc`, `threads`,
-`age`, `core`, `machine`, `pss`, `rss`, `swap`, `diskr`, `diskw`, `vram`,
-`gtt`, `gfx`, `compute`, `dstate`, `cpustall`, `iostall`, `memstall`,
-`netns_rx`, `netns_tx`. No file, or no key, shows every column. An unknown label warns on stderr and is ignored, and `name` is
-refused — a table of numbers with no labels is unreadable.
+Labels are the ones `c` cycles and `--sort` / `--hide` take: `name`, `nproc`,
+`threads`, `age`, `core`, `machine`, `pss`, `rss`, `swap`, `diskr`, `diskw`,
+`vram`, `gtt`, `gfx`, `compute`, `dstate`, `cpustall`, `iostall`, `memstall`,
+`netns_rx`, `netns_tx`. No file, or no key, shows every column. An unknown label
+in the file warns on stderr and is ignored; on `--hide` it is a usage error,
+the same split as `--sort`. `name` is refused — a table of numbers with no
+labels is unreadable.
 
 Hiding is presentation only: heft reads the same `/proc` files either way, `c`
-skips over what it cannot show, and `--json` ignores the list entirely.
+skips over what it cannot show, and `--json` ignores the list entirely. The
+flag is refused with `--json`.
 
 ## Grouping overrides
 

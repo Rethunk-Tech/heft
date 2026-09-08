@@ -56,4 +56,7 @@ pub(crate) struct Cli {
     /// Sort low to high, whatever the saved view holds
     #[arg(long)]
     pub asc: bool,
+    /// Leave this column out of the table; repeat. The labels `c` cycles. Refused with --json
+    #[arg(long, value_name = "COLUMN", conflicts_with = "json")]
+    pub hide: Vec<String>,
 }

@@ -16,9 +16,6 @@ const LAUNCHERS: &[&str] = &[
 
 const GENERICS: &[&str] = &[
     "bun",
-    "python",
-    "python2",
-    "python3",
     "java",
     "node",
     "nodejs",
@@ -526,6 +523,7 @@ mod tests {
             is_foldable_helper(&wrapper),
             "a flatpak wrapper script folds as a non-interactive shell"
         );
+        assert!(is_generic(&p("python3.12", &["python3.12", "x.py"])));
         assert!(is_generic(&p(
             "npm",
             &["npm", "exec", "@upstash/context7-mcp"]

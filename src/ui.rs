@@ -204,13 +204,11 @@ fn flatten(
                 ] {
                     push_folder(
                         &mut rows,
-                        &FolderPush {
-                            expand,
-                            depth: 2,
-                            id: &format!("user:{uid}/{slug}"),
-                            title,
-                            idents,
-                        },
+                        expand,
+                        2,
+                        &format!("user:{uid}/{slug}"),
+                        title,
+                        idents,
                     );
                 }
             }
@@ -219,16 +217,7 @@ fn flatten(
             ("host/containers", "Containers", &tree.containers),
             ("host/system", "System", &tree.system),
         ] {
-            push_folder(
-                &mut rows,
-                &FolderPush {
-                    expand,
-                    depth: 1,
-                    id,
-                    title,
-                    idents,
-                },
-            );
+            push_folder(&mut rows, expand, 1, id, title, idents);
         }
     }
     if let Some(filter) = filter.filter(|_| !view.filter.is_empty()) {
@@ -244,69 +233,68 @@ fn keep_rows(rows: &mut Vec<Flat>, filter: &Filter) {
     keep_matches(rows, filter, |r| (r.depth, r.name.as_str()));
 }
 
-struct FolderPush<'a> {
-    expand: &'a HashSet<String>,
+fn push_folder(
+    rows: &mut Vec<Flat>,
+    expand: &HashSet<String>,
     depth: u16,
-    id: &'a str,
-    title: &'a str,
-    idents: &'a [IdentNode],
-}
-
-fn push_folder(rows: &mut Vec<Flat>, p: &FolderPush<'_>) {
+    id: &str,
+    title: &str,
+    idents: &[IdentNode],
+) {
     rows.push(Flat {
-        id: p.id.to_string(),
-        depth: p.depth,
-        name: p.title.to_string(),
-        nproc: folder_nproc(p.idents),
-        metrics: sum_idents(p.idents),
+        id: id.to_string(),
+        depth,
+        name: title.to_string(),
+        nproc: folder_nproc(idents),
+        metrics: sum_idents(idents),
         expandable: true,
         trimmable: false,
     });
-    if !p.expand.contains(p.id) {
+    if !expand.contains(id) {
         return;
     }
-    for ident in p.idents {
-        let iid = format!("{}/{}", p.id, ident.id);
+    for ident in idents {
+        let iid = format!("{id}/{}", ident.id);
         rows.push(Flat {
             id: iid.clone(),
-            depth: p.depth + 1,
+            depth: depth + 1,
             name: ident.title.clone(),
             nproc: ident.nproc,
             metrics: ident.metrics.clone(),
             expandable: true,
             trimmable: true,
         });
-        if !p.expand.contains(&iid) {
+        if !expand.contains(&iid) {
             continue;
         }
         for member in &ident.containers {
             let mid = format!("{iid}/m/{}", member.id);
             rows.push(Flat {
                 id: mid.clone(),
-                depth: p.depth + 2,
+                depth: depth + 2,
                 name: member.title.clone(),
                 nproc: member.nproc,
                 metrics: member.metrics.clone(),
                 expandable: true,
                 trimmable: true,
             });
-            if p.expand.contains(&mid) {
-                push_procs(rows, p.expand, p.depth + 3, &mid, &member.processes);
+            if expand.contains(&mid) {
+                push_procs(rows, expand, depth + 3, &mid, &member.processes);
             }
         }
         for inst in &ident.instances {
             let sid = format!("{iid}/i/{}", inst.key);
             rows.push(Flat {
                 id: sid.clone(),
-                depth: p.depth + 2,
+                depth: depth + 2,
                 name: inst.key.clone(),
                 nproc: inst.nproc,
                 metrics: inst.metrics.clone(),
                 expandable: true,
                 trimmable: true,
             });
-            if p.expand.contains(&sid) {
-                push_procs(rows, p.expand, p.depth + 3, &sid, &inst.processes);
+            if expand.contains(&sid) {
+                push_procs(rows, expand, depth + 3, &sid, &inst.processes);
             }
         }
     }

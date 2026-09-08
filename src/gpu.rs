@@ -31,12 +31,12 @@ fn fd_target_looks_like_drm(target: &str) -> bool {
     target.contains("dri") || target.contains("drm")
 }
 
-fn has_counters(g: &GpuCounters) -> bool {
-    g.vram_bytes.is_some() || g.gtt_bytes.is_some() || g.gfx_ns.is_some() || g.compute_ns.is_some()
-}
-
 fn needs_full_fdinfo(full_scan: bool, filtered: &GpuCounters) -> bool {
-    full_scan && !has_counters(filtered)
+    full_scan
+        && filtered.vram_bytes.is_none()
+        && filtered.gtt_bytes.is_none()
+        && filtered.gfx_ns.is_none()
+        && filtered.compute_ns.is_none()
 }
 
 fn drm_fd_nums(pid: u32) -> io::Result<Vec<u32>> {

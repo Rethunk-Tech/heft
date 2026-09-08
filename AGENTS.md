@@ -86,8 +86,8 @@ runtime ever reports a truncated id.
   process architecture — not a comm prefix. Mappings live in
   `classify::session_helper_ident`. Exceptions: prefix lookalikes with a
   different product stay out (`gsd-disk-utility-notify`, independent `wsdd`,
-  `wireplumber`); independent apps never fold into gnome-shell or these
-  service identities; an arbitrary user CLI is Applications;
+  `wireplumber`, `krunner`, `plasma-discover`, `kwindowprop`); independent apps
+  never fold into gnome-shell, plasmashell, kwin or these service identities; an arbitrary user CLI is Applications;
   `p11-kit` must not fold into `flatpak-session-helper` (Cursor shares that
   cgroup); user-session `dbus-broker` is User Services, never Applications
   (`lying_unit` matches `dbus:` activation, not `dbus-broker.service`);

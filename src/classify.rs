@@ -149,6 +149,12 @@ pub(crate) fn session_helper_ident(p: &Process) -> Option<&'static str> {
     if gnome_shell_helper(&n, p) {
         return Some("gnome-shell");
     }
+    if plasma_workspace(&n) {
+        return Some("plasmashell");
+    }
+    if kwin_family(&n) {
+        return Some("kwin");
+    }
     if ibus_family(&n) {
         return Some("ibus-daemon");
     }
@@ -212,6 +218,46 @@ fn gnome_shell_helper(names: &[String], p: &Process) -> bool {
         });
     }
     false
+}
+
+/// plasma-workspace / kactivitymanagerd / kglobalacceld / kded session
+/// processes, from those RPMs' `/usr/bin` and `/usr/libexec` files. Not a
+/// `plasma-` prefix: `plasma-nm`, `plasma-discover` and `krunner` are
+/// independent apps.
+fn plasma_workspace(names: &[String]) -> bool {
+    names_match(names, |n| {
+        matches!(
+            n,
+            "plasmashell"
+                | "plasma_session"
+                | "startplasma"
+                | "startplasma-wayland"
+                | "ksmserver"
+                | "ksplashqml"
+                | "plasma-shutdown"
+                | "xembedsniproxy"
+                | "gmenudbusmenuproxy"
+                | "plasma_waitforname"
+                | "kde-systemd-start-condition"
+                | "kcminit"
+                | "kcminit_startup"
+                | "kaccess"
+                | "kactivitymanagerd"
+                | "kglobalacceld"
+                | "kded"
+                | "kded5"
+                | "kded6"
+        )
+    })
+}
+
+/// kwin and the helpers kwin-common ships beside it. The compositor binaries
+/// are already in `COMPOSITORS`; this is the merge key so `kwin_wayland` and
+/// `kwin_wayland_wrapper` are one User Services row.
+fn kwin_family(names: &[String]) -> bool {
+    names_match(names, |n| {
+        n == "kwin" || n.starts_with("kwin_") || n.starts_with("kwin-")
+    })
 }
 
 pub(crate) fn names_match(names: &[String], pred: impl Fn(&str) -> bool) -> bool {
@@ -549,6 +595,28 @@ mod tests {
             })
             .is_some()
         );
+        assert_eq!(
+            session_helper_ident(&p("ksmserver", &["/usr/bin/ksmserver"])),
+            Some("plasmashell")
+        );
+        assert_eq!(
+            session_helper_ident(&p("kded6", &["/usr/bin/kded6"])),
+            Some("plasmashell")
+        );
+        assert_eq!(
+            session_helper_ident(&p(
+                "kwin_wayland_wrapper",
+                &["/usr/bin/kwin_wayland_wrapper"]
+            )),
+            Some("kwin")
+        );
+        assert_eq!(
+            session_helper_ident(&p("kwin_wayland", &["/usr/bin/kwin_wayland"])),
+            Some("kwin")
+        );
+        assert!(session_helper_ident(&p("krunner", &["/usr/bin/krunner"])).is_none());
+        assert!(session_helper_ident(&p("plasma-discover", &["plasma-discover"])).is_none());
+        assert!(session_helper_ident(&p("kwindowprop", &["kwindowprop"])).is_none());
         assert!(is_session_bus(&names_of(&p(
             "dbus-broker-launch",
             &["dbus-broker-launch", "--scope", "user"]

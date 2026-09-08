@@ -38,6 +38,10 @@
   hand. `name` is refused. `--json` refuses the flag, the same contract as
   `--filter`.
 
+- Plasma session helpers merge under `plasmashell` and kwin helpers under
+  `kwin`, from those RPMs' shipped binaries rather than a `plasma-` prefix.
+  `krunner` and `plasma-discover` stay independent apps.
+
 - A `D` column counting the processes on a row in uninterruptible sleep. The
   stall columns answer "was this row waiting", but only on the ~82% of rows
   that resolve to one cgroup, and never on a folder, User or Host row, because

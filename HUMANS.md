@@ -259,9 +259,9 @@ Other users, User Services, Host-level Containers, and System start collapsed.
   `org.gnome.Shell@user.service`). Known compositors and session plumbing sit
   in User Services even when D-Bus used an `app-` or `dbus:` unit. Everything
   else under the user is an application. Merge identities:
-  [AGENTS.md](AGENTS.md). Those merge families are GNOME-weighted, so a KDE or
-  sway session lands in the right buckets but merges more coarsely under User
-  Services.
+  [AGENTS.md](AGENTS.md). Plasma workspace session processes merge as
+  `plasmashell`, and kwin plus its helpers as `kwin`. A sway session still
+  lands in the right buckets but merges more coarsely under User Services.
 - **Containers** under a user are workloads heft can attribute: the owner of
   the container's workdir label, else the owner of the first bind mount it
   has under a user's paths. Unattributed running containers sit on

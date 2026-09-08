@@ -111,6 +111,10 @@ fn run_loop(
         status: String::new(),
         help: false,
     };
+    // The highlight is this id, not `cursor`'s slot: PSS desc (the default)
+    // reshuffles the flattened list every sample, and so do `c`/`d`, `/`,
+    // `--top`, and expand/collapse.
+    let mut cursor_id = String::from("host");
     loop {
         // Re-sorting an already ordered tree each frame is what lets `c` and
         // `d` reorder every level without re-sampling.
@@ -120,9 +124,7 @@ fn run_loop(
             app.view.desc,
         );
         let rows = flatten(&app.tree, &app.expand, &app.view, app.filter_re.as_ref());
-        if app.cursor >= rows.len() {
-            app.cursor = rows.len().saturating_sub(1);
-        }
+        app.cursor = remap_cursor(&rows, &cursor_id);
         app.row_vis = table_body_rows(terminal.size()?.height);
         app.row_off = follow_viewport(app.cursor, app.row_off, app.row_vis, rows.len());
         terminal.draw(|f| draw(f, &app, &rows))?;
@@ -132,6 +134,11 @@ fn run_loop(
             && handle_key(&mut app, k.code, k.modifiers, &rows)?
         {
             break;
+        }
+        // After `j`/`k` (and after a gone row landed on its parent) pin the
+        // id we will look up on the next flatten, not the one we arrived with.
+        if let Some(r) = rows.get(app.cursor) {
+            cursor_id = r.id.clone();
         }
         if let Some(tree) = slot
             .lock()
@@ -901,6 +908,26 @@ fn table_body_rows(term_h: u16) -> usize {
     term_h.saturating_sub(HEADER_ROWS + 4) as usize
 }
 
+/// Index of `id` after the flattened list was rebuilt. A raw cursor followed
+/// PSS rank (and every other reorder), so the highlight jumped identities each
+/// sample. Missing id: the nearest remaining ancestor, walking `a/b/c` → `a/b`
+/// → `a` so `firefox` does not match `firefox-esr`, or 0 if none remain.
+fn remap_cursor(rows: &[Flat], id: &str) -> usize {
+    if rows.is_empty() {
+        return 0;
+    }
+    let mut probe = id;
+    loop {
+        if let Some(i) = rows.iter().position(|r| r.id == probe) {
+            return i;
+        }
+        match probe.rsplit_once('/') {
+            Some((parent, _)) => probe = parent,
+            None => return 0,
+        }
+    }
+}
+
 /// First visible index so `selected` stays in `[offset, offset+visible)`.
 fn follow_viewport(selected: usize, offset: usize, visible: usize, n: usize) -> usize {
     if visible == 0 || n == 0 {
@@ -932,6 +959,74 @@ mod tests {
         assert_eq!(follow_viewport(1, 8, 5, 3), 0);
         assert_eq!(follow_viewport(0, 0, 5, 0), 0);
         assert_eq!(follow_viewport(3, 0, 0, 10), 0);
+    }
+
+    fn row_id<'a>(rows: &'a [Flat], id: &str) -> &'a str {
+        &rows[remap_cursor(rows, id)].id
+    }
+
+    /// Two trees, identities in opposite order: the cursor is firefox's id,
+    /// not whichever row currently occupies firefox's old slot.
+    #[test]
+    fn remap_cursor_stays_on_the_same_id_when_the_list_reorders() {
+        let expand = default_expand();
+        let view = View::default();
+        let me = cpu::euid();
+        let id = format!("user:{me}/apps/firefox");
+        let desc = flatten(
+            &apps_tree(vec![ident("firefox"), ident("cursor")]),
+            &expand,
+            &view,
+            None,
+        );
+        let asc = flatten(
+            &apps_tree(vec![ident("cursor"), ident("firefox")]),
+            &expand,
+            &view,
+            None,
+        );
+        assert_eq!(row_id(&desc, &id), id);
+        assert_eq!(row_id(&asc, &id), id);
+        assert_ne!(remap_cursor(&desc, &id), remap_cursor(&asc, &id));
+    }
+
+    #[test]
+    fn remap_cursor_stays_on_the_same_id_when_a_sibling_is_inserted_above() {
+        let expand = default_expand();
+        let view = View::default();
+        let me = cpu::euid();
+        let id = format!("user:{me}/apps/firefox");
+        let before = flatten(&apps_tree(vec![ident("firefox")]), &expand, &view, None);
+        let after = flatten(
+            &apps_tree(vec![ident("chrome"), ident("firefox")]),
+            &expand,
+            &view,
+            None,
+        );
+        assert_eq!(row_id(&before, &id), id);
+        assert_eq!(row_id(&after, &id), id);
+        assert_eq!(remap_cursor(&before, &id) + 1, remap_cursor(&after, &id));
+    }
+
+    #[test]
+    fn remap_cursor_survives_a_filter_that_drops_other_rows() {
+        let mut rows = filter_rows();
+        keep_rows(&mut rows, &f("firefox"));
+        assert_eq!(row_id(&rows, "firefox"), "firefox");
+        assert_eq!(names(&rows), ["Host", "alice", "Applications", "firefox"]);
+    }
+
+    #[test]
+    fn remap_cursor_lands_on_the_parent_when_the_row_is_gone() {
+        let expand = default_expand();
+        let view = View::default();
+        let me = cpu::euid();
+        let rows = flatten(&apps_tree(vec![ident("cursor")]), &expand, &view, None);
+        let gone = format!("user:{me}/apps/firefox");
+        assert_eq!(row_id(&rows, &gone), format!("user:{me}/apps"));
+        let gone_pid = format!("user:{me}/apps/firefox/i/pgid/p/123");
+        assert_eq!(row_id(&rows, &gone_pid), format!("user:{me}/apps"));
+        assert_eq!(remap_cursor(&[], "host"), 0);
     }
 
     #[test]
@@ -1480,6 +1575,20 @@ mod tests {
             metrics: Metrics::default(),
             instances: Vec::new(),
             containers: Vec::new(),
+        }
+    }
+
+    fn apps_tree(apps: Vec<IdentNode>) -> HostTree {
+        use crate::types::UserNode;
+        HostTree {
+            users: vec![UserNode {
+                uid: cpu::euid(),
+                name: "me".into(),
+                applications: apps,
+                user_services: Vec::new(),
+                containers: Vec::new(),
+            }],
+            ..HostTree::default()
         }
     }
 

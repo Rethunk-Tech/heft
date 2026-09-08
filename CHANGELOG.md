@@ -4,6 +4,11 @@
 
 ### Fixed
 
+- The TUI highlight followed a raw index into the flattened list, so a new
+  sample (PSS descending by default), a sort, a filter, `--top`, or expanding
+  a neighbour moved the cursor onto a different identity. It now tracks the
+  row's id, and lands on the nearest remaining parent when that row is gone.
+
 - An AppImage Chromium crash helper reparented to user systemd
   (`chrome_crashpad_handler` under `/tmp/.mount_…/usr/share/cursor/`) took its
   own Applications row instead of billing to the app. The mount directory is

@@ -228,6 +228,11 @@ Other users, User Services, Host-level Containers, and System start collapsed.
 A folder with nothing in it is not expandable — it does not draw as open over
 an empty gap — and becomes one when a row appears.
 
+The highlight stays on the same row when the list reorders or shrinks — a
+new sample, `c`/`d`, `/`, `--top`, or expand/collapse. If that row has gone
+(process exited, filter dropped it), the nearest parent still on screen is
+selected.
+
 ## What the tree means
 
 - **Host** is the machine. The header is two unbordered rows: stacked CPU

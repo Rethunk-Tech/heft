@@ -388,39 +388,28 @@ pub(crate) fn sort_tree(tree: &mut HostTree, sort: Sort, desc: bool) {
     sort_idents(&mut tree.system, sort, desc);
 }
 
+/// Every level of the tree orders through `cmp_row`; the extractor is all
+/// that differs, so it is a `fn` pointer rather than a generic closure.
+fn sort_rows<T>(rows: &mut [T], sort: Sort, desc: bool, row: fn(&T) -> Row<'_>) {
+    rows.sort_by(|a, b| cmp_row(row(a), row(b), sort, desc));
+}
+
 fn sort_idents(idents: &mut [IdentNode], sort: Sort, desc: bool) {
     for i in idents.iter_mut() {
         for inst in &mut i.instances {
             sort_procs(&mut inst.processes, sort, desc);
         }
-        i.instances.sort_by(|a, b| {
-            cmp_row(
-                (&a.key, a.nproc, &a.metrics),
-                (&b.key, b.nproc, &b.metrics),
-                sort,
-                desc,
-            )
+        sort_rows(&mut i.instances, sort, desc, |x| {
+            (&x.key, x.nproc, &x.metrics)
         });
         for m in &mut i.containers {
             sort_procs(&mut m.processes, sort, desc);
         }
-        i.containers.sort_by(|a, b| {
-            cmp_row(
-                (&a.title, a.nproc, &a.metrics),
-                (&b.title, b.nproc, &b.metrics),
-                sort,
-                desc,
-            )
+        sort_rows(&mut i.containers, sort, desc, |x| {
+            (&x.title, x.nproc, &x.metrics)
         });
     }
-    idents.sort_by(|a, b| {
-        cmp_row(
-            (&a.title, a.nproc, &a.metrics),
-            (&b.title, b.nproc, &b.metrics),
-            sort,
-            desc,
-        )
-    });
+    sort_rows(idents, sort, desc, |x| (&x.title, x.nproc, &x.metrics));
 }
 
 fn sort_procs(procs: &mut [ProcNode], sort: Sort, desc: bool) {
@@ -428,14 +417,7 @@ fn sort_procs(procs: &mut [ProcNode], sort: Sort, desc: bool) {
         sort_procs(&mut p.children, sort, desc);
     }
     // A process row counts as one, the same way the table renders it.
-    procs.sort_by(|a, b| {
-        cmp_row(
-            (&a.name, 1, &a.metrics),
-            (&b.name, 1, &b.metrics),
-            sort,
-            desc,
-        )
-    });
+    sort_rows(procs, sort, desc, |x| (&x.name, 1, &x.metrics));
 }
 
 /// The fixed-width layout: name left-aligned, every other column right, one

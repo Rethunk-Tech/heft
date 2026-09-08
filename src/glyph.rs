@@ -47,10 +47,10 @@ fn ascii() -> bool {
 /// is there for the terminal whose environment undersells it.
 fn detect() -> Set {
     for key in ["LC_ALL", "LC_CTYPE", "LANG"] {
-        match std::env::var(key) {
-            Ok(v) if v.is_empty() => continue,
-            Ok(v) => return charmap_set(&v),
-            Err(_) => continue,
+        if let Ok(v) = std::env::var(key)
+            && !v.is_empty()
+        {
+            return charmap_set(&v);
         }
     }
     Set::Ascii

@@ -42,6 +42,11 @@
   `kwin`, from those RPMs' shipped binaries rather than a `plasma-` prefix.
   `krunner` and `plasma-discover` stay independent apps.
 
+- The TUI reverses the header of the column `c` is sorting by. The rest of
+  the header row stays bold; `--once` is unchanged, because that table is a
+  fixed-width contract other tools slice. Reverse rather than a colour, so
+  `NO_COLOR` still marks the column.
+
 - A `D` column counting the processes on a row in uninterruptible sleep. The
   stall columns answer "was this row waiting", but only on the ~82% of rows
   that resolve to one cgroup, and never on a folder, User or Host row, because

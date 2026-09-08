@@ -216,9 +216,10 @@ folder rows for "keep the parents" to mean anything (filter it with `jq`).
 | `s` | save sort, filter, and hidden columns to `$XDG_CONFIG_HOME/heft/view.json` |
 | `?` / `F1` | toggle the key help overlay |
 
-Sorting applies to every level of the tree. Sort, filter, and hidden columns
-last only for this session until you press `s`; starting heft again loads that
-file if it exists.
+Sorting applies to every level of the tree. The TUI reverses the header of
+the column `c` is sorting by, so the sort is on the table as well as in the
+footer (`c sort (pss)`). Sort, filter, and hidden columns last only for this
+session until you press `s`; starting heft again loads that file if it exists.
 
 Default expand: Host, your user, Applications, and that user's Containers.
 Other users, User Services, Host-level Containers, and System start collapsed.

@@ -15,15 +15,15 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, Paragraph, Row, Table};
+use ratatui::widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table};
 
 use crate::config::{self, View};
 use crate::cpu;
 use crate::glyph;
 use crate::mem::{self, MemParts};
 use crate::once::{
-    Columns, Filter, Sort, fmt_bytes, fmt_pct, hide_column, keep_matches, keep_top, keep_users,
-    sort_tree, unhide_last,
+    Column, Columns, Filter, Sort, fmt_bytes, fmt_pct, hide_column, keep_matches, keep_top,
+    keep_users, sort_tree, unhide_last,
 };
 use crate::proc;
 use crate::types::{
@@ -451,6 +451,21 @@ fn refresh_columns(app: &mut App) {
     }
 }
 
+/// Every header stays bold; the sort column is reversed so it is still marked
+/// when `NO_COLOR` drops hue. The cursor row already uses reverse, so this is
+/// the same highlight, on the one cell `c` is talking about.
+fn sort_header<'a>(cols: impl Iterator<Item = &'a Column>, sort: &str) -> Row<'static> {
+    Row::new(cols.map(|c| {
+        let cell = Cell::from(c.header);
+        if c.label == sort {
+            cell.style(Style::default().add_modifier(Modifier::REVERSED))
+        } else {
+            cell
+        }
+    }))
+    .style(Style::default().add_modifier(Modifier::BOLD))
+}
+
 fn draw(f: &mut ratatui::Frame<'_>, app: &App, rows: &[Flat]) {
     let chunks = Layout::vertical([
         Constraint::Length(HEADER_ROWS),
@@ -509,10 +524,8 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &App, rows: &[Flat]) {
     } else {
         shown.iter().map(|_| Constraint::Length(8)).collect()
     };
-    let table = Table::new(table_rows, widths).header(
-        Row::new(shown.iter().map(|s| (*s).to_string()))
-            .style(Style::default().add_modifier(Modifier::BOLD)),
-    );
+    let table = Table::new(table_rows, widths)
+        .header(sort_header(app.cols.iter().skip(skip), &app.view.sort));
     f.render_widget(table, chunks[2]);
     if app.help {
         draw_help(f, chunks[2]);
@@ -942,6 +955,27 @@ mod tests {
         assert_eq!(table_body_rows(24), 18);
         assert_eq!(table_body_rows(6), 0);
         assert_eq!(table_body_rows(7), 1);
+    }
+
+    #[test]
+    fn the_sort_column_header_is_the_one_on_screen() {
+        let cols = Columns::from_view(&View::default());
+        assert_eq!(sort_header_title(&cols, 0, "pss"), Some("PSS"));
+        assert_eq!(sort_header_title(&cols, 0, "name"), Some("NAME"));
+        assert_eq!(sort_header_title(&cols, 1, "name"), None);
+        let hidden = Columns::from_view(&View {
+            hide_columns: vec!["pss".into()],
+            ..View::default()
+        });
+        assert_eq!(sort_header_title(&hidden, 0, "pss"), None);
+        assert_eq!(sort_header_title(&hidden, 0, "rss"), Some("RSS"));
+        let _ = sort_header(cols.iter(), "pss");
+    }
+
+    fn sort_header_title(cols: &Columns, skip: usize, sort: &str) -> Option<&'static str> {
+        cols.iter()
+            .skip(skip)
+            .find_map(|c| (c.label == sort).then_some(c.header))
     }
 
     /// Every ASCII substitute has to be one column, because the header lines

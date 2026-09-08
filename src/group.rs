@@ -329,8 +329,11 @@ fn unique_descendant_ident(
             if let Some(p) = unique_descendant_ident(child.pid, curr, ctx, memo, walking) {
                 kids.push(p);
             } else {
-                // Zygote-only sandbox: no non-worker grandchild to resolve.
-                kids.push(user_place(child));
+                // Zygote-only sandbox: no non-worker grandchild to resolve, so
+                // the helper answers for itself. `raw_place` rather than
+                // `user_place` because a worker can still be a crash helper
+                // that names its own app, or live in a container.
+                kids.push(raw_place(child, ctx));
             }
             continue;
         }

@@ -558,6 +558,26 @@ fn user_of(tree: &HostTree, uid: u32) -> &heft::UserNode {
 }
 
 #[test]
+fn a_lone_crash_helper_under_a_launcher_bills_to_its_app() {
+    // The launcher's only child is a crash helper with no children of its own,
+    // so the zygote fallback in `unique_descendant_ident` decides the identity.
+    // The helper's own path names the app, which is what every other placement
+    // site would use.
+    let tree = tree_of("tests/fixtures/zygote/world.json", &Overrides::default());
+    let user = user_of(&tree, 1000);
+    assert!(
+        has(&user.applications, "firefox"),
+        "expected the helper to bill to firefox, got: {:?}",
+        titles(&user.applications)
+    );
+    assert!(
+        !has(&user.applications, "crashhelper"),
+        "a crash helper is never its own application row: {:?}",
+        titles(&user.applications)
+    );
+}
+
+#[test]
 fn one_override_moves_one_row_and_leaves_the_rest_alone() {
     let base = tree_of(GUI, &Overrides::default());
     let ov = Overrides::parse(r#"{"user_services": ["htop"]}"#).expect("valid overrides");

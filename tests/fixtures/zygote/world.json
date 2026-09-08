@@ -1,0 +1,31 @@
+{
+  "nproc": 4,
+  "clk_tck": 100,
+  "page_size": 4096,
+  "processes": [
+    {
+      "pid": 100,
+      "ppid": 1,
+      "pgrp": 100,
+      "uid": 1000,
+      "comm": "bwrap",
+      "exe": "/usr/bin/bwrap",
+      "cmdline": ["bwrap", "--args", "9"],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-firefox.scope",
+      "utime": 5,
+      "stime": 1
+    },
+    {
+      "pid": 101,
+      "ppid": 100,
+      "pgrp": 100,
+      "uid": 1000,
+      "comm": "crashhelper",
+      "exe": "/usr/lib64/firefox/crashhelper",
+      "cmdline": ["crashhelper", "100", "9"],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-firefox.scope",
+      "utime": 2,
+      "stime": 1
+    }
+  ]
+}

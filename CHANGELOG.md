@@ -4,6 +4,12 @@
 
 ### Fixed
 
+- A crash helper that was a launcher's only child took an application row of
+  its own, titled `crashhelper`, instead of billing to the app its own path
+  names. The sandbox fallback in the grouping walk now reaches the same verdict
+  every other placement site does, so a container or kernel row is possible
+  there too.
+
 - The `--once` table counted characters where it meant terminal columns, so a
   process named in CJK or carrying an emoji pushed every column to its right
   out by one per wide character. `trunc` and the row layout measure columns

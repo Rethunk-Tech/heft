@@ -282,7 +282,20 @@ fn docker_sock() -> Option<PathBuf> {
     }
     let uid = crate::cpu::euid();
     let podman = PathBuf::from(format!("/run/user/{uid}/podman/podman.sock"));
-    if podman.exists() { Some(podman) } else { None }
+    if podman.exists() {
+        return Some(podman);
+    }
+    // Rootful Podman, the default on RHEL and Fedora servers. Without it every
+    // container on such a host rendered `docker-<12hex>` with no owner and a
+    // blank NETNS — indistinguishable from having no socket at all. Last,
+    // because a rootless socket belongs to the user heft is running as and a
+    // rootful one may not be readable.
+    let rootful = PathBuf::from("/run/podman/podman.sock");
+    if rootful.exists() {
+        Some(rootful)
+    } else {
+        None
+    }
 }
 
 fn docker_get_path(path: &str) -> bool {

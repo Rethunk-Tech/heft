@@ -318,11 +318,18 @@ no other clock, so without it two records cannot be placed in time.
 ## Gates
 
 Contributor commands: [CONTRIBUTING.md](CONTRIBUTING.md) (same as CI / lefthook).
-Suite stays under 30s. No live GPU in CI. Docker sock is optional in CI;
+Suite stays under 30s. No live GPU in CI.
+`live_proc::heft_does_not_grow_while_it_follows` watches heft's own reported
+RSS across a `--follow` window with several PSS ticks in it: growth, not a
+ceiling, because the ceiling that catches a leak in seconds is below what heft
+legitimately uses on a busy host. It guards the `0a9ee0a` class of regression,
+which was found by a person noticing rather than by a gate. Docker sock is optional in CI;
 grouping tests use `tests/fixtures/` via `tests/grouping.rs`.
 
 Release profile: LTO, `codegen-units = 1`, strip, `panic = abort`.
 
 ## Git
 
-Remote is `Rethunk-Tech/heft`, public, Apache-2.0.
+Remote is `Rethunk-Tech/heft`, public, Apache-2.0. `publish = false` is a
+decision, not an oversight: the release binaries are static musl, so the
+install path costs no toolchain and no compile. Do not drop it without asking.

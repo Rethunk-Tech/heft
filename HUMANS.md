@@ -43,6 +43,12 @@ cargo build --release
 install -Dm755 target/release/heft ~/.local/bin/heft
 ```
 
+There is no crates.io package, deliberately: `cargo install heft` would put a
+Rust toolchain and a two-minute compile between you and a monitor you want
+running now, and the musl binary above is static, so it needs neither. If you
+would rather build than download, `cargo install --git
+https://github.com/Rethunk-Tech/heft` does the same as the clone above.
+
 A local `cargo build` writes the same four files under a hashed `OUT_DIR`.
 Take the newest `heft.1`, not the first directory named `assets`: an earlier
 crate build leaves its hashed dir in `target/`, and `head -1` can install
@@ -314,6 +320,14 @@ costs nothing until you open it, and a field heft may not read (another user's
   Host → Containers.
 - **System** is kernel threads and leftover `system.slice` (including
   `dockerd` / `containerd`). Container scopes never go here.
+- A **virtual machine or nspawn container** — anything systemd put in
+  `machine.slice` — is a Containers row named after the machine. libvirt calls
+  a domain's scope `machine-qemu\x2d3\x2dfedora.scope`, and the counter in
+  there is libvirt's own, so the row reads `fedora`. These sit on Host →
+  Containers: there is no Docker or Podman API to ask who owns one, and the
+  uid running it is a service account rather than a person. Rootful Podman
+  shares that slice but is a `libpod-` scope, so it is still a container row
+  with its real name and owner.
 
 The GPU columns read DRM fdinfo, and only from `amdgpu`, `i915` and `xe` — the
 three drivers whose region and engine key names heft knows. Every other driver
@@ -445,9 +459,13 @@ terminal. What they sum:
 
 ## Docker / Podman
 
-Heft `GET`s `/containers/json` and inspect on `/var/run/docker.sock`,
-`$DOCKER_HOST` when it is a unix socket, or `/run/user/<uid>/podman/podman.sock`.
-It never POSTs, never kills, never creates. Without a reachable socket, a
+Heft `GET`s `/containers/json` and inspect on the first of these it finds:
+`$DOCKER_HOST` when it is a unix socket, `/var/run/docker.sock`,
+`/run/user/<uid>/podman/podman.sock` (rootless Podman), then
+`/run/podman/podman.sock` (rootful Podman, the default on RHEL and Fedora
+servers). Rootless comes first because that socket belongs to the user heft is
+running as, and a rootful one may not be readable. It never POSTs, never kills,
+never creates. Without a reachable socket, a
 container title is `docker-<12hex>`. Stopped containers (no PID) do not appear.
 
 ## XDG

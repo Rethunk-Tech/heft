@@ -4,6 +4,17 @@
 
 ### Added
 
+- Virtual machines and systemd-nspawn containers (`machine.slice`) are
+  Containers rows named after the machine, on Host → Containers. They matched
+  no bucket rule, so a libvirt VM appeared as a `qemu-system-x86_64` row under
+  root's Applications and an nspawn container as one Applications row per
+  process inside it.
+
+- Rootful Podman's `/run/podman/podman.sock` is tried after the rootless one.
+  On a RHEL or Fedora server every container rendered `docker-<12hex>` with no
+  owner and a blank NETNS, which is what heft shows when it finds no socket at
+  all, so the miss was indistinguishable from having no runtime.
+
 - `i` in the TUI opens a detail pane for the selected row: every column,
   including hidden ones and those off the side of a narrow terminal, and for a
   single process the pid, ppid, state, uid, `exe`, cgroup and full command
@@ -22,6 +33,10 @@
   other — an interval stretched by a PSS pass was invisible to a reader.
 
 ### Documentation
+
+- HUMANS.md records that there is deliberately no crates.io package: the
+  release binaries are static musl, so installing costs no toolchain and no
+  compile. `cargo install --git` is noted for anyone who would rather build.
 
 - HUMANS.md states that the GPU columns read DRM fdinfo from `amdgpu`, `i915`
   and `xe` only, so `nvidia-drm`, `nouveau` and the ARM SoC drivers leave VRAM,

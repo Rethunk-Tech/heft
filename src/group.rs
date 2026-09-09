@@ -198,6 +198,25 @@ fn container_place(p: &Process, containers: &ContainerIndex) -> Option<Place> {
     None
 }
 
+/// A systemd-nspawn container, `machinectl` machine, or libvirt VM. Without
+/// this they fell through to `user_place`: an nspawn container appeared as one
+/// Applications row per process under root, a VM as a `qemu-system-x86_64` row.
+///
+/// `uid: None` puts it on Host → Containers, where the tree already places a
+/// container it cannot attribute. There is no API here to ask who owns it, and
+/// the uid running it is a service account — a `qemu` User node holding one
+/// VM says less than the machine's own Containers folder does.
+fn machine_place(p: &Process) -> Option<Place> {
+    let name = identity::machine_scope_name(&p.cgroup)?;
+    Some(Place {
+        folder: Folder::Containers,
+        uid: None,
+        instance: identity::instance_key(p, Some(&name)),
+        key: name,
+        member: None,
+    })
+}
+
 fn system_place(p: &Process) -> Place {
     Place {
         folder: Folder::System,
@@ -262,6 +281,9 @@ fn crash_helper_place(p: &Process) -> Option<Place> {
 /// answer with the same verdict `compute_place` would give instead of a subset.
 fn direct_place(p: &Process, ctx: &Ctx<'_>) -> Option<Place> {
     if let Some(place) = container_place(p, ctx.containers) {
+        return Some(place);
+    }
+    if let Some(place) = machine_place(p) {
         return Some(place);
     }
     if identity::is_kernel(p)
@@ -557,5 +579,41 @@ mod tests {
         );
         assert_eq!(place.folder, Folder::Applications);
         assert_eq!(place.key, "firefox");
+    }
+
+    /// machine.slice is neither a docker/libpod scope nor system.slice, so a
+    /// VM's qemu process and every process inside an nspawn container used to
+    /// fall through to `user_place` and show up as ordinary Applications rows
+    /// under whichever uid ran them.
+    #[test]
+    fn a_vm_is_a_container_row_rather_than_root_s_application() {
+        let place = |cgroup: &str, uid: u32| {
+            raw_place(
+                &Process {
+                    comm: "qemu-system-x86".into(),
+                    exe: Some("/usr/bin/qemu-system-x86_64".into()),
+                    uid,
+                    cgroup: cgroup.into(),
+                    ..Process::default()
+                },
+                &Ctx {
+                    containers: &ContainerIndex::default(),
+                    ov: &Overrides::default(),
+                },
+            )
+        };
+        let vm = place(
+            r"0::/machine.slice/machine-qemu-3-fedora.scope/libvirt/emulator",
+            107,
+        );
+        assert_eq!(vm.folder, Folder::Containers);
+        assert_eq!(vm.key, "fedora");
+        // Nothing here can say who owns it, so it is the machine's own, the
+        // same place an unattributable Docker container sits.
+        assert_eq!(vm.uid, None);
+
+        // The slice alone is not a machine: a stray process directly in
+        // machine.slice has no scope to name and must not become a row.
+        assert_ne!(place("0::/machine.slice", 0).folder, Folder::Containers);
     }
 }

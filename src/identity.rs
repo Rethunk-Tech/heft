@@ -19,6 +19,44 @@ fn scope_hex(cgroup: &str, prefix: &str) -> Option<String> {
     None
 }
 
+/// The machine name from `machine.slice/machine-<name>.scope` — a
+/// systemd-nspawn container, a `machinectl` machine, or a libvirt VM. These
+/// are workloads, but they carry no Docker or Podman API to inspect, so they
+/// reach the tree through the cgroup alone.
+///
+/// Rootful Podman also lives under `machine.slice`, as `libpod-<hex>.scope`;
+/// that prefix is not `machine-`, and `container_place` runs first regardless.
+pub(crate) fn machine_scope_name(cgroup: &str) -> Option<String> {
+    let mut start = 0;
+    while let Some(rel) = cgroup[start..].find("machine-") {
+        let i = start + rel + "machine-".len();
+        let rest = &cgroup[i..];
+        if let Some(end) = rest.find(".scope")
+            && end > 0
+        {
+            return Some(machine_display_name(&systemd_unescape(&rest[..end])));
+        }
+        start = i;
+    }
+    None
+}
+
+/// libvirt names a domain's scope `machine-qemu-<id>-<domain>.scope`, so
+/// the unescaped form reads `qemu-3-fedora`. The id is libvirt's own counter
+/// and means nothing to whoever is reading the tree; the domain name is what
+/// they called the VM.
+fn machine_display_name(name: &str) -> String {
+    let Some(rest) = name.strip_prefix("qemu-") else {
+        return name.to_string();
+    };
+    match rest.split_once('-') {
+        Some((id, domain)) if !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()) => {
+            domain.to_string()
+        }
+        _ => name.to_string(),
+    }
+}
+
 pub(crate) fn in_system_slice(cgroup: &str) -> bool {
     cgroup.contains("/system.slice/") || cgroup.ends_with("/system.slice")
 }
@@ -164,6 +202,31 @@ mod tests {
     }
 
     use super::*;
+
+    /// A VM or nspawn container is a workload with no API to inspect, so the
+    /// cgroup name is the only thing that can title the row. libvirt's scope
+    /// carries an internal counter that means nothing to a reader; rootful
+    /// Podman shares the same slice and must not be mistaken for one.
+    #[test]
+    fn a_machine_scope_names_the_machine() {
+        let name = |cg| machine_scope_name(cg);
+        assert_eq!(
+            name(r"0::/machine.slice/machine-qemu-3-fedora.scope/libvirt/emulator"),
+            Some("fedora".to_string())
+        );
+        assert_eq!(
+            name(r"0::/machine.slice/machine-my-builder.scope"),
+            Some("my-builder".to_string())
+        );
+        // Not a libvirt counter, so the name stays whole.
+        assert_eq!(
+            name("0::/machine.slice/machine-qemu-tools.scope"),
+            Some("qemu-tools".to_string())
+        );
+        // Rootful Podman lives in the same slice under a different prefix.
+        assert_eq!(name("0::/machine.slice/libpod-abc123def456.scope"), None);
+        assert_eq!(name("0::/system.slice/sshd.service"), None);
+    }
 
     #[test]
     fn docker_and_unescape() {

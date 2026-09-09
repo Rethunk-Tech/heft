@@ -245,6 +245,13 @@ pub struct InstanceNode {
 pub struct ProcNode {
     pub(crate) pid: u32,
     pub name: String,
+    /// The argv this process was started with, space-joined. `name` is the exe
+    /// basename, so it cannot answer which of four identical workers holds
+    /// `--port 8080`. Not serialized: the JSON shape is a contract, and a
+    /// consumer that wants argv can read `/proc/<pid>/cmdline` itself rather
+    /// than have every process node carry it.
+    #[serde(skip)]
+    pub(crate) cmdline: String,
     #[serde(flatten)]
     pub(crate) metrics: Metrics,
     #[serde(skip_serializing_if = "Vec::is_empty")]

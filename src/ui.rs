@@ -22,8 +22,8 @@ use crate::cpu;
 use crate::glyph;
 use crate::mem::{self, MemParts};
 use crate::once::{
-    Column, Columns, Filter, Sort, fmt_bytes, fmt_pct, hide_column, keep_matches, keep_top,
-    keep_users, sort_tree, unhide_last,
+    Column, Columns, Filter, Sort, fmt_bytes, fmt_pct, haystack, hide_column, ident_haystack,
+    keep_matches, keep_top, keep_users, sort_tree, unhide_last,
 };
 use crate::proc;
 use crate::types::{
@@ -172,6 +172,10 @@ struct Flat {
     /// See `TableRow::trimmable`: Host, Users and folder headers are the shape
     /// of the tree, not candidates for `--top`.
     trimmable: bool,
+    /// See `TableRow::search`. A collapsed row has no process rows beneath it
+    /// to match, so an identity carries the argv of its whole subtree or `/`
+    /// would only reach what happens to be expanded.
+    search: Option<String>,
 }
 
 fn flatten(
@@ -180,6 +184,10 @@ fn flatten(
     view: &View,
     filter: Option<&Filter>,
 ) -> Vec<Flat> {
+    // Resolved before the walk: the argv haystack is built only for a tick
+    // that searches it.
+    let filter = filter.filter(|_| !view.filter.is_empty());
+    let deep = filter.is_some();
     let mut rows = Vec::new();
     let host_n = tree_host_nproc(tree);
     rows.push(Flat {
@@ -190,6 +198,7 @@ fn flatten(
         metrics: host_metrics(tree),
         expandable: true,
         trimmable: false,
+        search: None,
     });
     if expand.contains("host") {
         for user in &tree.users {
@@ -203,6 +212,7 @@ fn flatten(
                 metrics: user_metrics(user),
                 expandable: true,
                 trimmable: false,
+                search: None,
             });
             if expand.contains(&id) {
                 for (slug, title, idents) in [
@@ -217,6 +227,7 @@ fn flatten(
                         &format!("user:{uid}/{slug}"),
                         title,
                         idents,
+                        deep,
                     );
                 }
             }
@@ -225,10 +236,10 @@ fn flatten(
             ("host/containers", "Containers", &tree.containers),
             ("host/system", "System", &tree.system),
         ] {
-            push_folder(&mut rows, expand, 1, id, title, idents);
+            push_folder(&mut rows, expand, 1, id, title, idents, deep);
         }
     }
-    if let Some(filter) = filter.filter(|_| !view.filter.is_empty()) {
+    if let Some(filter) = filter {
         keep_rows(&mut rows, filter);
     }
     if let Some(n) = view.top {
@@ -238,7 +249,9 @@ fn flatten(
 }
 
 fn keep_rows(rows: &mut Vec<Flat>, filter: &Filter) {
-    keep_matches(rows, filter, |r| (r.depth, r.name.as_str()));
+    keep_matches(rows, filter, |r| {
+        (r.depth, r.search.as_deref().unwrap_or(r.name.as_str()))
+    });
 }
 
 fn push_folder(
@@ -248,6 +261,7 @@ fn push_folder(
     id: &str,
     title: &str,
     idents: &[IdentNode],
+    deep: bool,
 ) {
     rows.push(Flat {
         id: id.to_string(),
@@ -257,6 +271,7 @@ fn push_folder(
         metrics: sum_idents(idents),
         expandable: !idents.is_empty(),
         trimmable: false,
+        search: None,
     });
     if idents.is_empty() || !expand.contains(id) {
         return;
@@ -271,6 +286,7 @@ fn push_folder(
             metrics: ident.metrics.clone(),
             expandable: true,
             trimmable: true,
+            search: deep.then(|| ident_haystack(ident)),
         });
         if !expand.contains(&iid) {
             continue;
@@ -285,9 +301,10 @@ fn push_folder(
                 metrics: member.metrics.clone(),
                 expandable: true,
                 trimmable: true,
+                search: deep.then(|| haystack(&member.title, &member.processes)),
             });
             if expand.contains(&mid) {
-                push_procs(rows, expand, depth + 3, &mid, &member.processes);
+                push_procs(rows, expand, depth + 3, &mid, &member.processes, deep);
             }
         }
         for inst in &ident.instances {
@@ -300,9 +317,10 @@ fn push_folder(
                 metrics: inst.metrics.clone(),
                 expandable: true,
                 trimmable: true,
+                search: deep.then(|| haystack(&inst.key, &inst.processes)),
             });
             if expand.contains(&sid) {
-                push_procs(rows, expand, depth + 3, &sid, &inst.processes);
+                push_procs(rows, expand, depth + 3, &sid, &inst.processes, deep);
             }
         }
     }
@@ -314,20 +332,23 @@ fn push_procs(
     depth: u16,
     prefix: &str,
     procs: &[ProcNode],
+    deep: bool,
 ) {
     for p in procs {
         let id = format!("{prefix}/p/{}", p.pid);
+        let name = format!("{} [{}]", p.name, p.pid);
         rows.push(Flat {
             id: id.clone(),
             depth,
-            name: format!("{} [{}]", p.name, p.pid),
+            search: deep.then(|| haystack(&name, std::slice::from_ref(p))),
+            name,
             nproc: 1,
             metrics: p.metrics.clone(),
             expandable: !p.children.is_empty(),
             trimmable: true,
         });
         if expand.contains(&id) {
-            push_procs(rows, expand, depth + 1, &id, &p.children);
+            push_procs(rows, expand, depth + 1, &id, &p.children, deep);
         }
     }
 }
@@ -1333,6 +1354,7 @@ mod tests {
 
     fn flat(depth: u16, name: &str) -> Flat {
         Flat {
+            search: None,
             id: name.to_string(),
             depth,
             name: name.to_string(),

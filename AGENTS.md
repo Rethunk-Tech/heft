@@ -182,6 +182,17 @@ on Host, User and folder rows — sort never orders `tree.users` or the top-leve
 folders, so a "top" of them would cut arbitrarily. `conflicts_with = "json"`,
 same reasoning as `--filter`.
 
+`--filter` and `/` match a row's `search` haystack when one is built: the row
+title followed by the argv of every process beneath it, one per line so `$`
+cannot run off one process's arguments into the next. `TableRow::search` and
+`Flat::search` are `None` on a tick with no filter and on rows the argv cannot
+reach (Host, User, folder headers), so `keep_matches` falls back to `name` and
+an unfiltered tick allocates nothing for it. `ProcNode::cmdline` carries the
+argv `proc` already read; it is `#[serde(skip)]` because the JSON shape is a
+contract and a consumer wanting argv can read `/proc/<pid>/cmdline` itself.
+The haystack is built for a collapsed identity too, or `/` would reach only
+what happens to be expanded.
+
 `once::keep_matches` is the one filter for every surface — the TUI over its
 flattened rows, `--once` over `once::table_rows`. Rows are built from the whole
 tree and filtered afterwards, so an ancestor row keeps the total it was built

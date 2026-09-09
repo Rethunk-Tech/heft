@@ -515,11 +515,16 @@ fn proc_node(
     metrics: &HashMap<u32, Metrics>,
 ) -> ProcNode {
     let name = curr.get(&pid).map_or_else(|| pid.to_string(), name_of);
+    let cmdline = curr
+        .get(&pid)
+        .map(|p| p.cmdline.join(" "))
+        .unwrap_or_default();
     let mut kids = children.get(&pid).cloned().unwrap_or_default();
     kids.sort_unstable();
     ProcNode {
         pid,
         name,
+        cmdline,
         metrics: metrics.get(&pid).cloned().unwrap_or_default(),
         children: kids
             .into_iter()

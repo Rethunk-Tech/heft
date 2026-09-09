@@ -4,6 +4,11 @@
 
 ### Added
 
+- `--filter` and the TUI's `/` search each row's name **and** the argv of every
+  process under it. A row title is an exe basename, so four identical workers
+  could not be told apart by the `--port` they hold. The argv is matched on
+  collapsed rows too, and is assembled only for a tick that has a filter.
+
 - `--json` documents carry `host.sampled_at`, the unix second the sample was
   taken. A `--json --follow` stream is one document per line with no other
   clock in it, so two records could not be placed in time relative to each

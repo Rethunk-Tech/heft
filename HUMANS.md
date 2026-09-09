@@ -122,8 +122,18 @@ has an instance row under an identity, and the individual processes under that
 once you expand them. So `/firefox` in the TUI can match a row that
 `--filter firefox` never sees, and the flag is the narrower of the two.
 
+What it searches is the row's name **and the argv of every process under it**.
+A row title is an exe basename, so four `python3` workers look identical until
+you can ask which one holds `--port 8080`; `--filter 'port 8080'` keeps that
+one and its parents. The argv is matched whether or not the row is expanded, so
+`/` in the TUI finds a collapsed identity by an argument of a process you
+cannot see yet. It costs nothing on a tick with no filter, since the argv is
+only assembled for a tick that searches it.
+
 The pattern is a regex, so `--filter '^(code|claude)$'` picks exactly two rows
-where a substring would also drag in every `code-helper` beside them. It is
+where a substring would also drag in every `code-helper` beside them — though
+`^` and `$` anchor to one process's argv rather than to the row name, since
+each process's argv is its own line in what the pattern searches. It is
 case-insensitive unless you say otherwise — a bare `firefox` matches `Firefox`
 the way it always did, and `(?-i)` turns that off. Unicode character classes
 (`\p{Greek}`) are the one thing the engine leaves out. A pattern that does not

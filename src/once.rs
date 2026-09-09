@@ -625,19 +625,28 @@ fn render_table(
     let mut tree = tree.clone();
     keep_users(&mut tree, &view.users);
     sort_tree(&mut tree, Sort::from_label(&view.sort), view.desc);
-    let mut rows = table_rows(&tree);
-    if !view.filter.is_empty() {
-        // A saved view must not stop the monitor, so an unusable pattern warns
-        // and the table prints unfiltered — the same call `hide_columns` makes,
-        // and not `--filter`'s, which is an argument just typed.
-        match Filter::new(&view.filter) {
-            Some(f) => keep_matches(&mut rows, &f, |r| (r.depth, r.name.as_str())),
-            None => eprintln!(
+    // A saved view must not stop the monitor, so an unusable pattern warns and
+    // the table prints unfiltered — the same call `hide_columns` makes, and not
+    // `--filter`'s, which is an argument just typed.
+    let filter = if view.filter.is_empty() {
+        None
+    } else {
+        let f = Filter::new(&view.filter);
+        if f.is_none() {
+            eprintln!(
                 "heft: ignoring unusable filter {:?} in {}",
                 view.filter,
                 crate::config::view_path().display()
-            ),
+            );
         }
+        f
+    };
+    // The argv haystack is built only for the tick that searches it.
+    let mut rows = table_rows(&tree, filter.is_some());
+    if let Some(f) = &filter {
+        keep_matches(&mut rows, f, |r| {
+            (r.depth, r.search.as_deref().unwrap_or(r.name.as_str()))
+        });
     }
     // After the filter, so `--filter chrome --top 3` is the three heaviest
     // rows that match rather than whatever of the top three happened to.
@@ -675,15 +684,20 @@ struct TableRow {
     /// the sort at all, so "the top two" of them would cut whichever ones
     /// `assemble` happened to build first.
     trimmable: bool,
+    /// What `--filter` matches instead of `name`, when a filter is live: the
+    /// title plus the argv of every process under the row. `None` everywhere
+    /// else, so a tick with no filter allocates nothing for it.
+    search: Option<String>,
 }
 
-fn table_rows(tree: &HostTree) -> Vec<TableRow> {
+fn table_rows(tree: &HostTree, deep: bool) -> Vec<TableRow> {
     let mut rows = vec![TableRow {
         depth: 0,
         name: "Host".into(),
         nproc: tree_host_nproc(tree),
         metrics: host_metrics(tree),
         trimmable: false,
+        search: None,
     }];
     for user in &tree.users {
         rows.push(TableRow {
@@ -692,23 +706,25 @@ fn table_rows(tree: &HostTree) -> Vec<TableRow> {
             nproc: user_nproc(user),
             metrics: user_metrics(user),
             trimmable: false,
+            search: None,
         });
-        push_folder(&mut rows, 2, "Applications", &user.applications);
-        push_folder(&mut rows, 2, "User Services", &user.user_services);
-        push_folder(&mut rows, 2, "Containers", &user.containers);
+        push_folder(&mut rows, 2, "Applications", &user.applications, deep);
+        push_folder(&mut rows, 2, "User Services", &user.user_services, deep);
+        push_folder(&mut rows, 2, "Containers", &user.containers, deep);
     }
-    push_folder(&mut rows, 1, "Containers", &tree.containers);
-    push_folder(&mut rows, 1, "System", &tree.system);
+    push_folder(&mut rows, 1, "Containers", &tree.containers, deep);
+    push_folder(&mut rows, 1, "System", &tree.system, deep);
     rows
 }
 
-fn push_folder(rows: &mut Vec<TableRow>, depth: u16, name: &str, idents: &[IdentNode]) {
+fn push_folder(rows: &mut Vec<TableRow>, depth: u16, name: &str, idents: &[IdentNode], deep: bool) {
     rows.push(TableRow {
         depth,
         name: format!("{name} ({})", idents.len()),
         nproc: folder_nproc(idents),
         metrics: sum_idents(idents),
         trimmable: false,
+        search: None,
     });
     for ident in idents {
         rows.push(TableRow {
@@ -717,6 +733,7 @@ fn push_folder(rows: &mut Vec<TableRow>, depth: u16, name: &str, idents: &[Ident
             nproc: ident.nproc,
             metrics: ident.metrics.clone(),
             trimmable: true,
+            search: deep.then(|| ident_haystack(ident)),
         });
         for member in &ident.containers {
             rows.push(TableRow {
@@ -725,8 +742,39 @@ fn push_folder(rows: &mut Vec<TableRow>, depth: u16, name: &str, idents: &[Ident
                 nproc: member.nproc,
                 metrics: member.metrics.clone(),
                 trimmable: true,
+                search: deep.then(|| haystack(&member.title, &member.processes)),
             });
         }
+    }
+}
+
+/// Everything a filter searches on one row: the title it displays, then the
+/// argv of every process under it. `name` is an exe basename, so without argv
+/// no pattern can tell four identical workers apart by the `--port` they hold.
+pub(crate) fn haystack(title: &str, procs: &[ProcNode]) -> String {
+    let mut s = String::from(title);
+    push_cmdlines(&mut s, procs);
+    s
+}
+
+pub(crate) fn ident_haystack(ident: &IdentNode) -> String {
+    let mut s = String::from(ident.title.as_str());
+    for inst in &ident.instances {
+        push_cmdlines(&mut s, &inst.processes);
+    }
+    for member in &ident.containers {
+        push_cmdlines(&mut s, &member.processes);
+    }
+    s
+}
+
+/// Newline-separated so a pattern anchored with `$` cannot run off the end of
+/// one process's argv into the next one's.
+fn push_cmdlines(out: &mut String, procs: &[ProcNode]) {
+    for p in procs {
+        out.push('\n');
+        out.push_str(&p.cmdline);
+        push_cmdlines(out, &p.children);
     }
 }
 
@@ -911,6 +959,7 @@ mod tests {
     fn proc_node(pid: u32, pss: Option<u64>) -> ProcNode {
         ProcNode {
             pid,
+            cmdline: String::new(),
             name: format!("p{pid}"),
             metrics: metrics(pss, 0.0),
             children: Vec::new(),
@@ -1281,13 +1330,56 @@ mod tests {
             }],
             ..HostTree::default()
         };
-        let mut rows = table_rows(&tree);
+        let mut rows = table_rows(&tree, false);
         assert_eq!(rows[0].metrics.pss_bytes, Some(3072));
         let filter = Filter::new("firefox").expect("test patterns compile");
         keep_matches(&mut rows, &filter, |r| (r.depth, r.name.as_str()));
         let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
         assert_eq!(names, ["Host", "u", "Applications (2)", "firefox"]);
         assert_eq!(rows[0].metrics.pss_bytes, Some(3072));
+    }
+
+    /// A row title is an exe basename, so four identical workers differ only in
+    /// their argv. The haystack is built for the filtering tick only, which is
+    /// what `deep` gates — with it off the search field stays `None` and the
+    /// filter falls back to the name, matching nothing here.
+    #[test]
+    fn a_filter_reaches_an_argument_no_row_title_carries() {
+        let worker = |port: &str| IdentNode {
+            id: port.into(),
+            title: "python3".into(),
+            instances: vec![InstanceNode {
+                key: "1".into(),
+                nproc: 1,
+                metrics: Metrics::default(),
+                processes: vec![ProcNode {
+                    cmdline: format!("/usr/bin/python3 serve.py --port {port}"),
+                    ..proc_node(1, None)
+                }],
+            }],
+            ..sample_ident(1.0)
+        };
+        let tree = HostTree {
+            users: vec![UserNode {
+                uid: 1000,
+                name: "u".into(),
+                applications: vec![worker("8080"), worker("9090")],
+                user_services: Vec::new(),
+                containers: Vec::new(),
+            }],
+            ..HostTree::default()
+        };
+        let filter = Filter::new("--port 8080").expect("test patterns compile");
+        let matched = |deep: bool| {
+            let mut rows = table_rows(&tree, deep);
+            keep_matches(&mut rows, &filter, |r| {
+                (r.depth, r.search.as_deref().unwrap_or(r.name.as_str()))
+            });
+            rows.len()
+        };
+        // Host, the user, the folder header, and the one worker that holds it.
+        assert_eq!(matched(true), 4);
+        assert_eq!(matched(false), 0);
     }
 
     /// `--top` counts per parent, not per depth: two folders each keep their
@@ -1299,6 +1391,7 @@ mod tests {
     #[test]
     fn top_counts_siblings_under_each_parent_and_spares_the_shape() {
         let row = |depth: u16, name: &str, trimmable: bool| TableRow {
+            search: None,
             depth,
             name: name.into(),
             nproc: 1,
@@ -1342,6 +1435,7 @@ mod tests {
     #[test]
     fn top_drops_the_subtree_of_a_row_it_cut() {
         let row = |depth: u16, name: &str, trimmable: bool| TableRow {
+            search: None,
             depth,
             name: name.into(),
             nproc: 1,
@@ -1365,7 +1459,13 @@ mod tests {
 
     fn folder_rows(disk_r_bps: f64) -> Vec<TableRow> {
         let mut rows = Vec::new();
-        push_folder(&mut rows, 1, "Applications", &[sample_ident(disk_r_bps)]);
+        push_folder(
+            &mut rows,
+            1,
+            "Applications",
+            &[sample_ident(disk_r_bps)],
+            false,
+        );
         rows
     }
 

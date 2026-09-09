@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::ffi::OsStr;
 use std::io::{self, stdout};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -67,7 +67,23 @@ struct App {
     /// expanding and `i` all keep working on the held tree, which is the point
     /// of freezing it.
     paused: Option<Instant>,
+    /// Recent values of the sort metric per row id, oldest first, for the
+    /// `spark` column. Only the TUI has this: `--once` and `--json` take two
+    /// walks, so there is no history for them to draw.
+    ///
+    /// Cleared when the sort column changes, because the buffer would
+    /// otherwise hold two metrics in different units and draw them as one
+    /// picture. Rows that stop appearing are dropped on the same pass that
+    /// records, so an exited process does not hold a buffer for the run.
+    history: HashMap<String, VecDeque<f64>>,
+    /// The sort label `history` was collected under, so a change to it can
+    /// clear the buffers rather than mixing units.
+    sorted_by: String,
 }
+
+/// How many samples the trend keeps: the `spark` column's width, since a cell
+/// can draw no more than that.
+const TREND: usize = 9;
 
 /// # Errors
 ///
@@ -76,7 +92,7 @@ struct App {
 pub fn run(interval: Duration, pss_interval: Duration, view: View) -> Result<(), Error> {
     // Resolve columns before the alternate screen: a warning about a stale
     // hide entry printed after it would be wiped on the first frame.
-    let cols = Columns::from_view(&view);
+    let cols = Columns::for_tui(&view);
     // Before raw mode, so the guard captures the settings it will have to put
     // back, and covers the window from here to the teardown below.
     crate::tty::guard();
@@ -122,11 +138,14 @@ fn run_loop(
         help: false,
         detail: false,
         paused: None,
+        history: HashMap::new(),
+        sorted_by: String::new(),
     };
     // The highlight is this id, not `cursor`'s slot: PSS desc (the default)
     // reshuffles the flattened list every sample, and so do `c`/`d`, `/`,
     // `--top`, and expand/collapse.
     let mut cursor_id = String::from("host");
+    let mut fresh = true;
     loop {
         // Re-sorting an already ordered tree each frame is what lets `c` and
         // `d` reorder every level without re-sampling.
@@ -136,6 +155,11 @@ fn run_loop(
             app.view.desc,
         );
         let rows = flatten(&app.tree, &app.expand, &app.view, app.filter_re.as_ref());
+        // Once per published sample, not once per frame: a redraw for a
+        // keypress is not a new measurement.
+        if std::mem::take(&mut fresh) {
+            record_history(&mut app, &rows);
+        }
         app.cursor = remap_cursor(&rows, &cursor_id);
         app.row_vis = table_body_rows(terminal.size()?.height);
         app.row_off = follow_viewport(app.cursor, app.row_off, app.row_vis, rows.len());
@@ -162,6 +186,7 @@ fn run_loop(
         {
             app.tree = tree;
             keep_users(&mut app.tree, &app.view.users);
+            fresh = true;
         }
     }
     Ok(())
@@ -261,6 +286,53 @@ fn flatten(
         keep_top(&mut rows, n, |r| (r.depth, r.trimmable));
     }
     rows
+}
+
+/// Append this sample's sort-metric value for every visible row, and forget
+/// the rows that are gone. Keyed by `Flat::id`, so a row keeps its history
+/// across a re-sort or a filter but a genuinely different row never inherits
+/// one.
+fn record_history(app: &mut App, rows: &[Flat]) {
+    let sort = Sort::from_label(&app.view.sort);
+    // Two metrics in one buffer would be drawn as one picture, so changing
+    // what is measured starts the measurement again.
+    if app.sorted_by != sort.label() {
+        app.history.clear();
+        app.sorted_by = sort.label().to_string();
+    }
+    app.history.retain(|id, _| rows.iter().any(|r| &r.id == id));
+    for r in rows {
+        let v = sort.value(r.nproc, &r.metrics).unwrap_or(0.0);
+        let buf = app.history.entry(r.id.clone()).or_default();
+        if buf.len() == TREND {
+            buf.pop_front();
+        }
+        buf.push_back(v);
+    }
+}
+
+/// A row's recent history as rising blocks, scaled against its own peak so the
+/// shape is "when was this row busy", not "how does it compare to the machine".
+///
+/// Zero to the lowest step rather than to a blank: a row that has been at zero
+/// throughout has a history, and it is flat. A row with no history at all --
+/// one that has just appeared -- gets an empty cell, which is heft's blank:
+/// no figure exists yet.
+fn spark(buf: Option<&VecDeque<f64>>) -> String {
+    let Some(buf) = buf.filter(|b| !b.is_empty()) else {
+        return String::new();
+    };
+    let ramp = glyph::spark_ramp();
+    let peak = buf.iter().copied().fold(0.0_f64, f64::max);
+    buf.iter()
+        .map(|v| {
+            if peak <= 0.0 {
+                return ramp[0];
+            }
+            let step = (v / peak * (ramp.len() - 1) as f64).round() as usize;
+            ramp[step.min(ramp.len() - 1)]
+        })
+        .collect()
 }
 
 fn keep_rows(rows: &mut Vec<Flat>, filter: &Filter) {
@@ -503,7 +575,7 @@ fn handle_key(
 }
 
 fn refresh_columns(app: &mut App) {
-    app.cols = Columns::from_view(&app.view);
+    app.cols = Columns::for_tui(&app.view);
     let max = app.cols.len().saturating_sub(1) as u16;
     if app.col_off > max {
         app.col_off = max;
@@ -555,7 +627,16 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &App, rows: &[Flat]) {
         let cells: Vec<String> = app
             .cols
             .iter()
-            .map(|c| (c.fmt)(&name, r.nproc, &r.metrics))
+            .map(|c| {
+                if c.label == "spark" {
+                    // The one column whose value is not a function of this
+                    // sample, so `Column::fmt` (which sees only this sample)
+                    // cannot produce it.
+                    spark(app.history.get(&r.id))
+                } else {
+                    (c.fmt)(&name, r.nproc, &r.metrics)
+                }
+            })
             .skip(skip)
             .collect();
         let row = Row::new(cells);
@@ -1227,6 +1308,28 @@ mod tests {
         }
     }
 
+    /// The trend answers "when was this row busy", so it scales to the row's
+    /// own peak. A row that has been flat at zero has a history and it is
+    /// flat; a row with none yet is blank, which is heft's no-figure cell.
+    #[test]
+    fn a_trend_draws_against_the_rows_own_peak() {
+        let buf = |v: &[f64]| VecDeque::from(v.to_vec());
+        let ramp = glyph::spark_ramp();
+        let low = ramp[0];
+        let high = ramp[ramp.len() - 1];
+
+        assert_eq!(spark(None), "");
+        assert_eq!(spark(Some(&buf(&[]))), "");
+        // Steadily zero is flat at the bottom, not blank.
+        assert_eq!(spark(Some(&buf(&[0.0, 0.0]))), format!("{low}{low}"));
+        // The peak tops out and the quiet samples sit at the floor, whatever
+        // the absolute scale is -- 400% CPU and 4% draw the same shape.
+        assert_eq!(spark(Some(&buf(&[0.0, 400.0]))), format!("{low}{high}"));
+        assert_eq!(spark(Some(&buf(&[0.0, 4.0]))), format!("{low}{high}"));
+        // One sample per value, so the cell never outgrows the column.
+        assert_eq!(spark(Some(&buf(&[1.0; TREND]))).chars().count(), TREND);
+    }
+
     #[test]
     fn help_text_aligns_keys() {
         let text = help_text();
@@ -1560,6 +1663,8 @@ mod tests {
             help: false,
             detail: false,
             paused: None,
+            history: HashMap::new(),
+            sorted_by: String::new(),
         }
     }
 

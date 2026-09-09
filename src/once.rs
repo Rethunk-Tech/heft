@@ -38,6 +38,17 @@ pub(crate) const COLUMNS: &[Column] = &[
         fmt: |name, _, _| name.to_string(),
         key: None,
     },
+    // A picture of the sort metric's recent history. Its `fmt` is empty and
+    // the TUI substitutes the drawn cell: `--once` and `--json` take two walks
+    // and have no history, so a blank there is the truth rather than a gap.
+    // `key: None` and not in the sort cycle — a trend has no order.
+    Column {
+        label: "spark",
+        header: "TREND",
+        width: 9,
+        fmt: |_, _, _| String::new(),
+        key: None,
+    },
     Column {
         label: "nproc",
         header: "N",
@@ -226,7 +237,20 @@ impl Columns {
     /// This is deliberately not `Sort::from_label`'s silent fallback — a
     /// mistyped sort still produces a usable table, a mistyped hide or order
     /// entry would hide nothing / move nothing and say nothing.
+    /// The one-shot surfaces' columns: everything except `spark`, which draws
+    /// a history two `/proc` walks cannot have. A column that is blank on
+    /// every row of every `--once` is noise, not a blank contract.
     pub(crate) fn from_view(view: &View) -> Self {
+        Self::resolve(view, false)
+    }
+
+    /// The TUI's columns. Only a continuous surface accumulates the samples
+    /// `spark` draws.
+    pub(crate) fn for_tui(view: &View) -> Self {
+        Self::resolve(view, true)
+    }
+
+    fn resolve(view: &View, live: bool) -> Self {
         let path = config::view_path();
         let mut hidden: Vec<&str> = Vec::new();
         for label in &view.hide_columns {
@@ -279,6 +303,7 @@ impl Columns {
         Self(
             idxs.into_iter()
                 .filter(|&i| !hidden.contains(&COLUMNS[i].label))
+                .filter(|&i| live || COLUMNS[i].label != "spark")
                 .collect(),
         )
     }
@@ -308,6 +333,14 @@ impl Sort {
         COLUMNS[self.0].label
     }
 
+    /// This column's numeric value for a row, or `None` where the column has
+    /// no ordering (`name`, `spark`) or the metric could not be read. The
+    /// TUI's trend buffer needs the same number the sort uses, so both come
+    /// from the one `key` the column already defines.
+    pub(crate) fn value(self, nproc: u32, m: &Metrics) -> Option<f64> {
+        (COLUMNS[self.0].key?)(nproc, m)
+    }
+
     fn exact(s: &str) -> Option<Self> {
         COLUMNS.iter().position(|c| c.label == s).map(Sort)
     }
@@ -323,18 +356,36 @@ impl Sort {
     /// The next visible column, wrapping. Cycling onto a hidden one would move
     /// the sort somewhere the reader cannot watch it happen.
     pub(crate) fn next(self, cols: &Columns) -> Self {
-        let Some(p) = cols.0.iter().position(|&i| i == self.0) else {
+        let start = cols
+            .0
+            .iter()
+            .position(|&i| i == self.0)
             // A saved view may legally sort by a column it also hides; the
             // cycle then restarts at the first visible one.
-            return Sort(cols.0[0]);
-        };
-        Sort(cols.0[(p + 1) % cols.0.len()])
+            .map_or(0, |p| p + 1);
+        // Skips a column that cannot be ordered — `spark` draws a trend, and
+        // there is no ordering of pictures. `name` has no numeric key either
+        // but sorts alphabetically, so it stays in the cycle.
+        for step in 0..cols.0.len() {
+            let i = cols.0[(start + step) % cols.0.len()];
+            if i == 0 || COLUMNS[i].key.is_some() {
+                return Sort(i);
+            }
+        }
+        Sort(cols.0[start % cols.0.len()])
     }
 }
 
 /// Every hideable label, so `--hide` can name the valid ones in its usage
 /// error. `name` is not among them: a table of numbers with no labels is
 /// unreadable.
+/// Every column label, in compiled order. `--order` takes all of them: moving
+/// a column is presentation, so it is not limited to the ones a sort can use.
+#[must_use]
+pub fn column_labels() -> Vec<&'static str> {
+    COLUMNS.iter().map(|c| c.label).collect()
+}
+
 #[must_use]
 pub fn hideable_labels() -> Vec<&'static str> {
     COLUMNS.iter().skip(1).map(|c| c.label).collect()
@@ -360,7 +411,14 @@ pub(crate) fn unhide_last(view: &mut View) -> Option<String> {
 /// Every sort label, so `--sort` can name the valid ones in its usage error.
 #[must_use]
 pub fn sort_labels() -> Vec<&'static str> {
-    COLUMNS.iter().map(|c| c.label).collect()
+    // `spark` is omitted: it draws a trend, which has no ordering, so it is
+    // not one of the answers `--sort` will accept and must not be listed as
+    // one in the usage error.
+    COLUMNS
+        .iter()
+        .filter(|c| c.key.is_some() || c.label == "name")
+        .map(|c| c.label)
+        .collect()
 }
 
 /// A compiled `--filter` pattern.
@@ -1136,9 +1194,14 @@ mod tests {
         );
     }
 
+    /// The cycle visits every sortable column and comes back round. `spark` is
+    /// not among them: it draws a trend, and there is no ordering of pictures.
     #[test]
     fn sort_next_cycles_every_variant() {
-        let all = Sort::all();
+        let all: Vec<Sort> = Sort::all()
+            .into_iter()
+            .filter(|s| s.0 == 0 || COLUMNS[s.0].key.is_some())
+            .collect();
         let cols = every_column();
         let mut s = all[0];
         let mut seen = Vec::new();
@@ -1151,12 +1214,30 @@ mod tests {
         assert_eq!(seen, expect);
     }
 
+    /// `c` in the TUI can see `spark`, so the skip has to hold there too --
+    /// that is the surface the column exists on.
+    #[test]
+    fn the_sort_cycle_never_lands_on_the_trend() {
+        let cols = Columns::for_tui(&View::default());
+        let mut s = Sort::from_label("name");
+        for _ in 0..cols.len() + 2 {
+            s = s.next(&cols);
+            assert_ne!(s.label(), "spark", "the sort cycle landed on a picture");
+        }
+    }
+
     fn labels(cols: &Columns) -> Vec<&'static str> {
         cols.iter().map(|c| c.label).collect()
     }
 
+    /// What the one-shot surfaces resolve to: every column but `spark`, which
+    /// only the TUI accumulates history for.
     fn all_labels() -> Vec<&'static str> {
-        COLUMNS.iter().map(|c| c.label).collect()
+        COLUMNS
+            .iter()
+            .map(|c| c.label)
+            .filter(|l| *l != "spark")
+            .collect()
     }
 
     fn hiding(hide: &[&str]) -> Columns {
@@ -1190,7 +1271,7 @@ mod tests {
         });
         let got = labels(&cols);
         assert_eq!(&got[..4], ["name", "pss", "rss", "nproc"]);
-        assert_eq!(got.len(), COLUMNS.len());
+        assert_eq!(got.len(), all_labels().len());
         assert_eq!(got.iter().filter(|l| **l == "pss").count(), 1);
     }
 

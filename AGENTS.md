@@ -246,6 +246,19 @@ time, which is why `i` clears `help`.
 
 ## Columns
 
+`spark` is the one column whose cell is not a function of the current sample,
+so its `Column::fmt` returns empty and `ui::draw` substitutes `ui::spark` from
+`App::history` — a `VecDeque` per row id, `TREND` deep, appended once per
+published sample rather than once per frame. `Sort::value` gives the buffer the
+same number the sort uses, so the two cannot disagree. The buffers clear when
+the sort label changes (two units in one picture) and rows that stop appearing
+are dropped on the same pass. `Columns::for_tui` is the only constructor that
+includes it: `--once` and `--json` take two walks, so a permanently blank
+column there would be noise rather than heft's blank contract. `key: None`, and
+`Sort::next` skips a key-less column that is not `name` — a trend has no order.
+`--order` validates against `column_labels()` rather than `sort_labels()`,
+since moving a column is presentation and not everything movable is sortable.
+
 `once::COLUMNS` is the one column model; `once::Columns` is that list with
 `view.hide_columns` and `view.column_order` applied. The TUI and `--once`
 resolve it at start; the TUI rebuilds it when `H` / `u` change the list, so

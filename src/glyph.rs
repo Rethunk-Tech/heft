@@ -94,6 +94,20 @@ pub(crate) fn quad_b() -> char {
     if ascii() { '*' } else { '▙' }
 }
 
+/// Eight rising steps for a sparkline, lowest first. Every one is a single
+/// column in both sets, the same rule the bars and `ellipsis` keep, so a cell
+/// of eight of them is eight columns wide whatever the terminal resolved.
+pub(crate) fn spark_ramp() -> &'static [char; 8] {
+    if ascii() {
+        &['_', '.', ',', ':', '-', '=', '+', '#']
+    } else {
+        &[
+            '\u{2581}', '\u{2582}', '\u{2583}', '\u{2584}', '\u{2585}', '\u{2586}', '\u{2587}',
+            '\u{2588}',
+        ]
+    }
+}
+
 pub(crate) fn rule() -> char {
     if ascii() { '-' } else { '─' }
 }

@@ -4,6 +4,13 @@
 
 ### Added
 
+- A `TREND` column draws the last nine samples of the sort metric as rising
+  blocks, scaled to each row's own peak. Every other column is the current
+  interval, so a process that spiked to 400% and went quiet was indistinguish-
+  able from one that had been idle the whole time. TUI only — `--once` and
+  `--json` take two walks and have no history to draw. `--hide` and `--order`
+  take it; `--sort` and `c` do not, since a trend has no ordering.
+
 - `p` pauses the TUI. The table freezes so a row can be read without the
   numbers moving under it, while sampling continues underneath so unpausing
   shows the current machine. The footer says how long the view has been held.

@@ -355,6 +355,28 @@ Other uids appear as extra User nodes when `/proc` lists them. Metrics heft
 cannot read (`smaps_rollup`, `io`, fdinfo, `exe`) render as a blank cell. A
 blank is not a zero: those rows sort last whichever way the sort runs.
 
+## TREND
+
+`TREND` (`spark`) draws the last nine samples of whatever column you are
+sorting by, as rising blocks. Every other column is the current interval only,
+so a process that spiked to 400% and went quiet looked exactly like one that
+was idle throughout — by the time you read the row, the spike had already been
+overwritten.
+
+It scales to that row's own peak, so the shape answers "when was this row
+busy", not "how does it compare to the machine": a row that touched 400% and a
+row that touched 4% both draw a full block at their own maximum. A row that has
+been flat at zero draws a flat line along the bottom, because that is a history
+and it is flat. A row that has only just appeared is blank — heft's usual
+blank, no figure yet.
+
+Changing the sort column clears it. The buffer would otherwise hold two
+different metrics in two different units and draw them as one picture.
+
+It is TUI only. `--once` and `--json` take two `/proc` walks and have no
+history to draw, so `--order spark` there leaves an empty column rather than a
+misleading one, and the JSON never carries it.
+
 ## SWAP
 
 `SWAP` is `SwapPss` from `/proc/<pid>/smaps_rollup`, the file heft already
@@ -519,10 +541,12 @@ usage error; in the file the extra is warned and ignored.
 }
 ```
 
-Labels are the ones `c` cycles and `--sort` / `--hide` / `--order` take:
-`name`, `nproc`, `threads`, `age`, `dstate`, `core`, `machine`, `pss`, `rss`,
-`swap`, `vram`, `gtt`, `gfx`, `compute`, `diskr`, `diskw`, `cpustall`,
-`iostall`, `memstall`, `netns_rx`, `netns_tx`. No file, or no key, shows every
+Labels are `name`, `spark`, `nproc`, `threads`, `age`, `dstate`, `core`,
+`machine`, `pss`, `rss`, `swap`, `vram`, `gtt`, `gfx`, `compute`, `diskr`,
+`diskw`, `cpustall`, `iostall`, `memstall`, `netns_rx`, `netns_tx`. `--sort`
+and `c` take all of them except `spark`, which draws a trend rather than a
+number and so has no ordering; `--hide` and `--order` take it like any other,
+since hiding and moving a column are presentation. No file, or no key, shows every
 column in compiled order. An unknown label in the file warns on stderr and is
 ignored; on `--hide` or `--order` it is a usage error, the same split as
 `--sort`. `name` cannot be hidden — a table of numbers with no labels is

@@ -22,8 +22,8 @@ use crate::cpu;
 use crate::glyph;
 use crate::mem::{self, MemParts};
 use crate::once::{
-    Column, Columns, Filter, Sort, fmt_bytes, fmt_pct, haystack, hide_column, ident_haystack,
-    keep_matches, keep_top, keep_users, sort_tree, unhide_last,
+    COLUMNS, Column, Columns, Filter, Sort, fmt_bytes, fmt_pct, haystack, hide_column,
+    ident_haystack, keep_matches, keep_top, keep_users, sort_tree, unhide_last,
 };
 use crate::proc;
 use crate::types::{
@@ -57,6 +57,10 @@ struct App {
     col_off: u16,
     status: String,
     help: bool,
+    /// The `i` overlay. Holds no data of its own: it is drawn from the selected
+    /// row of the current frame, so it follows a re-sort or a new sample the
+    /// way the highlight does rather than freezing a stale snapshot.
+    detail: bool,
 }
 
 /// # Errors
@@ -110,6 +114,7 @@ fn run_loop(
         col_off: 0,
         status: String::new(),
         help: false,
+        detail: false,
     };
     // The highlight is this id, not `cursor`'s slot: PSS desc (the default)
     // reshuffles the flattened list every sample, and so do `c`/`d`, `/`,
@@ -406,6 +411,17 @@ fn handle_key(
         app.help = false;
         return Ok(false);
     }
+    if code == KeyCode::Char('i') {
+        app.detail = !app.detail;
+        // Only one overlay is drawn, so leaving help armed underneath would
+        // make the next `?` look like it did nothing.
+        app.help = false;
+        return Ok(false);
+    }
+    if app.detail && code == KeyCode::Esc {
+        app.detail = false;
+        return Ok(false);
+    }
     match code {
         KeyCode::Char('q') | KeyCode::Esc => return Ok(true),
         KeyCode::Char('/') => app.filter_edit = true,
@@ -554,6 +570,8 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &App, rows: &[Flat]) {
     f.render_widget(table, chunks[2]);
     if app.help {
         draw_help(f, chunks[2]);
+    } else if app.detail {
+        draw_detail(f, chunks[2], rows.get(app.cursor));
     }
 
     // `?` says the text on screen is not a usable pattern yet, so what is on
@@ -567,7 +585,7 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &App, rows: &[Flat]) {
         format!("filter: {}{stale}", app.view.filter)
     };
     let footer = format!(
-        " q quit  / filter  c sort ({})  s save  [ ] scroll  ? help  {}  {}",
+        " q quit  / filter  c sort ({})  i detail  s save  [ ] scroll  ? help  {}  {}",
         app.view.sort, filter, app.status
     );
     render_rule(f, chunks[3]);
@@ -883,7 +901,7 @@ fn share_cells(parts: &[u64], capacity: u64, width: usize) -> Vec<usize> {
 
 fn help_text() -> String {
     let (up, down, left, right) = glyph::arrows();
-    let rows: [(String, &str); 12] = [
+    let rows: [(String, &str); 13] = [
         ("q  Esc  Ctrl-C".to_string(), "quit"),
         (format!("{up} {down}  j k"), "move"),
         (format!("{left} {right}  h l"), "expand / collapse"),
@@ -893,6 +911,7 @@ fn help_text() -> String {
         ("d".to_string(), "reverse sort"),
         ("H".to_string(), "hide sort column"),
         ("u".to_string(), "unhide last column"),
+        ("i".to_string(), "detail for the selected row"),
         ("s".to_string(), "save view"),
         ("[ ]".to_string(), "scroll columns"),
         ("?  F1".to_string(), "toggle this help"),
@@ -903,23 +922,65 @@ fn help_text() -> String {
         .join("\n")
 }
 
+/// Every column for one row, hidden ones included, plus what the row *is*
+/// when it is a single process. A narrow terminal shows six of twenty columns
+/// and `[` `]` reaches the rest one screen at a time; this reads them all at
+/// once for the row under the cursor, which is the question a scroll is
+/// usually standing in for. A blank stays blank here for the same reason it
+/// does in the table: no figure exists, which is not a zero.
+fn detail_text(row: &Flat) -> String {
+    let mut lines = vec![row.name.clone(), String::new()];
+    for c in COLUMNS.iter().filter(|c| c.label != "name") {
+        let v = (c.fmt)(&row.name, row.nproc, &row.metrics);
+        lines.push(format!("{:<9} {}", c.header, v));
+    }
+    if let Some(pid) = row_pid(&row.id) {
+        lines.push(String::new());
+        for (k, v) in proc::detail(pid) {
+            lines.push(format!("{k:<9} {v}"));
+        }
+    }
+    lines.join("\n")
+}
+
+/// A process row's id ends `…/p/<pid>`; every other row is an aggregate and
+/// has no single `/proc` entry to describe.
+fn row_pid(id: &str) -> Option<u32> {
+    id.rsplit_once("/p/")?.1.parse().ok()
+}
+
+fn draw_detail(f: &mut ratatui::Frame<'_>, area: Rect, row: Option<&Flat>) {
+    let Some(row) = row else { return };
+    let text = detail_text(row);
+    popup(f, area, &text, "detail  (i or Esc to close)");
+}
+
 fn draw_help(f: &mut ratatui::Frame<'_>, area: Rect) {
-    let text = help_text();
+    popup(f, area, &help_text(), "keys");
+}
+
+/// Centred, sized to its text, never wider or taller than the pane it covers.
+/// One definition for both overlays so they cannot drift apart.
+fn popup(f: &mut ratatui::Frame<'_>, area: Rect, text: &str, title: &str) {
     let cols = u16::try_from(text.lines().map(|l| l.chars().count()).max().unwrap_or(0))
         .unwrap_or(u16::MAX);
     let rows = u16::try_from(text.lines().count()).unwrap_or(u16::MAX);
     let width = (cols + 2).min(area.width.saturating_sub(2)).max(3);
     let height = (rows + 2).min(area.height.saturating_sub(1)).max(3);
-    let popup = Rect {
+    let rect = Rect {
         x: area.x + (area.width.saturating_sub(width)) / 2,
         y: area.y + (area.height.saturating_sub(height)) / 2,
         width,
         height,
     };
-    f.render_widget(Clear, popup);
+    f.render_widget(Clear, rect);
     f.render_widget(
-        Paragraph::new(text).block(Block::default().borders(Borders::ALL).title("keys")),
-        popup,
+        Paragraph::new(text.to_string()).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(title.to_string()),
+        ),
+        rect,
     );
 }
 
@@ -1048,6 +1109,24 @@ mod tests {
         let gone_pid = format!("user:{me}/apps/firefox/i/pgid/p/123");
         assert_eq!(row_id(&rows, &gone_pid), format!("user:{me}/apps"));
         assert_eq!(remap_cursor(&[], "host"), 0);
+    }
+
+    /// The overlay's whole point is the columns the terminal is too narrow to
+    /// show, so it must list every one of them regardless of `hide_columns`,
+    /// and reach `/proc` only for a row that is one process.
+    #[test]
+    fn detail_lists_every_column_and_only_reads_proc_for_a_pid() {
+        let mut row = flat(3, "firefox");
+        let text = detail_text(&row);
+        for c in COLUMNS.iter().filter(|c| c.label != "name") {
+            assert!(text.contains(c.header), "{} missing from {text}", c.header);
+        }
+        assert!(!text.contains("CGROUP"), "an aggregate row has no one pid");
+
+        row.id = "host/apps/firefox/i/1/p/1".into();
+        assert_eq!(row_pid(&row.id), Some(1));
+        // pid 1 exists on any Linux box the suite runs on, readable or not.
+        assert!(detail_text(&row).contains("CGROUP"));
     }
 
     #[test]
@@ -1381,6 +1460,7 @@ mod tests {
             col_off: 0,
             status: String::new(),
             help: false,
+            detail: false,
         }
     }
 

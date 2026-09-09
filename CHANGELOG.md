@@ -4,6 +4,13 @@
 
 ### Added
 
+- `i` in the TUI opens a detail pane for the selected row: every column,
+  including hidden ones and those off the side of a narrow terminal, and for a
+  single process the pid, ppid, state, uid, `exe`, cgroup and full command
+  line. The tree shows four rows called `cursor`; only the command line says
+  which is which. Read from `/proc` on the keypress, so it costs nothing until
+  it is opened.
+
 - `--filter` and the TUI's `/` search each row's name **and** the argv of every
   process under it. A row title is an exe basename, so four identical workers
   could not be told apart by the `--port` they hold. The argv is matched on

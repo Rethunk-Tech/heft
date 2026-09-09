@@ -212,6 +212,15 @@ land on an exact width and `once::trunc` cuts to an exact column count, so a
 three-character `...` for `…` would overflow both. `Cli::Glyphs` lives in
 `src/cli.rs` because `build.rs` compiles that file standalone.
 
+`i` toggles `ui::draw_detail`, which renders `COLUMNS` in full for the selected
+row — hidden columns included, since the pane exists to answer what the table
+is too narrow to show — and then, when `ui::row_pid` finds a `…/p/<pid>` id,
+the seven `/proc` facts from `proc::detail`. Those are read on the keypress
+rather than carried on `ProcNode`: five more strings per process per tick would
+be paid on every tick to serve one row of one keystroke. `ui::popup` is shared
+with `draw_help` so the two overlays cannot drift, and only one draws at a
+time, which is why `i` clears `help`.
+
 ## Columns
 
 `once::COLUMNS` is the one column model; `once::Columns` is that list with

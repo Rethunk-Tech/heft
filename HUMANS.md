@@ -230,6 +230,7 @@ folder rows for "keep the parents" to mean anything (filter it with `jq`).
 | `d` | reverse the sort direction |
 | `H` | hide the current sort column (`name` is refused) |
 | `u` | unhide the last hidden column |
+| `i` | detail for the row under the cursor (`i` or Esc closes) |
 | `s` | save sort, filter, hidden columns, and column order to `$XDG_CONFIG_HOME/heft/view.json` |
 | `?` / `F1` | toggle the key help overlay |
 
@@ -248,6 +249,21 @@ The highlight stays on the same row when the list reorders or shrinks — a
 new sample, `c`/`d`, `/`, `--top`, or expand/collapse. If that row has gone
 (process exited, filter dropped it), the nearest parent still on screen is
 selected.
+
+`i` opens a detail pane for the row under the cursor. It lists **every**
+column for that row — the ones `H` hid and the ones the terminal is too narrow
+to reach included — so you can read the whole row at once rather than scrolling
+it past with `[` and `]`. A blank there is the blank the table would show: no
+figure exists, which is not a zero.
+
+When the cursor is on a single process it also prints what that process *is*,
+which no column says: pid, parent pid, state, owning uid, the `exe` path, the
+cgroup line, and the full command line. That last one is usually the answer —
+four helpers named `cursor` differ only in their `--type=`, and the tree shows
+you four rows called `cursor`. Those seven facts are read from `/proc` when you
+press the key rather than carried on every process of every sample, so the pane
+costs nothing until you open it, and a field heft may not read (another user's
+`exe`) is simply blank.
 
 ## What the tree means
 

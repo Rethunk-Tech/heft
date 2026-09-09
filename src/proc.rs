@@ -356,6 +356,51 @@ pub(crate) fn username(uid: u32) -> String {
     uid.to_string()
 }
 
+/// What a process *is*, as opposed to what the columns say it currently costs.
+/// Read when the detail overlay opens rather than carried on every `ProcNode`:
+/// five more strings per process per tick would be paid on every tick to serve
+/// one row of one keystroke. A field heft cannot read (EACCES on another
+/// user's `exe`, or a pid that exited between the keypress and the read) comes
+/// back empty, the same blank contract the columns keep.
+pub(crate) fn detail(pid: u32) -> Vec<(&'static str, String)> {
+    let base = format!("/proc/{pid}");
+    let status = fs::read_to_string(format!("{base}/status")).unwrap_or_default();
+    let field = |name: &str| {
+        status
+            .lines()
+            .find_map(|l| l.strip_prefix(name))
+            .unwrap_or("")
+            .trim()
+            .to_string()
+    };
+    // `Uid:` is real/effective/saved/fs; the real uid is the one the tree bills.
+    let uid = field("Uid:")
+        .split_whitespace()
+        .next()
+        .and_then(|u| u.parse::<u32>().ok());
+    vec![
+        ("PID", pid.to_string()),
+        ("PPID", field("PPid:")),
+        ("STATE", field("State:")),
+        (
+            "UID",
+            uid.map_or_else(String::new, |u| format!("{u} ({})", username(u))),
+        ),
+        ("EXE", read_exe(&format!("{base}/exe")).unwrap_or_default()),
+        (
+            "CGROUP",
+            fs::read_to_string(format!("{base}/cgroup"))
+                .unwrap_or_default()
+                .trim()
+                .to_string(),
+        ),
+        (
+            "CMDLINE",
+            read_cmdline(&format!("{base}/cmdline")).join(" "),
+        ),
+    ]
+}
+
 /// Header totals from world-readable files only — no per-PID `/proc` walk.
 pub(crate) fn placeholder_tree() -> HostTree {
     let cpu = cpu::HostCpu::default();

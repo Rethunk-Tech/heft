@@ -288,9 +288,12 @@ not walk every fdinfo when the dri/drm prefilter is empty — GPU clients whose
 fd names omit dri/drm stay blank. Sample cadence (`--interval`,
 `--pss-interval`, `--once` / `--json`): [HUMANS.md](HUMANS.md).
 
-JSON shape (`src/types.rs` `HostTree`): `host.users[].applications|user_services|containers`,
-`host.containers`, `host.system`. Project identities include
-`containers[].processes[]`.
+JSON shape (`src/types.rs` `HostTree`): `host.sampled_at`,
+`host.users[].applications|user_services|containers`, `host.containers`,
+`host.system`. Project identities include `containers[].processes[]`.
+`sampled_at` is set in `cpu::header_from`, the one `HostTree` constructor, off
+the `now_epoch` the AGE column already reads; a `--json --follow` line carries
+no other clock, so without it two records cannot be placed in time.
 
 ## Gates
 

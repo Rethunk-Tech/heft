@@ -170,6 +170,12 @@ any line of the stream still says which machine state it belongs to. It needs
 `--once` or `--json`; the TUI is already a follow. Closing the reader ends it
 quietly, so `heft --json --follow | head -5` exits 0.
 
+Every JSON document carries `host.sampled_at`, the unix second the sample was
+taken. A stream has no other clock in it, so two lines otherwise say nothing
+about how far apart they were read — an interval the sampler stretched to
+finish a PSS pass is invisible without it. It is on the one-shot `--json` too,
+where it dates the snapshot.
+
 Unlike the one-shot forms, `--follow` honours `--pss-interval`: reading
 `smaps_rollup` for every process once a second forever is the cost that flag
 exists to avoid. The first published sample reads PSS regardless, so the stream
@@ -282,6 +288,14 @@ selected.
   Host → Containers.
 - **System** is kernel threads and leftover `system.slice` (including
   `dockerd` / `containerd`). Container scopes never go here.
+
+The GPU columns read DRM fdinfo, and only from `amdgpu`, `i915` and `xe` — the
+three drivers whose region and engine key names heft knows. Every other driver
+is refused rather than guessed at, so `nvidia-drm`, `nouveau`, and the ARM SoC
+drivers (`panfrost`, `v3d`, `msm`) leave VRAM, GTT, gfx% and compute% blank on
+a machine that has a working GPU. That blank is the ordinary blank contract:
+no figure exists, because reading a key by the name another driver happens to
+use is how you print a confident wrong number.
 
 Other uids appear as extra User nodes when `/proc` lists them. Metrics heft
 cannot read (`smaps_rollup`, `io`, fdinfo, `exe`) render as a blank cell. A

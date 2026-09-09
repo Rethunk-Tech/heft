@@ -167,6 +167,10 @@ pub(crate) enum Folder {
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct HostTree {
+    /// When this sample was taken, unix seconds. A `--json --follow` stream is
+    /// one document per line with no other clock in it, so a reader holding two
+    /// lines has nothing else to tell how far apart they were sampled.
+    pub sampled_at: u64,
     pub(crate) nproc: u32,
     pub(crate) cpu_pct: f64,
     pub(crate) cpu_user_pct: f64,

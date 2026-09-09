@@ -374,6 +374,23 @@ fn self_ruid() -> String {
         .expect("Uid: in /proc/self/status")
 }
 
+/// The NDJSON stream carries no other clock, so a reader holding two lines has
+/// only this field to say how far apart they were sampled.
+#[test]
+fn the_host_stamps_when_it_was_sampled() {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock is after the epoch")
+        .as_secs();
+    let stamped = sample().host["sampled_at"]
+        .as_u64()
+        .expect("host.sampled_at is a number");
+    assert!(
+        stamped <= now && now - stamped < 300,
+        "sampled_at {stamped} is not within five minutes of {now}"
+    );
+}
+
 #[test]
 fn kernel_threads_only_ever_land_in_system() {
     let s = sample();

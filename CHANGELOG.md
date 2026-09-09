@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Added
+
+- `--json` documents carry `host.sampled_at`, the unix second the sample was
+  taken. A `--json --follow` stream is one document per line with no other
+  clock in it, so two records could not be placed in time relative to each
+  other — an interval stretched by a PSS pass was invisible to a reader.
+
+### Documentation
+
+- HUMANS.md states that the GPU columns read DRM fdinfo from `amdgpu`, `i915`
+  and `xe` only, so `nvidia-drm`, `nouveau` and the ARM SoC drivers leave VRAM,
+  GTT, gfx% and compute% blank on a machine with a working GPU.
+
 ## 0.5.0 - 2026-09-08
 
 ### Fixed

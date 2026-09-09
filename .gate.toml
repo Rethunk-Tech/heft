@@ -1,0 +1,28 @@
+# Gates gate cannot infer, and the flavours this project actually runs.
+#
+# Detection knows `cargo build`, `cargo clippy`, `cargo test` and actionlint.
+# It cannot know that this project pins the lockfile on every one of them, nor
+# that its checks include cargo-deny and cargo-machete -- so the hook listed
+# them by hand and drifted from what `gate` ran. These entries close that gap:
+# `gate` is now the whole check, and lefthook runs `gate`.
+
+# --locked fails rather than silently updating Cargo.lock, which is the whole
+# point of running it in a gate.
+[gates.test]
+run = "cargo test --locked"
+
+# --all-targets reaches tests and benches, and -D warnings is what makes
+# clippy a gate rather than a report.
+[gates.lint]
+run = "cargo clippy --locked --all-targets -- -D warnings"
+
+[gates.fmt]
+run = "cargo fmt --check"
+
+# Advisories, licences and bans. Not a lint of this code, so it is its own gate.
+[gates.deny]
+run = "cargo deny --locked check"
+
+# Dependencies declared and never used.
+[gates.machete]
+run = "cargo machete"

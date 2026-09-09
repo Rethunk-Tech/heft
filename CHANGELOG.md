@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.6.0 - 2026-09-09
+
 ### Added
 
 - A cell whose figure says the row is in trouble is drawn in red, or in

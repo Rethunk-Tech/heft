@@ -171,6 +171,14 @@ pub struct HostTree {
     /// one document per line with no other clock in it, so a reader holding two
     /// lines has nothing else to tell how far apart they were sampled.
     pub sampled_at: u64,
+    /// The kernel's own thread count, from `/proc/loadavg`. A global counter
+    /// rather than a walk, so it survives what hides pids from `/proc`, which
+    /// is what makes it a check on how much of the machine heft can see.
+    ///
+    /// Not serialized: it exists to qualify what the tree reports, and a
+    /// consumer of the JSON is reading the tree itself.
+    #[serde(skip)]
+    pub(crate) kernel_threads: Option<u64>,
     pub(crate) nproc: u32,
     pub(crate) cpu_pct: f64,
     pub(crate) cpu_user_pct: f64,

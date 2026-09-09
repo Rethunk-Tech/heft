@@ -53,6 +53,14 @@ fn main() -> ExitCode {
         Glyphs::Unicode => Some(heft::glyph::Set::Unicode),
         Glyphs::Ascii => Some(heft::glyph::Set::Ascii),
     });
+    // A typed value below the floor is a usage error, the same split as a bad
+    // `--sort`: silently raising it left the caller computing rates against a
+    // cadence heft was not using. `--pss-interval` is only checked against the
+    // floor, not against `--interval`: it is documented as "at least
+    // `--interval`", and `--interval 10` alone would otherwise fail against
+    // the default of 5.
+    check_interval("interval", cli.interval);
+    check_interval("pss-interval", cli.pss_interval);
     let (interval, pss_interval) = heft::proc::clamp_intervals(cli.interval, cli.pss_interval);
     // A saved view is a human's TUI preference. `--json` is a documented
     // contract, so only an explicit flag reshapes it.
@@ -124,6 +132,24 @@ fn main() -> ExitCode {
             eprintln!("{e}");
             ExitCode::FAILURE
         }
+    }
+}
+
+/// `is_finite` first, so a NaN is refused rather than slipping past a `<`
+/// comparison: `--interval nan` parses as a float, and
+/// `Duration::from_secs_f64` panics on one.
+fn check_interval(flag: &str, secs: f64) {
+    if !secs.is_finite() || secs < heft::proc::MIN_INTERVAL {
+        Cli::command()
+            .error(
+                ErrorKind::InvalidValue,
+                format!(
+                    "invalid value '{secs}' for '--{flag} <{}>': the floor is {} seconds",
+                    flag.to_uppercase().replace('-', "_"),
+                    heft::proc::MIN_INTERVAL
+                ),
+            )
+            .exit()
     }
 }
 

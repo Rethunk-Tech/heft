@@ -220,11 +220,20 @@ fn rollup_for(
     }
 }
 
-/// Floor 0.05s; PSS cadence is at least the catch-all interval.
+/// The fastest catch-all sample heft will take. Below this a tick cannot
+/// finish its `/proc` walk before the next one is due.
+pub const MIN_INTERVAL: f64 = 0.05;
+
+/// Floor `MIN_INTERVAL`; PSS cadence is at least the catch-all interval.
+///
+/// Still clamps rather than failing: `main` refuses a typed value below the
+/// floor, so what reaches here is either already valid or came from a caller
+/// of the library, which should get a working monitor rather than a panic.
+/// `max` also absorbs a NaN, which `Duration::from_secs_f64` would panic on.
 #[must_use]
 pub fn clamp_intervals(interval_s: f64, pss_s: f64) -> (Duration, Duration) {
-    let interval = Duration::from_secs_f64(interval_s.max(0.05));
-    let pss = Duration::from_secs_f64(pss_s.max(0.05)).max(interval);
+    let interval = Duration::from_secs_f64(interval_s.max(MIN_INTERVAL));
+    let pss = Duration::from_secs_f64(pss_s.max(MIN_INTERVAL)).max(interval);
     (interval, pss)
 }
 
@@ -354,6 +363,21 @@ pub(crate) fn username(uid: u32) -> String {
         }
     }
     uid.to_string()
+}
+
+/// The kernel's own thread count: field 4 of `/proc/loadavg` is
+/// `running/total`, and that total is a global counter rather than a walk of
+/// `/proc`. So it still answers on a `hidepid` mount, inside a PID namespace,
+/// or wherever a pid directory is not readable -- which is exactly where
+/// heft's own walk goes blind, and why it is worth comparing the two.
+pub(crate) fn kernel_threads() -> Option<u64> {
+    let text = fs::read_to_string(crate::root::path("/proc/loadavg")).ok()?;
+    text.split_whitespace()
+        .nth(3)?
+        .split_once('/')?
+        .1
+        .parse()
+        .ok()
 }
 
 /// What a process *is*, as opposed to what the columns say it currently costs.

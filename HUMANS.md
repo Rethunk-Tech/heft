@@ -95,6 +95,11 @@ ignored rather than running the unmodified key's binding. If heft is killed —
 terminal back before it goes, and exits `128 +` the signal, so you are never
 left at a shell with no echo.
 
+A value below the 0.05s floor is a usage error rather than being quietly
+raised to it: heft would have run at 0.05 either way, and you would have been
+computing rates against a cadence it was never using. Same rule as a mistyped
+`--sort`.
+
 `--interval` is the catch-all (default 1s, floor 0.05s): `/proc` walk, RSS,
 io, GPU, grouping, and CPU/disk/GPU rates. The TUI sleeps `--interval` minus
 sample time; a PSS pass may stretch that tick.
@@ -392,6 +397,24 @@ It is TUI only. `--once` and `--json` take two `/proc` walks and have no
 history to draw, so `--order spark` there leaves an empty column rather than a
 misleading one, and the JSON never carries it.
 
+## How much heft can see
+
+heft can only bill a process it can walk, so where `/proc` hides pids — a
+`hidepid` mount, a PID namespace, another user's processes on a locked-down
+host — the tree is quietly smaller than the machine. The kernel publishes its
+own thread count in `/proc/loadavg`, and that is a global counter rather than a
+walk, so it still answers where the walk has gone blind.
+
+When heft can account for less than 90% of those threads it says so:
+`seeing 1% of 4557 threads`, in the TUI footer and on a `WARN` line under the
+`--once` host line. Above that the gap is ordinary skew — threads are created
+and reaped while the walk runs — and heft stays quiet. On an unrestricted host
+the two agree exactly.
+
+This is the same blind spot the GTT note above describes with a number: the
+kernel reported 45.7 GiB in use while heft's Host row accounted for 18.1 GiB,
+because every drm client inside a root-owned container was unreadable.
+
 ## SWAP
 
 `SWAP` is `SwapPss` from `/proc/<pid>/smaps_rollup`, the file heft already
@@ -436,7 +459,12 @@ process heft can see at all has a state, so there is nothing it can fail to
 read.
 
 A steady `0` is the ordinary reading on a healthy machine. A row that holds
-above zero is waiting on something the kernel will not let it stop waiting for.
+above zero is waiting on something the kernel will not let it stop waiting for,
+and that cell is drawn in red — reverse video where there is no colour, so it
+survives `NO_COLOR`, a pipe and a monochrome terminal. The stall columns are
+marked the same way once they pass 20% of an interval, which is where a cgroup
+is contending for a resource rather than merely using it. Nothing else in the
+table is marked: a large `%CORE` is a machine doing work, which is not trouble.
 
 ## CPU ST / IO ST / MEM ST
 

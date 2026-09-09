@@ -582,9 +582,6 @@ fn refresh_columns(app: &mut App) {
     }
 }
 
-/// Every header stays bold; the sort column is reversed so it is still marked
-/// when `NO_COLOR` drops hue. The cursor row already uses reverse, so this is
-/// the same highlight, on the one cell `c` is talking about.
 /// How many columns, starting at `skip`, fit in `avail` at their full width.
 ///
 /// ratatui clips a cell that runs out of room, so a 50-column terminal drew
@@ -617,6 +614,43 @@ fn columns_that_fit(cols: &Columns, skip: usize, avail: u16, name_on_screen: boo
     n.max(1)
 }
 
+/// A cgroup stalled for this share of an interval is contending for the
+/// resource rather than merely using it. Below it the figure is ordinary
+/// scheduling noise, and marking it would train the eye to ignore the mark.
+const STALL_ALARM: f64 = 20.0;
+
+/// Whether this column's figure, on this row, says the row is in trouble.
+///
+/// `D` is why that column exists: a process in uninterruptible sleep gets no
+/// work done and cannot be killed, and `%CORE` reads it as idle, so nothing
+/// else on the row distinguishes a machine stuck on a dead NFS mount from a
+/// quiet one. The stall columns are the same argument for a cgroup.
+fn alarming(label: &str, m: &Metrics) -> bool {
+    let over = |v: Option<f64>| v.is_some_and(|v| v >= STALL_ALARM);
+    match label {
+        "dstate" => m.d_state_procs > 0,
+        "cpustall" => over(m.cpu_stall_pct),
+        "iostall" => over(m.io_stall_pct),
+        "memstall" => over(m.mem_stall_pct),
+        _ => false,
+    }
+}
+
+/// Red where there is colour, reverse video where there is not -- the same
+/// fallback the sort header already uses, so the mark survives `NO_COLOR`,
+/// a pipe, and a monochrome terminal. Reverse also costs no column width,
+/// which a marker character would: `CPU ST` is six wide and `100.0` is five.
+fn alarm_style() -> Style {
+    if colored() {
+        Style::default().fg(Color::Red)
+    } else {
+        Style::default().add_modifier(Modifier::REVERSED)
+    }
+}
+
+/// Every header stays bold; the sort column is reversed so it is still marked
+/// when `NO_COLOR` drops hue. The cursor row already uses reverse, so this is
+/// the same highlight, on the one cell `c` is talking about.
 fn sort_header<'a>(cols: impl Iterator<Item = &'a Column>, sort: &str) -> Row<'static> {
     Row::new(cols.map(|c| {
         let cell = Cell::from(c.header);
@@ -658,17 +692,23 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &App, rows: &[Flat]) {
             "  "
         };
         let name = format!("{}{}{}", "  ".repeat(r.depth as usize), mark, r.name);
-        let cells: Vec<String> = app
+        let cells: Vec<Cell> = app
             .cols
             .iter()
             .map(|c| {
-                if c.label == "spark" {
+                let text = if c.label == "spark" {
                     // The one column whose value is not a function of this
                     // sample, so `Column::fmt` (which sees only this sample)
                     // cannot produce it.
                     spark(app.history.get(&r.id))
                 } else {
                     (c.fmt)(&name, r.nproc, &r.metrics)
+                };
+                let cell = Cell::from(text);
+                if alarming(c.label, &r.metrics) {
+                    cell.style(alarm_style())
+                } else {
+                    cell
                 }
             })
             .skip(skip)
@@ -726,8 +766,12 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &App, rows: &[Flat]) {
         format!("  PAUSED {}s", since.elapsed().as_secs())
     });
     let footer = format!(
-        " q quit  / filter  c sort ({})  i detail  p pause  s save  ? help{}  {}  {}",
-        app.view.sort, paused, filter, app.status
+        " q quit  / filter  c sort ({})  i detail  p pause  s save  ? help{}{}  {}  {}",
+        app.view.sort,
+        paused,
+        crate::once::coverage_tail(&app.tree),
+        filter,
+        app.status
     );
     render_rule(f, chunks[3]);
     f.render_widget(Paragraph::new(footer), chunks[4]);
@@ -1396,6 +1440,28 @@ mod tests {
         let narrow = columns_that_fit(&cols, 0, 50, true);
         let wide = columns_that_fit(&cols, 0, 160, true);
         assert!(wide > narrow, "a wider table must show more columns");
+    }
+
+    /// `%CORE` reads a D-state process as idle and a stalled cgroup as quiet,
+    /// which is why those columns exist -- and why a figure in them has to
+    /// look different from the zeros beside it.
+    #[test]
+    fn only_a_figure_in_trouble_is_marked() {
+        let m = |d: u32, cpu: Option<f64>| Metrics {
+            d_state_procs: d,
+            cpu_stall_pct: cpu,
+            ..Metrics::default()
+        };
+        assert!(alarming("dstate", &m(1, None)));
+        assert!(!alarming("dstate", &m(0, None)));
+        // At the threshold, not merely past it.
+        assert!(alarming("cpustall", &m(0, Some(STALL_ALARM))));
+        assert!(!alarming("cpustall", &m(0, Some(STALL_ALARM - 0.1))));
+        // A blank stall is no figure at all, so there is nothing to mark.
+        assert!(!alarming("cpustall", &m(0, None)));
+        // Every other column is left alone, including a large one.
+        assert!(!alarming("core", &m(9, Some(99.0))));
+        assert!(!alarming("name", &m(9, Some(99.0))));
     }
 
     #[test]

@@ -353,6 +353,27 @@ literal path would find the real machine through it and fill the tree. The
 container socket and `/etc/passwd` are deliberately not prefixed — one is live
 IPC rather than a file in the tree, the other is the host's.
 
+`ui::alarming` marks the cells that say a row is in trouble — `D` above zero,
+a stall column at or over `STALL_ALARM` (20%) — with `ui::alarm_style`: red
+where there is colour, `REVERSED` where there is not, which is the fallback
+`sort_header` already uses. Reverse rather than a marker character because
+`CPU ST` is six columns wide and `100.0` is five, so a marker would overflow
+into the clipping `columns_that_fit` exists to prevent. Nothing else is marked:
+a large `%CORE` is work, not trouble.
+
+`once::coverage_tail` compares `HostTree::kernel_threads` (field 4 of
+`/proc/loadavg`, a global counter that `hidepid` cannot hide) against the Host
+row's summed `THR`, and reports below `VISIBLE_OK`. `kernel_threads` is
+`#[serde(skip)]` and set in `cpu::header_from` beside `sampled_at`: it
+qualifies what the tree reports rather than being part of it.
+
+`main::check_interval` refuses a typed interval below `proc::MIN_INTERVAL`,
+negated so a `NaN` — which `Duration::from_secs_f64` panics on — is refused
+too. `clamp_intervals` still clamps, for library callers and because `max`
+absorbs a NaN. `--pss-interval` is checked against the floor only, never
+against `--interval`: it is documented as "at least `--interval`", so
+`--interval 10` alone would otherwise fail against the default of 5.
+
 `ui::columns_that_fit` lays out only columns whose full width fits the pane.
 ratatui clips a cell that runs out of room, so a 50-column terminal drew
 `20.1G` as `2`; a column is now drawn whole or dropped, and `[` / `]` reach the

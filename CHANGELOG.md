@@ -4,6 +4,18 @@
 
 ### Added
 
+- A cell whose figure says the row is in trouble is drawn in red, or in
+  reverse video where there is no colour: `D` above zero, and a stall column
+  at or over 20% of an interval. `D` exists because `%CORE` reads an
+  uninterruptible process as idle, but a `3` there had looked exactly like a
+  `0` among nineteen other numbers.
+
+- heft says when it cannot account for the machine: `seeing 1% of 4557
+  threads`, in the TUI footer and on a `WARN` line under the `--once` host
+  line, whenever the tree covers under 90% of the kernel's own thread count.
+  On a `hidepid` mount or inside a PID namespace the tree was simply small,
+  with nothing to say why.
+
 - `--proc-root DIR` reads `/proc` and `/sys` under `DIR` instead of `/`, for
   another mount namespace's procfs or a tree captured off a machine heft
   cannot run on. A directory with no `proc` in it is a usage error.
@@ -57,6 +69,12 @@
   other — an interval stretched by a PSS pass was invisible to a reader.
 
 ### Fixed
+
+- `--interval` below the documented 0.05s floor was accepted and silently
+  raised to it, so a caller asking for 0.001 computed rates against a cadence
+  heft was not using. It is now a usage error naming the floor, the same split
+  as a mistyped `--sort`. `nan`, which parses as a float and would have
+  panicked in `Duration::from_secs_f64`, is refused too.
 
 - The TUI clipped a column that did not fit, so a 50-column terminal drew
   `20.1G` as `2` and `548.5` as `5` with nothing to say they had been cut.

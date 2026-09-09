@@ -270,6 +270,7 @@ pub(crate) fn header_from(c: &HostHeader, a: &HostCpu, b: &HostCpu) -> HostTree 
     let split = host_split(a, b);
     HostTree {
         sampled_at: now_epoch(),
+        kernel_threads: crate::proc::kernel_threads(),
         nproc: c.nproc,
         cpu_pct: split.busy,
         cpu_user_pct: split.user,

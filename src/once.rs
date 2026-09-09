@@ -724,6 +724,10 @@ fn render_table(
         tree.nproc,
         crate::psi::header_tail(&tree)
     )?;
+    let coverage = coverage_tail(&tree);
+    if !coverage.is_empty() {
+        writeln!(out, "WARN {}", coverage.trim_start())?;
+    }
     write_header(out, cols)?;
     write_rows(out, cols, &rows)?;
     Ok(())
@@ -834,6 +838,39 @@ fn push_cmdlines(out: &mut String, procs: &[ProcNode]) {
         out.push_str(&p.cmdline);
         push_cmdlines(out, &p.children);
     }
+}
+
+/// Below this share of the machine's threads, heft says so. Above it the gap
+/// is the ordinary skew between reading `/proc/loadavg` and finishing the
+/// walk: threads are created and reaped throughout, and heft's own walk holds
+/// several. Measured on an unrestricted host, the two agree exactly.
+const VISIBLE_OK: f64 = 0.9;
+
+/// `  seeing 4% of 4537 threads`, or nothing when heft can account for the
+/// machine.
+///
+/// heft can only bill a pid it can walk, so on a `hidepid` mount, inside a
+/// PID namespace, or against another user's processes the tree is quietly
+/// smaller than the machine -- HUMANS.md documents one measured case where
+/// the kernel reported 45.7 GiB of GTT and the Host row accounted 18.1 GiB.
+/// The kernel's global thread count is not a walk, so it still answers, and
+/// the two together turn "the tree looks small" into a figure.
+pub(crate) fn coverage_tail(tree: &HostTree) -> String {
+    let (Some(total), Some(seen)) = (tree.kernel_threads, host_metrics(tree).threads) else {
+        return String::new();
+    };
+    if total == 0 {
+        return String::new();
+    }
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "a thread count large enough to lose precision in f64 is not reachable"
+    )]
+    let share = seen as f64 / total as f64;
+    if share >= VISIBLE_OK {
+        return String::new();
+    }
+    format!("  seeing {:.0}% of {total} threads", share * 100.0)
 }
 
 /// `  swap used / total`, or nothing at all on a machine with no swap: an
@@ -1461,6 +1498,37 @@ mod tests {
         // Host, the user, the folder header, and the one worker that holds it.
         assert_eq!(matched(true), 4);
         assert_eq!(matched(false), 0);
+    }
+
+    /// Silent when heft can account for the machine; a figure when it cannot.
+    /// The warning exists for a `hidepid` mount or a PID namespace, where the
+    /// tree is quietly smaller than the machine and nothing else says so.
+    #[test]
+    fn coverage_speaks_only_when_the_tree_is_short() {
+        // sample_ident carries threads: Some(19), so one app is 19 threads.
+        let tree = |kernel: Option<u64>| HostTree {
+            kernel_threads: kernel,
+            users: vec![UserNode {
+                uid: 1000,
+                name: "u".into(),
+                applications: vec![sample_ident(1.0)],
+                user_services: Vec::new(),
+                containers: Vec::new(),
+            }],
+            ..HostTree::default()
+        };
+        // Seeing 19 of 20 is ordinary skew, not a blind spot.
+        assert_eq!(coverage_tail(&tree(Some(20))), "");
+        assert_eq!(coverage_tail(&tree(Some(19))), "");
+        // Seeing 19 of 1900 is the case the warning is for.
+        assert_eq!(
+            coverage_tail(&tree(Some(1900))),
+            "  seeing 1% of 1900 threads"
+        );
+        // No kernel figure, or a nonsense one, says nothing rather than
+        // dividing by zero or inventing a share.
+        assert_eq!(coverage_tail(&tree(None)), "");
+        assert_eq!(coverage_tail(&tree(Some(0))), "");
     }
 
     /// `--top` counts per parent, not per depth: two folders each keep their

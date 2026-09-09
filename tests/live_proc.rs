@@ -455,6 +455,33 @@ fn a_proc_root_is_the_only_proc_heft_reads() {
     );
 }
 
+/// A typed argument below the floor is a usage error, not a silent clamp:
+/// heft ran at 0.05 either way, so a caller asking for 0.001 computed rates
+/// against a cadence heft was never using. `nan` parses as a float and would
+/// panic in `Duration::from_secs_f64`, so it has to be refused too.
+#[test]
+fn an_interval_below_the_floor_is_refused() {
+    for bad in ["0", "0.001", "nan"] {
+        let out = heft(&["--once", "--interval", bad])
+            .output()
+            .expect("run heft");
+        assert!(
+            !out.status.success(),
+            "--interval {bad} was accepted: {}",
+            String::from_utf8_lossy(&out.stdout)
+        );
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(err.contains("0.05"), "the error must name the floor: {err}");
+    }
+    // The floor itself, and a value above it, still run.
+    for ok in ["0.05", "0.2"] {
+        let out = heft(&["--once", "--interval", ok])
+            .output()
+            .expect("run heft");
+        assert!(out.status.success(), "--interval {ok} was refused");
+    }
+}
+
 /// heft's own process node in a published tree, wherever the grouping put it.
 fn self_rss(host: &Value, pid: u64) -> Option<u64> {
     for (_, ident) in idents(host) {

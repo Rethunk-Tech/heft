@@ -364,6 +364,80 @@ fn heft_observes_itself_with_real_numbers() {
     }
 }
 
+/// heft reports its own RSS, so it can watch itself for the class of
+/// regression `0a9ee0a` was: a per-tick allocation glibc never hands back,
+/// which grew ~15 MiB every PSS tick to 488 MiB and was found by a person
+/// noticing rather than by a gate.
+///
+/// Growth, not a ceiling: the ceiling low enough to catch a leak in a few
+/// seconds is below what heft legitimately uses watching a busy host. The
+/// first samples are dropped because allocator warm-up is not a leak, and
+/// `--pss-interval` is short so several rollup passes — the expensive tick,
+/// and the one that leaked — land inside the window.
+#[test]
+fn heft_does_not_grow_while_it_follows() {
+    use std::io::{BufRead, BufReader};
+
+    const SAMPLES: usize = 14;
+    const WARMUP: usize = 4;
+    // A real leak reaches this within two PSS ticks; ordinary jitter between
+    // two samples of the same tree is well under a megabyte.
+    const MAX_GROWTH: u64 = 48 * 1024 * 1024;
+
+    let mut child = heft(&[
+        "--json",
+        "--follow",
+        "--interval",
+        FAST,
+        "--pss-interval",
+        "0.1",
+    ])
+    .stdout(Stdio::piped())
+    .stderr(Stdio::null())
+    .spawn()
+    .expect("spawn heft --json --follow");
+    let pid = u64::from(child.id());
+    let out = BufReader::new(child.stdout.take().expect("piped stdout"));
+
+    let mut rss = Vec::new();
+    for line in out.lines().take(SAMPLES) {
+        let line = line.expect("a follow line");
+        let doc: Value = serde_json::from_str(&line).expect("--follow emits one document per line");
+        if let Some(b) = self_rss(&doc["host"], pid) {
+            rss.push(b);
+        }
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+
+    assert!(
+        rss.len() > WARMUP,
+        "heft must report its own RSS on every sample: got {} of {SAMPLES}",
+        rss.len()
+    );
+    let (base, last) = (rss[WARMUP], *rss.last().expect("checked non-empty"));
+    assert!(
+        last.saturating_sub(base) < MAX_GROWTH,
+        "heft's own RSS grew from {base} to {last} over {} samples: {rss:?}",
+        rss.len()
+    );
+}
+
+/// heft's own process node in a published tree, wherever the grouping put it.
+fn self_rss(host: &Value, pid: u64) -> Option<u64> {
+    for (_, ident) in idents(host) {
+        for inst in arr(ident, "instances") {
+            if let Some(p) = procs_of(inst)
+                .into_iter()
+                .find(|p| p["pid"].as_u64() == Some(pid))
+            {
+                return p["rss_bytes"].as_u64();
+            }
+        }
+    }
+    None
+}
+
 /// Real uid, the field heft groups by — not the euid, which diverges on setuid.
 fn self_ruid() -> String {
     std::fs::read_to_string("/proc/self/status")
@@ -378,15 +452,18 @@ fn self_ruid() -> String {
 /// only this field to say how far apart they were sampled.
 #[test]
 fn the_host_stamps_when_it_was_sampled() {
+    // The clock is read after the sample, not before: `sample()` is a shared
+    // OnceLock, so whether it has already run depends on test order, and a
+    // stamp taken later than a `now` taken first is not an error.
+    let stamped = sample().host["sampled_at"]
+        .as_u64()
+        .expect("host.sampled_at is a number");
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .expect("system clock is after the epoch")
         .as_secs();
-    let stamped = sample().host["sampled_at"]
-        .as_u64()
-        .expect("host.sampled_at is a number");
     assert!(
-        stamped <= now && now - stamped < 300,
+        now.abs_diff(stamped) < 300,
         "sampled_at {stamped} is not within five minutes of {now}"
     );
 }

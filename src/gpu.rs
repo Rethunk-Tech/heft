@@ -46,7 +46,7 @@ fn needs_full_fdinfo(full_scan: bool, prefilter_empty: bool, filtered: &GpuCount
 
 fn drm_fd_nums(pid: u32) -> io::Result<Vec<u32>> {
     let mut nums = Vec::new();
-    for ent in fs::read_dir(format!("/proc/{pid}/fd"))? {
+    for ent in fs::read_dir(format!("{}/proc/{pid}/fd", crate::root::prefix()))? {
         let ent = ent?;
         let Ok(link) = fs::read_link(ent.path()) else {
             continue;
@@ -65,13 +65,16 @@ fn drm_fd_nums(pid: u32) -> io::Result<Vec<u32>> {
 fn read_fdinfo_files(pid: u32, fds: &[u32]) -> GpuCounters {
     let mut texts = Vec::new();
     for fd in fds {
-        push_drm_text(&mut texts, format!("/proc/{pid}/fdinfo/{fd}"));
+        push_drm_text(
+            &mut texts,
+            format!("{}/proc/{pid}/fdinfo/{fd}", crate::root::prefix()),
+        );
     }
     merge_fdinfo_texts(&texts)
 }
 
 fn read_all_fdinfo(pid: u32) -> GpuCounters {
-    let dir = format!("/proc/{pid}/fdinfo");
+    let dir = format!("{}/proc/{pid}/fdinfo", crate::root::prefix());
     let Ok(entries) = fs::read_dir(&dir) else {
         return GpuCounters::default();
     };

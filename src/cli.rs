@@ -62,4 +62,7 @@ pub(crate) struct Cli {
     /// Left-to-right column order; repeat. Unlisted keep default order after these. name stays first unless listed. Refused with --json
     #[arg(long, value_name = "COLUMN", conflicts_with = "json")]
     pub order: Vec<String>,
+    /// Read /proc and /sys under this directory instead of /: another mount namespace, or a captured tree
+    #[arg(long, value_name = "DIR")]
+    pub proc_root: Option<String>,
 }

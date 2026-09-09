@@ -3,7 +3,7 @@ use std::fs;
 use crate::proc::field_u64;
 
 pub(crate) fn read_io(pid: u32) -> (Option<u64>, Option<u64>) {
-    match fs::read_to_string(format!("/proc/{pid}/io")) {
+    match fs::read_to_string(format!("{}/proc/{pid}/io", crate::root::prefix())) {
         Ok(text) => parse_io(&text),
         Err(_) => (None, None),
     }
@@ -26,7 +26,7 @@ fn parse_io(text: &str) -> (Option<u64>, Option<u64>) {
 /// host having swap at all: with `SwapTotal: 0` every process reports
 /// `SwapPss: 0`, and a column of zeros claims a figure exists where none does.
 pub(crate) fn read_rollup_kb(pid: u32, want_swap: bool) -> (Option<u64>, Option<u64>) {
-    match fs::read_to_string(format!("/proc/{pid}/smaps_rollup")) {
+    match fs::read_to_string(format!("{}/proc/{pid}/smaps_rollup", crate::root::prefix())) {
         Ok(text) => (
             parse_pss_kb(&text),
             want_swap.then(|| parse_swap_pss_kb(&text)).flatten(),

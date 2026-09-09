@@ -134,7 +134,7 @@ fn delta(prev: Option<&Sample>, cur: Sample, secs: f64) -> Option<(f64, f64)> {
 }
 
 fn read_pid(pid: u32) -> Option<Sample> {
-    let text = fs::read_to_string(format!("/proc/{pid}/net/dev")).ok()?;
+    let text = fs::read_to_string(format!("{}/proc/{pid}/net/dev", crate::root::prefix())).ok()?;
     let (rx, tx) = parse_dev(&text);
     Some(Sample { pid, rx, tx })
 }

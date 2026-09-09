@@ -40,7 +40,7 @@ pub(crate) struct MemSegments {
 }
 
 pub(crate) fn read_ram() -> RamInfo {
-    let Ok(text) = fs::read_to_string("/proc/meminfo") else {
+    let Ok(text) = fs::read_to_string(crate::root::path("/proc/meminfo")) else {
         return RamInfo::default();
     };
     parse_meminfo(&text)
@@ -82,7 +82,7 @@ pub(crate) fn parse_meminfo(text: &str) -> RamInfo {
 }
 
 pub(crate) fn read_gpu() -> GpuPool {
-    let Ok(entries) = fs::read_dir("/sys/class/drm") else {
+    let Ok(entries) = fs::read_dir(crate::root::path("/sys/class/drm")) else {
         return GpuPool::default();
     };
     let mut vram_used = 0u64;

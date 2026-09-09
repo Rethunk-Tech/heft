@@ -423,6 +423,38 @@ fn heft_does_not_grow_while_it_follows() {
     );
 }
 
+/// An empty root proves the prefix reached every reader. A reader that still
+/// used a literal `/proc` would find the real machine through it and fill the
+/// tree, so this fails loudly rather than by omission.
+#[test]
+fn a_proc_root_is_the_only_proc_heft_reads() {
+    let dir = std::env::temp_dir().join(format!("heft-root-{}", std::process::id()));
+    let proc = dir.join("proc");
+    std::fs::create_dir_all(&proc).expect("make an empty proc root");
+
+    let out = heft(&["--json", "--interval", FAST, "--proc-root"])
+        .arg(&dir)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("run heft against an empty root");
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(out.status.success(), "heft exited {}", out.status);
+    let doc: Value = serde_json::from_slice(&out.stdout).expect("valid JSON");
+    let host = &doc["host"];
+    let (users, containers, system) = (
+        arr(host, "users").len(),
+        arr(host, "containers").len(),
+        arr(host, "system").len(),
+    );
+    assert_eq!(
+        (users, containers, system),
+        (0, 0, 0),
+        "an empty proc root produced a populated tree, so a reader bypassed it"
+    );
+}
+
 /// heft's own process node in a published tree, wherever the grouping put it.
 fn self_rss(host: &Value, pid: u64) -> Option<u64> {
     for (_, ident) in idents(host) {

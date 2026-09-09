@@ -13,6 +13,7 @@ pub(crate) mod net;
 pub mod once;
 pub mod proc;
 pub(crate) mod psi;
+pub mod root;
 pub(crate) mod tty;
 pub mod types;
 pub mod ui;

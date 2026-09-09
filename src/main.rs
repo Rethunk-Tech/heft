@@ -31,6 +31,21 @@ fn main() -> ExitCode {
         );
         return ExitCode::FAILURE;
     }
+    // Before any read, and once, for the same reason `glyph` is: it cannot
+    // change while heft runs. A missing root is a usage error rather than a
+    // tree of blanks -- every metric would come back unreadable and look like
+    // a permissions problem.
+    if let Some(root) = cli.proc_root.as_deref()
+        && !std::path::Path::new(root).join("proc").is_dir()
+    {
+        Cli::command()
+            .error(
+                ErrorKind::InvalidValue,
+                format!("invalid value {root:?} for '--proc-root <DIR>': no proc directory there"),
+            )
+            .exit()
+    }
+    heft::root::init(cli.proc_root.as_deref());
     // Before anything renders, and once: the answer cannot change while heft
     // runs, so no render site has to carry it.
     heft::glyph::init(match cli.glyphs {

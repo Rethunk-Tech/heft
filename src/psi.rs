@@ -212,7 +212,11 @@ fn cgroup_path(cgroup: &str) -> Option<&str> {
 }
 
 fn read_totals(path: &str) -> Option<Totals> {
-    let base = format!("/sys/fs/cgroup{}", path.trim_end_matches('/'));
+    let base = format!(
+        "{}/sys/fs/cgroup{}",
+        crate::root::prefix(),
+        path.trim_end_matches('/')
+    );
     Some(Totals {
         cpu: read_some_total(&format!("{base}/cpu.pressure"))?,
         io: read_some_total(&format!("{base}/io.pressure"))?,
@@ -235,7 +239,11 @@ fn parse_some<'a>(text: &'a str, key: &str) -> Option<&'a str> {
 
 /// The one pid in this cgroup, or `None` if it holds any other number.
 fn sole_member(path: &str) -> Option<u32> {
-    let text = fs::read_to_string(format!("/sys/fs/cgroup{path}/cgroup.procs")).ok()?;
+    let text = fs::read_to_string(format!(
+        "{}/sys/fs/cgroup{path}/cgroup.procs",
+        crate::root::prefix()
+    ))
+    .ok()?;
     let mut it = text.split_whitespace();
     let first = it.next()?.parse().ok()?;
     it.next().is_none().then_some(first)
@@ -264,7 +272,8 @@ fn delta(prev: Option<&Totals>, cur: Totals, secs: f64) -> Option<Stall> {
 /// gets no swap tank.
 pub(crate) fn host_avg10(tree: &mut HostTree) {
     let read = |res: &str| {
-        let text = fs::read_to_string(format!("/proc/pressure/{res}")).ok()?;
+        let text =
+            fs::read_to_string(format!("{}/proc/pressure/{res}", crate::root::prefix())).ok()?;
         parse_some(&text, "avg10=")?.parse::<f64>().ok()
     };
     tree.psi_cpu_avg10 = read("cpu");

@@ -82,7 +82,7 @@ impl WalkPool {
         want_swap: bool,
         prev: Option<&Arc<HashMap<u32, Process>>>,
     ) -> HashMap<u32, Process> {
-        let Ok(dir) = fs::read_dir("/proc") else {
+        let Ok(dir) = fs::read_dir(crate::root::path("/proc")) else {
             return HashMap::new();
         };
         let pids: Vec<u32> = dir
@@ -154,7 +154,7 @@ fn walk_worker(job_rx: mpsc::Receiver<WalkJob>, result_tx: mpsc::Sender<WalkChun
 }
 
 fn read_pid(pid: u32, want_pss: bool, want_swap: bool, prev: Option<&Process>) -> Option<Process> {
-    let base = format!("/proc/{pid}");
+    let base = format!("{}/proc/{pid}", crate::root::prefix());
     let stat = fs::read_to_string(format!("{base}/stat")).ok()?;
     let parsed = parse_stat(&stat)?;
     let uid = read_uid(&format!("{base}/status")).unwrap_or(0);
@@ -363,7 +363,7 @@ pub(crate) fn username(uid: u32) -> String {
 /// user's `exe`, or a pid that exited between the keypress and the read) comes
 /// back empty, the same blank contract the columns keep.
 pub(crate) fn detail(pid: u32) -> Vec<(&'static str, String)> {
-    let base = format!("/proc/{pid}");
+    let base = format!("{}/proc/{pid}", crate::root::prefix());
     let status = fs::read_to_string(format!("{base}/status")).unwrap_or_default();
     let field = |name: &str| {
         status

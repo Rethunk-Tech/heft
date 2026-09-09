@@ -25,7 +25,7 @@ pub(crate) struct HostSplit {
 }
 
 pub(crate) fn nproc() -> u32 {
-    match fs::read_to_string("/proc/stat") {
+    match fs::read_to_string(crate::root::path("/proc/stat")) {
         Ok(text) => {
             let n = text
                 .lines()
@@ -48,7 +48,7 @@ pub(crate) fn nproc() -> u32 {
 fn btime() -> u64 {
     static BTIME: OnceLock<u64> = OnceLock::new();
     *BTIME.get_or_init(|| {
-        fs::read_to_string("/proc/stat")
+        fs::read_to_string(crate::root::path("/proc/stat"))
             .ok()
             .and_then(|t| t.lines().find_map(|l| field_u64(l, "btime")))
             .unwrap_or(0)
@@ -73,7 +73,7 @@ pub(crate) fn euid() -> u32 {
 }
 
 pub(crate) fn read_host() -> HostCpu {
-    let Ok(text) = fs::read_to_string("/proc/stat") else {
+    let Ok(text) = fs::read_to_string(crate::root::path("/proc/stat")) else {
         return HostCpu::default();
     };
     let Some(line) = text.lines().find(|l| l.starts_with("cpu ")) else {

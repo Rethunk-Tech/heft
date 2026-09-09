@@ -65,7 +65,28 @@ pub(crate) fn in_user_slice(cgroup: &str) -> bool {
     cgroup.contains("/user.slice/") || cgroup.contains("user@")
 }
 
+/// The one line of `/proc/<pid>/cgroup` a unit name can be read from.
+///
+/// v2 writes a single `0::/path`. v1 writes a line per controller and ends
+/// with an empty `0::/`, so taking the leaf of the whole file read that empty
+/// line: every user unit came back `None`, and since the Applications vs User
+/// Services split needs a unit name, User Services stayed empty on a v1 host
+/// while every user process filed as an application. systemd's own hierarchy
+/// is the v1 line that carries unit names. Same shape as `psi::cgroup_path`.
+fn unit_line(cgroup: &str) -> &str {
+    if let Some(v2) = cgroup.lines().find_map(|l| l.strip_prefix("0::"))
+        && v2 != "/"
+    {
+        return v2;
+    }
+    cgroup
+        .lines()
+        .find_map(|l| l.split_once(":name=systemd:").map(|(_, path)| path))
+        .unwrap_or(cgroup)
+}
+
 pub(crate) fn user_unit(cgroup: &str) -> Option<String> {
+    let cgroup = unit_line(cgroup);
     let after = match cgroup.find("user@") {
         Some(i) => {
             let rest = &cgroup[i..];
@@ -226,6 +247,28 @@ mod tests {
         // Rootful Podman lives in the same slice under a different prefix.
         assert_eq!(name("0::/machine.slice/libpod-abc123def456.scope"), None);
         assert_eq!(name("0::/system.slice/sshd.service"), None);
+    }
+
+    /// A v1 host writes a line per controller and ends with an empty `0::/`.
+    /// Reading the leaf of the whole file found that empty line, so every user
+    /// unit came back `None` and User Services could never fill.
+    #[test]
+    fn a_unit_name_survives_a_v1_cgroup_file() {
+        let leaf = "/user.slice/user-1000.slice/user@1000.service/app.slice/app-firefox.scope";
+        let v1 = format!("12:pids:{leaf}\n4:memory:{leaf}\n1:name=systemd:{leaf}\n0::/");
+        assert_eq!(user_unit(&v1).as_deref(), Some("app-firefox.scope"));
+        // v2 is one line and must be unchanged by the fallback.
+        assert_eq!(
+            user_unit(&format!("0::{leaf}")).as_deref(),
+            Some("app-firefox.scope")
+        );
+        // Pure v1, no unified hierarchy line at all.
+        assert_eq!(
+            user_unit(&format!("1:name=systemd:{leaf}")).as_deref(),
+            Some("app-firefox.scope")
+        );
+        // A v2 root cgroup still has no unit to name.
+        assert_eq!(user_unit("0::/"), None);
     }
 
     #[test]

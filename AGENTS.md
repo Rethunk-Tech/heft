@@ -64,6 +64,11 @@ runtime ever reports a truncated id.
   User Services; else Applications. `init.scope` + `systemd --user` is a user
   service. Known compositors (`classify::is_compositor`) are user services even
   if the unit looks like an app.
+- `identity::unit_line` picks the one cgroup line a unit name is read from:
+  the `0::` line on v2, else `1:name=systemd:`. A v1 file is a line per
+  controller ending in an empty `0::/`, so taking the leaf of the whole blob
+  read that empty line and `user_unit` returned `None` — which left User
+  Services empty on every v1 host, since that split needs a unit name.
 - Display name is `classify::name_of` (`exe` basename else `comm`), not the
   inherited cgroup. `identity::lying_unit` skips terminal transients, Chromium
   toolkit scopes (`org.chromium.chromium`), `dbus:` activation, `run-u*`, and
@@ -212,10 +217,28 @@ land on an exact width and `once::trunc` cuts to an exact column count, so a
 three-character `...` for `…` would overflow both. `Cli::Glyphs` lives in
 `src/cli.rs` because `build.rs` compiles that file standalone.
 
+`src/keys.rs` is the one TUI key list. `build.rs` includes it the way it
+includes `src/cli.rs`, so the man page's KEYS section and the `?` overlay are
+the same table — they had already drifted once, when `i` reached only the
+overlay. `{up}`/`{down}`/`{left}`/`{right}` are placeholders: the TUI
+substitutes the resolved `glyph` arrows, the man page spells them out. The man
+page is rendered piecewise in `build.rs` rather than through `generate_to`, so
+KEYS, FILES and ENVIRONMENT land between OPTIONS and VERSION.
+
+`p` sets `App::paused` to an `Instant`; the loop still drains the sampler's
+slot but skips the swap into `tree`, so the slot never backs up and unpausing
+shows the current machine. The footer prints how long the view has been held,
+because a frozen monitor that does not say so reads as a live one.
+
 `i` toggles `ui::draw_detail`, which renders `COLUMNS` in full for the selected
 row — hidden columns included, since the pane exists to answer what the table
 is too narrow to show — and then, when `ui::row_pid` finds a `…/p/<pid>` id,
-the seven `/proc` facts from `proc::detail`. Those are read on the keypress
+the seven `/proc` facts from `proc::detail`. The metrics go through
+`ui::metric_grid`, column-major across as many 19-column cells as the pane is
+wide: stacked one per line they were a twenty-row column of two-character
+values beside an empty half-screen, and pushed `EXE`, `CGROUP` and `CMDLINE`
+past the bottom, where `Paragraph` cuts them. `proc::detail` caps the command
+line at 240 chars for the same reason. Those are read on the keypress
 rather than carried on `ProcNode`: five more strings per process per tick would
 be paid on every tick to serve one row of one keystroke. `ui::popup` is shared
 with `draw_help` so the two overlays cannot drift, and only one draws at a

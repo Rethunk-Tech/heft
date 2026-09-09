@@ -237,6 +237,7 @@ folder rows for "keep the parents" to mean anything (filter it with `jq`).
 | `H` | hide the current sort column (`name` is refused) |
 | `u` | unhide the last hidden column |
 | `i` | detail for the row under the cursor (`i` or Esc closes) |
+| `p` | pause the table; the footer says how long it has been frozen |
 | `s` | save sort, filter, hidden columns, and column order to `$XDG_CONFIG_HOME/heft/view.json` |
 | `?` / `F1` | toggle the key help overlay |
 
@@ -270,6 +271,19 @@ you four rows called `cursor`. Those seven facts are read from `/proc` when you
 press the key rather than carried on every process of every sample, so the pane
 costs nothing until you open it, and a field heft may not read (another user's
 `exe`) is simply blank.
+
+The metrics lay out across the pane rather than down it, so the pane stays a
+few lines tall and the `/proc` facts below them are on screen rather than off
+the bottom. A command line is cut at 240 characters: a Chromium helper's argv
+runs to thousands, and one `--enable-features=` list would push every other
+fact off the pane. The front is the part that says which helper this is.
+
+`p` freezes the table so you can read across a row without the numbers moving
+under you. Sampling carries on underneath, so unpausing shows the machine as it
+is rather than replaying a backlog, and sorting, filtering, expanding and `i`
+all still work on the held tree. The footer reads `PAUSED 8s` while it is
+frozen: a monitor that has stopped updating and does not say so is how a stale
+number gets read as a current one.
 
 ## What the tree means
 

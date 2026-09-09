@@ -4,6 +4,15 @@
 
 ### Added
 
+- `p` pauses the TUI. The table freezes so a row can be read without the
+  numbers moving under it, while sampling continues underneath so unpausing
+  shows the current machine. The footer says how long the view has been held.
+
+- `man heft` gained KEYS, FILES and ENVIRONMENT. heft's default mode is the
+  TUI and the generated page documented every flag and not one keystroke. The
+  key list now lives in `src/keys.rs`, which both the man page and the `?`
+  overlay read, so they cannot drift the way they had when `i` was added.
+
 - Virtual machines and systemd-nspawn containers (`machine.slice`) are
   Containers rows named after the machine, on Host → Containers. They matched
   no bucket rule, so a libvirt VM appeared as a `qemu-system-x86_64` row under
@@ -31,6 +40,23 @@
   taken. A `--json --follow` stream is one document per line with no other
   clock in it, so two records could not be placed in time relative to each
   other — an interval stretched by a PSS pass was invisible to a reader.
+
+### Fixed
+
+- On a cgroup v1 host `identity::user_unit` read the leaf of the whole
+  multi-line `/proc/<pid>/cgroup`, which is the empty `0::/` that file ends
+  with, so every user unit came back blank. The Applications versus User
+  Services split needs a unit name, so User Services was permanently empty and
+  every user process filed as an application. It now reads the `0::` line, or
+  `1:name=systemd:` where there is none.
+
+- The `i` detail pane stacked its twenty metrics one per line, so a two-line
+  column of short values sat beside an empty half-screen and pushed `EXE`,
+  `CGROUP` and `CMDLINE` off the bottom of the pane, where they were silently
+  cut — the three facts the pane exists to show. They now lay out across the
+  pane's width, long values wrap instead of being clipped at the frame, and a
+  command line is capped at 240 characters so one Chromium `--enable-features=`
+  list cannot crowd out everything else.
 
 ### Documentation
 

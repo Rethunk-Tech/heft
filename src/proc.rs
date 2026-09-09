@@ -378,6 +378,7 @@ pub(crate) fn detail(pid: u32) -> Vec<(&'static str, String)> {
         .split_whitespace()
         .next()
         .and_then(|u| u.parse::<u32>().ok());
+    let argv = read_cmdline(&format!("{base}/cmdline")).join(" ");
     vec![
         ("PID", pid.to_string()),
         ("PPID", field("PPid:")),
@@ -394,11 +395,20 @@ pub(crate) fn detail(pid: u32) -> Vec<(&'static str, String)> {
                 .trim()
                 .to_string(),
         ),
-        (
-            "CMDLINE",
-            read_cmdline(&format!("{base}/cmdline")).join(" "),
-        ),
+        ("CMDLINE", truncate_chars(&argv, 240)),
     ]
+}
+
+/// A Chromium helper's argv runs to thousands of characters — one
+/// `--enable-features=` list alone fills a pane. The front is what identifies
+/// the process (`--type=utility`, `--port`), so the tail is cut rather than
+/// letting one field push every other fact off the screen. Chars, not bytes,
+/// so a multi-byte argument cannot be split mid-character.
+fn truncate_chars(s: &str, max: usize) -> String {
+    match s.char_indices().nth(max) {
+        Some((i, _)) => format!("{}…", &s[..i]),
+        None => s.to_string(),
+    }
 }
 
 /// Header totals from world-readable files only — no per-PID `/proc` walk.

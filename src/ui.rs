@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::io::{self, stdout};
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crossterm::cursor::{Hide, Show};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
@@ -15,7 +15,7 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table};
+use ratatui::widgets::{Block, Borders, Cell, Clear, Padding, Paragraph, Row, Table, Wrap};
 
 use crate::config::{self, View};
 use crate::cpu;
@@ -61,6 +61,12 @@ struct App {
     /// row of the current frame, so it follows a re-sort or a new sample the
     /// way the highlight does rather than freezing a stale snapshot.
     detail: bool,
+    /// When `p` froze the table, or `None` when it is live. Sampling carries on
+    /// underneath, so unpausing shows the current machine rather than replaying
+    /// a backlog; this only stops the swap into `tree`. Sorting, filtering,
+    /// expanding and `i` all keep working on the held tree, which is the point
+    /// of freezing it.
+    paused: Option<Instant>,
 }
 
 /// # Errors
@@ -115,6 +121,7 @@ fn run_loop(
         status: String::new(),
         help: false,
         detail: false,
+        paused: None,
     };
     // The highlight is this id, not `cursor`'s slot: PSS desc (the default)
     // reshuffles the flattened list every sample, and so do `c`/`d`, `/`,
@@ -145,10 +152,13 @@ fn run_loop(
         if let Some(r) = rows.get(app.cursor) {
             cursor_id = r.id.clone();
         }
+        // Taken even while paused, so the sampler's slot never backs up and
+        // unpausing shows the machine as it is rather than as it was.
         if let Some(tree) = slot
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .take()
+            && app.paused.is_none()
         {
             app.tree = tree;
             keep_users(&mut app.tree, &app.view.users);
@@ -411,6 +421,13 @@ fn handle_key(
         app.help = false;
         return Ok(false);
     }
+    if code == KeyCode::Char('p') {
+        app.paused = match app.paused {
+            Some(_) => None,
+            None => Some(Instant::now()),
+        };
+        return Ok(false);
+    }
     if code == KeyCode::Char('i') {
         app.detail = !app.detail;
         // Only one overlay is drawn, so leaving help armed underneath would
@@ -584,9 +601,15 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &App, rows: &[Flat]) {
     } else {
         format!("filter: {}{stale}", app.view.filter)
     };
+    // A frozen monitor that does not say it is frozen is how a stale number
+    // gets read as current, so the age of the held view is on screen, not just
+    // the fact of the pause.
+    let paused = app.paused.map_or_else(String::new, |since| {
+        format!("  PAUSED {}s", since.elapsed().as_secs())
+    });
     let footer = format!(
-        " q quit  / filter  c sort ({})  i detail  s save  [ ] scroll  ? help  {}  {}",
-        app.view.sort, filter, app.status
+        " q quit  / filter  c sort ({})  i detail  p pause  s save  ? help{}  {}  {}",
+        app.view.sort, paused, filter, app.status
     );
     render_rule(f, chunks[3]);
     f.render_widget(Paragraph::new(footer), chunks[4]);
@@ -901,23 +924,16 @@ fn share_cells(parts: &[u64], capacity: u64, width: usize) -> Vec<usize> {
 
 fn help_text() -> String {
     let (up, down, left, right) = glyph::arrows();
-    let rows: [(String, &str); 13] = [
-        ("q  Esc  Ctrl-C".to_string(), "quit"),
-        (format!("{up} {down}  j k"), "move"),
-        (format!("{left} {right}  h l"), "expand / collapse"),
-        ("Enter  Space".to_string(), "expand / collapse"),
-        ("/".to_string(), "filter by regex (Enter apply, Esc cancel)"),
-        ("c".to_string(), "cycle sort column"),
-        ("d".to_string(), "reverse sort"),
-        ("H".to_string(), "hide sort column"),
-        ("u".to_string(), "unhide last column"),
-        ("i".to_string(), "detail for the selected row"),
-        ("s".to_string(), "save view"),
-        ("[ ]".to_string(), "scroll columns"),
-        ("?  F1".to_string(), "toggle this help"),
-    ];
-    rows.iter()
-        .map(|(k, desc)| format!("{k:<16} {desc}"))
+    crate::keys::KEYS
+        .iter()
+        .map(|(k, desc)| {
+            let k = k
+                .replace("{up}", &up.to_string())
+                .replace("{down}", &down.to_string())
+                .replace("{left}", &left.to_string())
+                .replace("{right}", &right.to_string());
+            format!("{k:<20} {desc}")
+        })
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -928,19 +944,60 @@ fn help_text() -> String {
 /// once for the row under the cursor, which is the question a scroll is
 /// usually standing in for. A blank stays blank here for the same reason it
 /// does in the table: no figure exists, which is not a zero.
-fn detail_text(row: &Flat) -> String {
+fn detail_text(row: &Flat, avail: usize) -> String {
     let mut lines = vec![row.name.clone(), String::new()];
-    for c in COLUMNS.iter().filter(|c| c.label != "name") {
-        let v = (c.fmt)(&row.name, row.nproc, &row.metrics);
-        lines.push(format!("{:<9} {}", c.header, v));
-    }
+    lines.extend(metric_grid(row, avail));
     if let Some(pid) = row_pid(&row.id) {
         lines.push(String::new());
+        // One per line: these are paths and command lines, and wrapping a
+        // cgroup path into a grid cell would make it unreadable.
         for (k, v) in proc::detail(pid) {
             lines.push(format!("{k:<9} {v}"));
         }
     }
     lines.join("\n")
+}
+
+/// Column width for one `LABEL value` cell, plus the gutter between cells.
+/// `NETNS RX` is the longest header and a disk rate like `31.1M/s` the longest
+/// value, so the pair fits in 19 columns.
+const CELL: usize = 19;
+const GUTTER: usize = 2;
+
+/// The metric pairs laid across as many columns as the pane is wide.
+///
+/// Stacked one per line they made a twenty-row column of two-character values
+/// beside an empty half-screen, and — the real fault — pushed `EXE`, `CGROUP`
+/// and `CMDLINE` past the bottom of the pane, where `Paragraph` simply cuts
+/// them. Those three are why the pane exists.
+///
+/// Filled column-major, so reading down a column keeps the compiled order
+/// (`PSS` beside `RSS` beside `SWAP`) rather than scattering related columns
+/// across a row.
+fn metric_grid(row: &Flat, avail: usize) -> Vec<String> {
+    let cells: Vec<String> = COLUMNS
+        .iter()
+        .filter(|c| c.label != "name")
+        .map(|c| {
+            let v = (c.fmt)(&row.name, row.nproc, &row.metrics);
+            // The label shows even when the value is blank: a blank cell is a
+            // metric heft could not read, which is a fact worth seeing.
+            format!("{:<9} {v:<9}", c.header)
+        })
+        .collect();
+    let per_row = ((avail + GUTTER) / (CELL + GUTTER)).clamp(1, 4);
+    let depth = cells.len().div_ceil(per_row);
+    (0..depth)
+        .map(|r| {
+            (0..per_row)
+                .filter_map(|c| cells.get(c * depth + r))
+                .map(String::as_str)
+                .collect::<Vec<_>>()
+                .join(&" ".repeat(GUTTER))
+                .trim_end()
+                .to_string()
+        })
+        .collect()
 }
 
 /// A process row's id ends `…/p/<pid>`; every other row is an aggregate and
@@ -951,7 +1008,9 @@ fn row_pid(id: &str) -> Option<u32> {
 
 fn draw_detail(f: &mut ratatui::Frame<'_>, area: Rect, row: Option<&Flat>) {
     let Some(row) = row else { return };
-    let text = detail_text(row);
+    // Two for the popup border, two for the breathing room `popup` leaves.
+    let avail = usize::from(area.width.saturating_sub(4));
+    let text = detail_text(row, avail);
     popup(f, area, &text, "detail  (i or Esc to close)");
 }
 
@@ -962,11 +1021,28 @@ fn draw_help(f: &mut ratatui::Frame<'_>, area: Rect) {
 /// Centred, sized to its text, never wider or taller than the pane it covers.
 /// One definition for both overlays so they cannot drift apart.
 fn popup(f: &mut ratatui::Frame<'_>, area: Rect, text: &str, title: &str) {
+    // A border each side and a space of padding inside it: a blank metric cell
+    // ends at its label, and without the padding it butts against the frame.
+    const CHROME: u16 = 4;
     let cols = u16::try_from(text.lines().map(|l| l.chars().count()).max().unwrap_or(0))
         .unwrap_or(u16::MAX);
-    let rows = u16::try_from(text.lines().count()).unwrap_or(u16::MAX);
-    let width = (cols + 2).min(area.width.saturating_sub(2)).max(3);
-    let height = (rows + 2).min(area.height.saturating_sub(1)).max(3);
+    let width = cols
+        .saturating_add(CHROME)
+        .min(area.width.saturating_sub(2))
+        .max(3);
+    // A long CMDLINE wraps rather than being cut at the frame, so the height
+    // has to count the rows wrapping will actually produce.
+    let inner = usize::from(width.saturating_sub(CHROME)).max(1);
+    let rows = u16::try_from(
+        text.lines()
+            .map(|l| l.chars().count().max(1).div_ceil(inner))
+            .sum::<usize>(),
+    )
+    .unwrap_or(u16::MAX);
+    let height = rows
+        .saturating_add(2)
+        .min(area.height.saturating_sub(1))
+        .max(3);
     let rect = Rect {
         x: area.x + (area.width.saturating_sub(width)) / 2,
         y: area.y + (area.height.saturating_sub(height)) / 2,
@@ -975,11 +1051,14 @@ fn popup(f: &mut ratatui::Frame<'_>, area: Rect, text: &str, title: &str) {
     };
     f.render_widget(Clear, rect);
     f.render_widget(
-        Paragraph::new(text.to_string()).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(title.to_string()),
-        ),
+        Paragraph::new(text.to_string())
+            .wrap(Wrap { trim: false })
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .padding(Padding::horizontal(1))
+                    .title(title.to_string()),
+            ),
         rect,
     );
 }
@@ -1117,7 +1196,7 @@ mod tests {
     #[test]
     fn detail_lists_every_column_and_only_reads_proc_for_a_pid() {
         let mut row = flat(3, "firefox");
-        let text = detail_text(&row);
+        let text = detail_text(&row, 80);
         for c in COLUMNS.iter().filter(|c| c.label != "name") {
             assert!(text.contains(c.header), "{} missing from {text}", c.header);
         }
@@ -1126,7 +1205,26 @@ mod tests {
         row.id = "host/apps/firefox/i/1/p/1".into();
         assert_eq!(row_pid(&row.id), Some(1));
         // pid 1 exists on any Linux box the suite runs on, readable or not.
-        assert!(detail_text(&row).contains("CGROUP"));
+        assert!(detail_text(&row, 80).contains("CGROUP"));
+    }
+
+    /// Stacked one per line the pairs ran past the bottom of the pane, cutting
+    /// EXE, CGROUP and CMDLINE — the three the pane exists for. A wide pane
+    /// must lay them across; a narrow one must still fall back to one column.
+    #[test]
+    fn detail_metrics_fill_the_width_they_are_given() {
+        let row = flat(3, "firefox");
+        let deep = |w| detail_text(&row, w).lines().count();
+        let wide = deep(150);
+        assert!(
+            wide < deep(20),
+            "a wide pane must be shorter than a narrow one"
+        );
+        // Twenty metrics over four columns is five rows, plus title and blank.
+        assert!(wide <= 8, "expected a compact grid, got {wide} lines");
+        for line in detail_text(&row, 150).lines() {
+            assert!(line.chars().count() <= 150, "grid overflowed: {line:?}");
+        }
     }
 
     #[test]
@@ -1137,8 +1235,8 @@ mod tests {
         assert!(lines.iter().all(|l| !l.is_empty()));
         for line in &lines {
             let chars: Vec<char> = line.chars().collect();
-            assert!(chars.len() > 16);
-            assert_eq!(chars[16], ' ');
+            assert!(chars.len() > 20);
+            assert_eq!(chars[20], ' ');
         }
     }
 
@@ -1461,6 +1559,7 @@ mod tests {
             status: String::new(),
             help: false,
             detail: false,
+            paused: None,
         }
     }
 

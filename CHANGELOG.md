@@ -4,6 +4,14 @@
 
 ### Added
 
+- `--proc-root DIR` reads `/proc` and `/sys` under `DIR` instead of `/`, for
+  another mount namespace's procfs or a tree captured off a machine heft
+  cannot run on. A directory with no `proc` in it is a usage error.
+
+- `--json` process nodes carry `cmdline`. A reader could not tell four
+  identically-named workers apart without going back to `/proc`, which for a
+  `--follow` stream means racing a pid that may already be gone or reused.
+
 - A `TREND` column draws the last nine samples of the sort metric as rising
   blocks, scaled to each row's own peak. Every other column is the current
   interval, so a process that spiked to 400% and went quiet was indistinguish-
@@ -49,6 +57,13 @@
   other — an interval stretched by a PSS pass was invisible to a reader.
 
 ### Fixed
+
+- The TUI clipped a column that did not fit, so a 50-column terminal drew
+  `20.1G` as `2` and `548.5` as `5` with nothing to say they had been cut.
+  A column is now drawn at its full width or left off, which is what `[` and
+  `]` already existed to reach. A wrong figure is the one thing every other
+  rule in heft — `SwapPss` over `Swap`, `some` over `full`, blanks on
+  multi-cgroup rows — exists to avoid.
 
 - On a cgroup v1 host `identity::user_unit` read the leaf of the whole
   multi-line `/proc/<pid>/cgroup`, which is the empty `0::/` that file ends

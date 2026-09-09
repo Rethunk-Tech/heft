@@ -344,9 +344,26 @@ not walk every fdinfo when the dri/drm prefilter is empty — GPU clients whose
 fd names omit dri/drm stay blank. Sample cadence (`--interval`,
 `--pss-interval`, `--once` / `--json`): [HUMANS.md](HUMANS.md).
 
+`src/root.rs` holds the `/proc` and `/sys` prefix in a `OnceLock`, resolved
+once in `main` for the same reason `glyph` is. Empty by default, so every path
+is the literal it always was. `tests/live_proc.rs`
+`a_proc_root_is_the_only_proc_heft_reads` points heft at a root holding an
+empty `proc` and asserts the tree comes back empty: a reader still using a
+literal path would find the real machine through it and fill the tree. The
+container socket and `/etc/passwd` are deliberately not prefixed — one is live
+IPC rather than a file in the tree, the other is the host's.
+
+`ui::columns_that_fit` lays out only columns whose full width fits the pane.
+ratatui clips a cell that runs out of room, so a 50-column terminal drew
+`20.1G` as `2`; a column is now drawn whole or dropped, and `[` / `]` reach the
+rest. At least one column always survives, and the name column is a label
+rather than a figure, so cutting it misleads nobody.
+
 JSON shape (`src/types.rs` `HostTree`): `host.sampled_at`,
 `host.users[].applications|user_services|containers`, `host.containers`,
-`host.system`. Project identities include `containers[].processes[]`.
+`host.system`. Project identities include `containers[].processes[]`, each process node carrying `cmdline` so a reader
+can identify a process from the record rather than going back to a `/proc`
+that may have lost the pid.
 `sampled_at` is set in `cpu::header_from`, the one `HostTree` constructor, off
 the `now_epoch` the AGE column already reads; a `--json --follow` line carries
 no other clock, so without it two records cannot be placed in time.

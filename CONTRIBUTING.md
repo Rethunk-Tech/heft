@@ -76,7 +76,10 @@ No snapshot libraries. A new test must hit a branch nothing else hits.
 ## Scope
 
 Heft stays observe-only toward the OS. Do not add kill, nice, ptrace, `/proc`
-writes, or mutating Docker/Podman calls. NVIDIA and cgroup v1 are out of v1.
+writes, or mutating Docker/Podman calls. The GPU columns read DRM fdinfo from
+`amdgpu`, `i915` and `xe` only: another driver's region and engine keys are
+refused rather than guessed at, so NVIDIA and the ARM SoC drivers render
+blank.
 
 Per-process network I/O is not a missing feature, it is unavailable: measured,
 `/proc/<pid>/net/dev` is per network namespace and byte-identical across

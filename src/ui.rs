@@ -585,6 +585,38 @@ fn refresh_columns(app: &mut App) {
 /// Every header stays bold; the sort column is reversed so it is still marked
 /// when `NO_COLOR` drops hue. The cursor row already uses reverse, so this is
 /// the same highlight, on the one cell `c` is talking about.
+/// How many columns, starting at `skip`, fit in `avail` at their full width.
+///
+/// ratatui clips a cell that runs out of room, so a 50-column terminal drew
+/// `20.1G` as `2` and `548.5` as `5` with nothing to say they had been cut —
+/// heft showing a figure that is wrong, which is the one thing every other
+/// rule in it avoids. A column is now either drawn whole or not drawn, and
+/// `[` / `]` reach the ones left off, which is what those keys are for.
+///
+/// At least one column always survives. The name column is a label rather than
+/// a figure, so a cut name misleads nobody; `once::trunc` already ellipsises
+/// it.
+fn columns_that_fit(cols: &Columns, skip: usize, avail: u16, name_on_screen: bool) -> usize {
+    // ratatui's default spacing between two columns.
+    const SPACING: u16 = 1;
+    let mut used = 0u16;
+    let mut n = 0usize;
+    for (i, c) in cols.iter().skip(skip).enumerate() {
+        let w = if c.label == "name" || name_on_screen {
+            c.width
+        } else {
+            8
+        };
+        let need = if i == 0 { w } else { w + SPACING };
+        if used + need > avail {
+            break;
+        }
+        used += need;
+        n += 1;
+    }
+    n.max(1)
+}
+
 fn sort_header<'a>(cols: impl Iterator<Item = &'a Column>, sort: &str) -> Row<'static> {
     Row::new(cols.map(|c| {
         let cell = Cell::from(c.header);
@@ -610,6 +642,8 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &App, rows: &[Flat]) {
     render_rule(f, chunks[1]);
 
     let skip = (app.col_off as usize).min(app.cols.len().saturating_sub(1));
+    let name_on_screen = app.cols.iter().skip(skip).any(|c| c.label == "name");
+    let fit = columns_that_fit(&app.cols, skip, chunks[2].width, name_on_screen);
     let start = app.row_off.min(rows.len());
     let end = start.saturating_add(app.row_vis.max(1)).min(rows.len());
     let mut table_rows = Vec::new();
@@ -638,6 +672,7 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &App, rows: &[Flat]) {
                 }
             })
             .skip(skip)
+            .take(fit)
             .collect();
         let row = Row::new(cells);
         table_rows.push(if start + i == app.cursor {
@@ -648,11 +683,11 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &App, rows: &[Flat]) {
     }
     // Name keeps Min so the tree can use leftover width. Once it is scrolled
     // off, every remaining column is numeric and shares one width.
-    let name_on_screen = app.cols.iter().skip(skip).any(|c| c.label == "name");
     let widths: Vec<Constraint> = app
         .cols
         .iter()
         .skip(skip)
+        .take(fit)
         .map(|c| {
             if c.label == "name" {
                 Constraint::Min(c.width)
@@ -663,8 +698,10 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &App, rows: &[Flat]) {
             }
         })
         .collect();
-    let table = Table::new(table_rows, widths)
-        .header(sort_header(app.cols.iter().skip(skip), &app.view.sort));
+    let table = Table::new(table_rows, widths).header(sort_header(
+        app.cols.iter().skip(skip).take(fit),
+        &app.view.sort,
+    ));
     f.render_widget(table, chunks[2]);
     if app.help {
         draw_help(f, chunks[2]);
@@ -1328,6 +1365,37 @@ mod tests {
         assert_eq!(spark(Some(&buf(&[0.0, 4.0]))), format!("{low}{high}"));
         // One sample per value, so the cell never outgrows the column.
         assert_eq!(spark(Some(&buf(&[1.0; TREND]))).chars().count(), TREND);
+    }
+
+    /// A clipped number is a wrong number: at 50 columns ratatui drew `20.1G`
+    /// as `2`. Every column the layout keeps must have room for its whole
+    /// width, and the ones it drops stay reachable with `[` / `]`.
+    #[test]
+    fn a_column_is_drawn_whole_or_not_at_all() {
+        let cols = Columns::for_tui(&View::default());
+        let width_of = |i: usize| cols.iter().nth(i).expect("column").width;
+        for avail in [10_u16, 20, 30, 44, 50, 70, 100, 160, 400] {
+            let n = columns_that_fit(&cols, 0, avail, true);
+            assert!(n >= 1, "at least one column always survives");
+            if n < cols.len() {
+                // The next column was refused, so it genuinely did not fit.
+                let used: u16 = (0..n).map(|i| width_of(i) + u16::from(i > 0)).sum();
+                assert!(
+                    used + width_of(n) + 1 > avail,
+                    "column {n} was dropped but fits in {avail}"
+                );
+            }
+            // Never claims room it does not have, except for the one column
+            // that always survives.
+            if n > 1 {
+                let used: u16 = (0..n).map(|i| width_of(i) + u16::from(i > 0)).sum();
+                assert!(used <= avail, "{n} columns overflow {avail}");
+            }
+        }
+        // Wider is never fewer columns.
+        let narrow = columns_that_fit(&cols, 0, 50, true);
+        let wide = columns_that_fit(&cols, 0, 160, true);
+        assert!(wide > narrow, "a wider table must show more columns");
     }
 
     #[test]

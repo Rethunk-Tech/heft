@@ -83,6 +83,7 @@ heft --once --hide vram --hide gtt
 heft --once --order pss --order rss --order core
 heft --json --follow      # one JSON document per line, per interval, forever
 heft --glyphs ascii       # bars and markers without block characters
+heft --proc-root /mnt/tree   # read /proc and /sys under here instead of /
 ```
 
 The TUI needs a terminal. `heft > file`, or heft in a script, says so and
@@ -221,6 +222,20 @@ Both flags beat a saved `view.json`. `--once` otherwise starts from that saved
 view; `--json` never does — its shape is a contract, so only an explicit flag
 reshapes it, and `--filter` is refused there because the JSON tree has no
 folder rows for "keep the parents" to mean anything (filter it with `jq`).
+
+`--proc-root` points heft at a `/proc` and `/sys` somewhere other than `/`:
+another mount namespace's procfs, or a tree captured off a machine you cannot
+run heft on. A directory with no `proc` in it is a usage error rather than a
+tree of blanks, which would read as a permissions problem.
+
+Two things stay the host's. The container socket is live IPC, not a file in
+that tree, so container rows describe the runtime heft can reach; and user
+names come from the host's `/etc/passwd`, so a uid with no entry there shows
+as a number. Neither is guesswork heft could do better.
+
+The header still reads the machine, because a procfs bind-mounted into a PID
+namespace serves the host's own `meminfo` and `stat` — the kernel does not
+virtualise those, so nothing heft could read there would be namespace-local.
 
 ## TUI keys
 
@@ -517,6 +532,11 @@ terminal it is drawing on — the alternate screen, and the termios settings it
 restores on the way out. Never `/proc`, sysfs, or cgroup files.
 
 ### Columns
+
+A column is drawn whole or not at all. Where the terminal cannot hold one at
+its full width it is left off rather than cut short, because a clipped `20.1G`
+reads as `2` and a wrong figure is the one thing heft will not print — the same
+rule as the blank cells. `[` and `]` reach the columns that were left off.
 
 The table has twenty columns and most terminals cannot hold them. `H` hides
 the column you are sorting by (and moves the sort to the next visible one in

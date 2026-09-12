@@ -97,6 +97,7 @@ heft --once --order pss --order rss --order core
 heft --json --follow      # one JSON document per line, per interval, forever
 heft --glyphs ascii       # bars and markers without block characters
 heft --glyphs legacy      # block bars, but an ASCII TREND ramp
+heft --trend kitty        # draw TREND as an image (kitty, ghostty)
 heft --proc-root /mnt/tree   # read /proc and /sys under here instead of /
 ```
 
@@ -420,6 +421,24 @@ different metrics in two different units and draw them as one picture.
 If TREND is the one column that comes up as boxes while the header bars draw
 correctly, the font is missing `▁▂▃▅▆▇`: `--glyphs legacy` swaps the ramp for
 `_.,:-=+#` and leaves everything else alone.
+
+`--trend kitty` draws TREND as a real image instead of nine block characters,
+using the kitty graphics protocol — so it needs kitty or ghostty, and it is
+opt-in rather than detected, because `TERM` says which terminal you are on and
+not what that terminal implements. You get pixel resolution instead of eight
+quantised steps, and it is immune to the font gap `--glyphs legacy` exists for.
+
+Where the terminal is on this machine the pixels go through shared memory and
+the escape carries only a name, so the column costs tens of bytes a sample.
+Over ssh they have to go inline, base64, and that is not free: measured on a
+24-row terminal with 19 rows showing, about 146 KB per sample, or a bit over a
+megabit a second. It is sent once per sample rather than once per frame, so
+holding a key down does not multiply it — but on a slow link, `--trend chars`
+is the flag you want.
+
+If the terminal does not report its cell size in pixels, an image cannot be
+sized for it and TREND quietly stays characters. Nothing is lost: it is the
+same column either way.
 
 It is TUI only. `--once` and `--json` take two `/proc` walks and have no
 history to draw, so `--order spark` there leaves an empty column rather than a

@@ -8,6 +8,7 @@ pub mod group;
 pub(crate) mod identity;
 pub(crate) mod io;
 pub(crate) mod keys;
+pub(crate) mod kgp;
 pub(crate) mod mem;
 pub(crate) mod net;
 pub mod once;

@@ -20,6 +20,7 @@ use ratatui::widgets::{Block, Borders, Cell, Clear, Padding, Paragraph, Row, Tab
 use crate::config::{self, View};
 use crate::cpu;
 use crate::glyph;
+use crate::kgp;
 use crate::mem::{self, MemParts};
 use crate::once::{
     COLUMNS, Column, Columns, Filter, Sort, fmt_bytes, fmt_pct, haystack, hide_column,
@@ -76,6 +77,9 @@ struct App {
     /// picture. Rows that stop appearing are dropped on the same pass that
     /// records, so an exited process does not hold a buffer for the run.
     history: HashMap<String, VecDeque<f64>>,
+    /// Present only under `--trend kitty`: the image in flight, and what it
+    /// costs to keep it in step. `None` is the ordinary character ramp.
+    kgp: Option<kgp::Kgp>,
     /// The sort label `history` was collected under, so a change to it can
     /// clear the buffers rather than mixing units.
     sorted_by: String,
@@ -89,7 +93,12 @@ const TREND: usize = 9;
 ///
 /// Returns an error if the terminal cannot enter or leave raw mode, the sampler
 /// thread cannot be spawned, a frame cannot be drawn, or a view save fails.
-pub fn run(interval: Duration, pss_interval: Duration, view: View) -> Result<(), Error> {
+pub fn run(
+    interval: Duration,
+    pss_interval: Duration,
+    view: View,
+    trend_kitty: bool,
+) -> Result<(), Error> {
     // Resolve columns before the alternate screen: a warning about a stale
     // hide entry printed after it would be wiped on the first frame.
     let cols = Columns::for_tui(&view);
@@ -101,7 +110,14 @@ pub fn run(interval: Duration, pss_interval: Duration, view: View) -> Result<(),
     execute!(out, EnterAlternateScreen, Hide)?;
     let backend = CrosstermBackend::new(out);
     let mut terminal = Terminal::new(backend)?;
-    let result = run_loop(&mut terminal, interval, pss_interval, view, cols);
+    let result = run_loop(
+        &mut terminal,
+        interval,
+        pss_interval,
+        view,
+        cols,
+        trend_kitty,
+    );
     disable_raw_mode()?;
     execute!(io::stdout(), LeaveAlternateScreen, Show)?;
     // Disarm only once the terminal is genuinely back, or a signal arriving
@@ -116,6 +132,7 @@ fn run_loop(
     pss_interval: Duration,
     view: View,
     cols: Columns,
+    trend_kitty: bool,
 ) -> Result<(), Error> {
     let slot = Arc::new(Mutex::new(None));
     let _sampler = proc::spawn_sampler(interval, pss_interval, slot.clone())?;
@@ -140,6 +157,7 @@ fn run_loop(
         paused: None,
         history: HashMap::new(),
         sorted_by: String::new(),
+        kgp: trend_kitty.then(kgp::Kgp::new),
     };
     // The highlight is this id, not `cursor`'s slot: PSS desc (the default)
     // reshuffles the flattened list every sample, and so do `c`/`d`, `/`,
@@ -163,7 +181,7 @@ fn run_loop(
         app.cursor = remap_cursor(&rows, &cursor_id);
         app.row_vis = table_body_rows(terminal.size()?.height);
         app.row_off = follow_viewport(app.cursor, app.row_off, app.row_vis, rows.len());
-        terminal.draw(|f| draw(f, &app, &rows))?;
+        terminal.draw(|f| draw(f, &mut app, &rows))?;
         if event::poll(Duration::from_millis(50))?
             && let Event::Key(k) = event::read()?
             && k.kind == KeyEventKind::Press
@@ -188,6 +206,9 @@ fn run_loop(
             keep_users(&mut app.tree, &app.view.users);
             fresh = true;
         }
+    }
+    if let Some(k) = app.kgp.as_mut() {
+        k.teardown(&mut io::stdout());
     }
     Ok(())
 }
@@ -663,7 +684,54 @@ fn sort_header<'a>(cols: impl Iterator<Item = &'a Column>, sort: &str) -> Row<'s
     .style(Style::default().add_modifier(Modifier::BOLD))
 }
 
-fn draw(f: &mut ratatui::Frame<'_>, app: &App, rows: &[Flat]) {
+/// Paint every visible row's history into one image and hand it to the
+/// terminal, returning whether the placeholders may be drawn.
+///
+/// One image for the whole column: the protocol's row diacritics index into
+/// it, so nine cells of one band cost the same escape as the whole table. The
+/// row range is known here and nowhere else, which is why this runs from
+/// `draw` rather than from the loop.
+///
+/// Any reason it cannot be done -- a terminal that reports no pixel size, an
+/// absurd cell, a write that failed -- falls back to the character ramp for
+/// that frame rather than leaving the column blank.
+fn send_trend(app: &mut App, rows: &[Flat], start: usize, end: usize) -> bool {
+    let Some(cell) = kgp::cell_px() else {
+        return false;
+    };
+    // Disjoint fields: the image is built from `history` while `kgp` carries
+    // what was last sent.
+    let history = &app.history;
+    let Some(k) = app.kgp.as_mut() else {
+        return false;
+    };
+    let bands: Vec<Option<&VecDeque<f64>>> = rows[start..end]
+        .iter()
+        .map(|r| history.get(&r.id))
+        .collect();
+    if bands.len() > kgp::MAX_BANDS {
+        return false;
+    }
+    // The cyan the CPU bar's `usr` segment already uses, and a neutral grey
+    // under `NO_COLOR` -- an image is the one thing in heft that cannot fall
+    // back to a fill character, so it answers the variable directly.
+    let colour = if colored() {
+        [0x00, 0xaf, 0xd7]
+    } else {
+        [0xbc, 0xbc, 0xbc]
+    };
+    let Some(img) = kgp::paint(&bands, TREND as u32, cell, colour) else {
+        return false;
+    };
+    let rows_tall = match u32::try_from(bands.len()) {
+        Ok(n) if n > 0 => n,
+        _ => return false,
+    };
+    k.send(&mut io::stdout(), &img, TREND as u32, rows_tall)
+        .is_ok()
+}
+
+fn draw(f: &mut ratatui::Frame<'_>, app: &mut App, rows: &[Flat]) {
     let chunks = Layout::vertical([
         Constraint::Length(HEADER_ROWS),
         Constraint::Length(1),
@@ -680,6 +748,16 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &App, rows: &[Flat]) {
     let fit = columns_that_fit(&app.cols, skip, chunks[2].width, name_on_screen);
     let start = app.row_off.min(rows.len());
     let end = start.saturating_add(app.row_vis.max(1)).min(rows.len());
+    // Only when the column is actually on screen: an image nothing references
+    // is invisible either way, and on the inline transport it is most of a
+    // megabyte of escape for nothing.
+    let spark_shown = app
+        .cols
+        .iter()
+        .skip(skip)
+        .take(fit)
+        .any(|c| c.label == "spark");
+    let trend_img = spark_shown && end > start && send_trend(app, rows, start, end);
     let mut table_rows = Vec::new();
     for (i, r) in rows[start..end].iter().enumerate() {
         let mark = if r.expandable {
@@ -696,16 +774,28 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &App, rows: &[Flat]) {
             .cols
             .iter()
             .map(|c| {
-                let text = if c.label == "spark" {
-                    // The one column whose value is not a function of this
-                    // sample, so `Column::fmt` (which sees only this sample)
-                    // cannot produce it.
-                    spark(app.history.get(&r.id))
+                // The one column whose value is not a function of this
+                // sample, so `Column::fmt` (which sees only this sample)
+                // cannot produce it.
+                let placed = if c.label == "spark" && trend_img {
+                    kgp::placeholder(i, TREND)
                 } else {
-                    (c.fmt)(&name, r.nproc, &r.metrics)
+                    None
+                };
+                let text = match (&placed, c.label) {
+                    (Some(p), _) => p.clone(),
+                    (None, "spark") => spark(app.history.get(&r.id)),
+                    _ => (c.fmt)(&name, r.nproc, &r.metrics),
                 };
                 let cell = Cell::from(text);
-                if alarming(c.label, &r.metrics) {
+                if placed.is_some() {
+                    // The image id rides in the foreground colour, and it has
+                    // to be a ratatui style: a cell's symbol is written
+                    // literally, so an escape smuggled into the text would go
+                    // to the screen as text.
+                    let (r8, g8, b8) = kgp::id_rgb();
+                    cell.style(Style::default().fg(Color::Rgb(r8, g8, b8)))
+                } else if alarming(c.label, &r.metrics) {
                     cell.style(alarm_style())
                 } else {
                     cell
@@ -1799,6 +1889,7 @@ mod tests {
             paused: None,
             history: HashMap::new(),
             sorted_by: String::new(),
+            kgp: None,
         }
     }
 

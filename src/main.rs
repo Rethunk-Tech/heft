@@ -5,7 +5,7 @@ use clap::{CommandFactory, Parser, error::ErrorKind};
 
 mod cli;
 
-use cli::{Cli, Glyphs};
+use cli::{Cli, Glyphs, Trend};
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
@@ -121,7 +121,7 @@ fn main() -> ExitCode {
         (true, _, true) => heft::once::follow_json(interval, pss_interval, &view),
         (_, true, false) => heft::once::print_table(interval, &view),
         (_, true, true) => heft::once::follow_table(interval, pss_interval, &view),
-        _ => heft::ui::run(interval, pss_interval, view),
+        _ => heft::ui::run(interval, pss_interval, view, cli.trend == Trend::Kitty),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

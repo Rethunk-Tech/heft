@@ -31,6 +31,7 @@ src/once.rs          columns, tree ordering, table and JSON
 src/ui.rs            ratatui header + tree table
 src/tty.rs           panic hook + signal handler; restores the terminal
 src/glyph.rs         unicode vs ascii bar/rule/marker characters; resolved once
+src/kgp.rs           --trend kitty: TREND as one graphics-protocol image; shm or inline
 tests/grouping.rs    integration tests over tests/fixtures/
 tests/live_proc.rs   invariants over the real /proc; must hold in a bare container
 tests/fixtures/      GUI grouping snapshot
@@ -227,6 +228,40 @@ never what the font can draw. Every ASCII substitute is one column wide: the hea
 land on an exact width and `once::trunc` cuts to an exact column count, so a
 three-character `...` for `…` would overflow both. `Cli::Glyphs` lives in
 `src/cli.rs` because `build.rs` compiles that file standalone.
+
+`--trend kitty` draws TREND as a kitty-graphics-protocol image instead of the
+ramp (`src/kgp.rs`). One image for the whole column, never one per row: the
+protocol's row diacritics index into an image, so nine cells of one band cost
+the same transmission as the whole table, and there is no per-row image
+lifecycle to leak. `a=T,U=1` transmits and creates the virtual placement in
+one escape; each row's cell is `U+10EEEE` plus its row and column diacritics,
+with the image id in the foreground colour as a ratatui style rather than an
+escape in the text, because a cell's symbol is written literally. Only the
+first of the nine cells spells out its position; the rest inherit from the
+left, which the protocol allows when the colours match.
+
+Two transports, chosen from `SSH_CONNECTION` / `SSH_TTY` rather than from
+`TERM`: `t=s` hands over a POSIX shared memory object and costs tens of bytes
+a frame, and `t=d` sends the pixels inline for the case the terminal is not on
+this machine. Measured on a 24-row terminal with 10x20 cells, 19 visible rows:
+~146 KB per transmission inline, once per sample. Per *frame* it would be
+twenty times that, which is why `Kgp::send` hashes the pixels and returns
+without writing when nothing changed — the loop draws on every poll timeout,
+not once per sample.
+
+`tty::hold_shm` / `release_shm` exist for that transport alone: the terminal
+unlinks the object once it has read it, but a terminal that never reads one
+leaves it in `/dev/shm`, and a signal would otherwise kill heft before
+`teardown` ran. The handler calls `unlink`, which is async-signal-safe, on a
+path built ahead of time, because `shm_unlink` is not on that list and on
+Linux is this call anyway.
+
+It is never detected. `TERM` names a terminal, not what it implements, and the
+alternative is the handshake heft has deliberately never done. It is also
+`conflicts_with` `--once` and `--json`, which have no history to draw and are
+not drawing to a terminal. A terminal that reports no `ws_xpixel` cannot have
+an image sized for it, so `cell_px` returns `None` and the frame falls back to
+the ramp rather than blanking the column.
 
 `src/keys.rs` is the one TUI key list. `build.rs` includes it the way it
 includes `src/cli.rs`, so the man page's KEYS section and the `?` overlay are

@@ -22,6 +22,15 @@ use std::sync::atomic::{AtomicBool, Ordering};
 const RESTORE: &[u8] = b"\x1b[?25h\x1b[?1049l";
 
 static ARMED: AtomicBool = AtomicBool::new(false);
+/// A shared memory object `kgp` has handed to the terminal but not yet seen
+/// reclaimed. The handler unlinks it: a signal otherwise leaves up to an
+/// image's worth of tmpfs behind, and heft's contract is that the only thing
+/// it writes is its config directory.
+static SHM_HELD: AtomicBool = AtomicBool::new(false);
+/// The path, NUL-terminated, built by `hold_shm` so the handler never has to
+/// allocate one. `/dev/shm` is where Linux puts POSIX shared memory, and heft
+/// is Linux only.
+static mut SHM_PATH: [u8; 128] = [0; 128];
 /// The terminal settings from before raw mode, kept for the handler. A signal
 /// handler cannot ask crossterm for them, and it cannot allocate to store them.
 static mut SAVED: MaybeUninit<libc::termios> = MaybeUninit::uninit();
@@ -63,6 +72,7 @@ pub(crate) fn guard() {
 /// which signal even though heft exited on its own terms.
 extern "C" fn on_signal(sig: libc::c_int) {
     restore();
+    drop_shm();
     // Not `process::exit`: that runs atexit handlers and destructors, neither
     // of which is safe here.
     unsafe { libc::_exit(128 + sig) }
@@ -79,6 +89,50 @@ fn restore() {
         libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, (&raw const SAVED).cast());
         libc::write(libc::STDOUT_FILENO, RESTORE.as_ptr().cast(), RESTORE.len());
     }
+}
+
+/// Remember one shared memory object to reclaim if heft is killed. Replaces
+/// whatever was held: `kgp` keeps exactly one alive at a time, and unlinks
+/// the previous itself on the ordinary path.
+///
+/// A name too long for the buffer holds nothing rather than a truncated path,
+/// which would unlink something else.
+pub(crate) fn hold_shm(name: &str) {
+    const DIR: &[u8] = b"/dev/shm/";
+    let leaf = name.trim_start_matches('/').as_bytes();
+    if leaf.is_empty() || DIR.len() + leaf.len() >= 128 {
+        return;
+    }
+    SHM_HELD.store(false, Ordering::SeqCst);
+    // SAFETY: the handler reads this only while SHM_HELD is true, and it is
+    // false for the whole of this write.
+    // Written through the raw pointer rather than as a slice: taking a
+    // reference to a static mut the handler also reads is what the aliasing
+    // rules forbid.
+    unsafe {
+        let p = (&raw mut SHM_PATH).cast::<u8>();
+        std::ptr::copy_nonoverlapping(DIR.as_ptr(), p, DIR.len());
+        std::ptr::copy_nonoverlapping(leaf.as_ptr(), p.add(DIR.len()), leaf.len());
+        p.add(DIR.len() + leaf.len()).write(0);
+    }
+    SHM_HELD.store(true, Ordering::SeqCst);
+}
+
+/// The object came back by the ordinary route, so the handler must not touch
+/// that path again -- by then it may name a different object.
+pub(crate) fn release_shm() {
+    SHM_HELD.store(false, Ordering::SeqCst);
+}
+
+/// `unlink` is on the async-signal-safe list; `shm_unlink` is not, and on
+/// Linux it is this call under `/dev/shm` anyway.
+fn drop_shm() {
+    if !SHM_HELD.swap(false, Ordering::SeqCst) {
+        return;
+    }
+    // SAFETY: NUL-terminated by `hold_shm`, which completed before SHM_HELD
+    // became true, and the swap means only one caller reaches this.
+    unsafe { libc::unlink((&raw const SHM_PATH).cast()) };
 }
 
 /// Hands the terminal back on the ordinary path and disarms the handler, so a

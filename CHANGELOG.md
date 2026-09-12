@@ -6,6 +6,16 @@
 
 ### Added
 
+- `--trend kitty` draws TREND as a kitty-graphics-protocol image rather than
+  nine block characters: pixel resolution instead of eight quantised steps,
+  and no dependence on the font at all. One image covers the whole column —
+  the protocol's row diacritics index into it — so a frame is one escape
+  rather than one per row. Where the terminal is local the pixels travel
+  through POSIX shared memory and the escape carries only its name; over ssh
+  they go inline, which measured about 146 KB a sample on a 24-row terminal,
+  so `--trend chars` stays the default and the flag says so. Opt-in, never
+  detected: `TERM` names a terminal, not what it implements.
+
 - `--glyphs legacy`, for a font that draws the header bars but not the
   sparkline. TREND's ramp needs eight rising steps and six of them — every
   one but `▄` and `█` — are absent from fonts that carry `█▓▒░` perfectly

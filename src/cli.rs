@@ -15,6 +15,15 @@ pub(crate) enum Glyphs {
     Ascii,
 }
 
+/// How the TREND column is drawn.
+#[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum Trend {
+    /// Rising block characters, in whatever `--glyphs` resolved
+    Chars,
+    /// A kitty-graphics-protocol image: needs kitty or ghostty
+    Kitty,
+}
+
 #[derive(Parser)]
 #[command(
     name = "heft",
@@ -46,6 +55,9 @@ pub(crate) struct Cli {
     /// Characters for bars, rules and markers
     #[arg(long, value_enum, default_value_t = Glyphs::Auto, value_name = "SET")]
     pub glyphs: Glyphs,
+    /// How TREND is drawn. `kitty` needs a terminal with the graphics protocol
+    #[arg(long, value_enum, default_value_t = Trend::Chars, value_name = "MODE", conflicts_with_all = ["once", "json"])]
+    pub trend: Trend,
     /// Keep sampling: one table or one JSON line per interval. Needs --once or --json
     #[arg(long)]
     pub follow: bool,

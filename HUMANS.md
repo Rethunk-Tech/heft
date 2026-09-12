@@ -97,6 +97,7 @@ heft --once --order pss --order rss --order core
 heft --json --follow      # one JSON document per line, per interval, forever
 heft --glyphs ascii       # bars and markers without block characters
 heft --glyphs legacy      # block bars, but an ASCII TREND ramp
+heft --trend chars        # TREND as block characters, never an image
 heft --trend kitty        # draw TREND as an image (kitty, ghostty)
 heft --trend sixel        # the same picture as sixel (xterm, foot, wezterm, …)
 heft --proc-root /mnt/tree   # read /proc and /sys under here instead of /
@@ -443,11 +444,29 @@ If TREND is the one column that comes up as boxes while the header bars draw
 correctly, the font is missing `▁▂▃▅▆▇`: `--glyphs legacy` swaps the ramp for
 `_.,:-=+#` and leaves everything else alone.
 
-`--trend kitty` draws TREND as a real image instead of nine block characters,
-using the kitty graphics protocol — so it needs kitty or ghostty, and it is
-opt-in rather than detected, because `TERM` says which terminal you are on and
-not what that terminal implements. You get pixel resolution instead of eight
-quantised steps, and it is immune to the font gap `--glyphs legacy` exists for.
+`--trend` decides whether TREND is drawn as characters or as a real image.
+`auto`, the default, asks the terminal and uses whichever image protocol it
+says it has. You get pixel resolution instead of eight quantised steps, and
+immunity to the font gap `--glyphs legacy` exists for, without having to know
+what your terminal implements.
+
+It really is asked, not guessed. `TERM` names a terminal and not its
+capabilities, and a multiplexer or an ssh hop can take one away underneath it,
+so heft sends two queries before the first frame: the kitty graphics
+protocol's own (`a=q`), which a terminal that has it answers `OK` and one that
+does not silently discards, and a device-attributes request, whose reply lists
+`4` where sixel is available. The attributes reply is what ends the wait —
+every terminal sends one, and sends it last — so on anything that answers, the
+whole exchange costs about a millisecond. A terminal that answers neither
+query delays the first frame by 400ms and then draws characters; that is the
+only case that waits, and `--trend chars` skips the question entirely.
+
+Where a terminal offers both, heft picks by where it is. Locally the kitty
+protocol wins: its image is tied to the cell grid, so it survives scrolling
+without being repainted, and its pixels go through shared memory. Over ssh
+that same transport has to send every pixel inline, so sixel wins there — see
+the measurement below. `--trend kitty`, `--trend sixel` and `--trend chars`
+force one and ask nothing.
 
 It is a line, not a filled bar: the shape is the whole point of the column, and
 ink underneath the shape carries none of it. Marks are joined to the one before

@@ -131,6 +131,7 @@ fn main() -> ExitCode {
                 pss_interval,
                 view,
                 match cli.trend {
+                    Trend::Auto => heft::ui::TrendMode::Auto,
                     Trend::Chars => heft::ui::TrendMode::Chars,
                     Trend::Kitty => heft::ui::TrendMode::Kitty,
                     Trend::Sixel => heft::ui::TrendMode::Sixel,

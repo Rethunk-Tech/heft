@@ -32,6 +32,7 @@ src/explain.rs       --explain PID: resolved placement and the grouping.json key
 src/ui.rs            ratatui header + tree table
 src/tty.rs           panic hook + signal handler; restores the terminal
 src/glyph.rs         unicode vs ascii bar/rule/marker characters; resolved once
+src/caps.rs          --trend auto: one round trip asking the terminal what it draws
 src/kgp.rs           --trend kitty: TREND as one graphics-protocol image; shm or inline
 src/sixel.rs         --trend sixel: the same image, RLE sixel, positioned from the frame
 tests/grouping.rs    integration tests over tests/fixtures/
@@ -258,8 +259,20 @@ leaves it in `/dev/shm`, and a signal would otherwise kill heft before
 path built ahead of time, because `shm_unlink` is not on that list and on
 Linux is this call anyway.
 
-It is never detected. `TERM` names a terminal, not what it implements, and the
-alternative is the handshake heft has deliberately never done. It is also
+`--trend auto` is the default and does the handshake heft otherwise avoids,
+because this is the one rendering question with no free answer: `TERM` names a
+terminal and not what it implements, and a multiplexer or ssh hop can remove a
+capability underneath it. `caps::probe` writes the kitty `a=q` query and a DA1
+request together, after raw mode and inside the alternate screen so a reply is
+neither echoed nor left on the user's scrollback. DA1 is the sentinel that
+makes the read terminable — universally answered, and answered last, so its
+arrival proves the graphics query has been dealt with; without it every start
+on a non-graphics terminal would wait out the timeout. Only a terminal that
+answers neither does, at 400ms. `caps::drain` then swallows a late reply,
+because a DA1 answer ends in `c` and `c` cycles the sort column.
+`ui::resolve_trend` prefers kitty locally (cell-grid placement, shm transport)
+and sixel when `kgp::is_remote`, on the measured 146 KB-a-sample against
+559-bytes-a-frame gap. An explicit `--trend` value asks nothing. It is also
 `conflicts_with` `--once` and `--json`, which have no history to draw and are
 not drawing to a terminal. A terminal that reports no `ws_xpixel` cannot have
 an image sized for it, so `cell_px` returns `None` and the frame falls back to

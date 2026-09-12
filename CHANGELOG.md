@@ -15,6 +15,18 @@
   so `--trend chars` stays the default and the flag says so. Opt-in, never
   detected: `TERM` names a terminal, not what it implements.
 
+- `--trend auto` is now the default: heft asks the terminal whether it has the
+  kitty graphics protocol or sixel and draws the trend as an image when it
+  does. It is asked rather than guessed, because `TERM` names a terminal and
+  not what it implements, and a multiplexer or an ssh hop can take a
+  capability away underneath it. The device-attributes reply ends the
+  exchange — every terminal sends one, and sends it last — so on anything that
+  answers it costs about a millisecond; a terminal that answers neither query
+  delays the first frame by 400ms and then draws characters. Where both are on
+  offer, the kitty protocol wins locally, since its image is tied to the cell
+  grid and its pixels go through shared memory, and sixel wins over ssh, where
+  the other transport would send every pixel inline.
+
 - `--trend sixel` draws the trend image for the terminals the kitty protocol
   does not reach: xterm, foot, wezterm, konsole 22.04+, iTerm2 and Windows
   Terminal 1.22+. It is also the cheaper of the two over a network — a line is

@@ -1,3 +1,4 @@
+pub(crate) mod caps;
 pub(crate) mod classify;
 pub mod config;
 pub mod containers;

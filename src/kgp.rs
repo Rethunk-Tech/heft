@@ -377,6 +377,13 @@ pub(crate) fn transport_for_env(ssh_connection: bool, ssh_tty: bool) -> Transpor
     }
 }
 
+/// Whether the terminal is at the other end of a connection, which is what
+/// decides both the kitty transport and, in `ui::resolve_trend`, whether sixel
+/// is the cheaper protocol.
+pub(crate) fn is_remote() -> bool {
+    detect_transport() == Transport::Direct
+}
+
 fn detect_transport() -> Transport {
     transport_for_env(
         std::env::var_os("SSH_CONNECTION").is_some(),

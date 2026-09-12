@@ -18,6 +18,8 @@ pub(crate) enum Glyphs {
 /// How the TREND column is drawn.
 #[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub(crate) enum Trend {
+    /// Ask the terminal, and draw an image if it answers that it can
+    Auto,
     /// Rising block characters, in whatever `--glyphs` resolved
     Chars,
     /// A kitty-graphics-protocol image: needs kitty or ghostty
@@ -61,7 +63,7 @@ pub(crate) struct Cli {
     #[arg(long, value_name = "PID", conflicts_with_all = ["once", "json", "follow"])]
     pub explain: Option<u32>,
     /// How TREND is drawn. `kitty` needs a terminal with the graphics protocol
-    #[arg(long, value_enum, default_value_t = Trend::Chars, value_name = "MODE", conflicts_with_all = ["once", "json"])]
+    #[arg(long, value_enum, default_value_t = Trend::Auto, value_name = "MODE", conflicts_with_all = ["once", "json"])]
     pub trend: Trend,
     /// Keep sampling: one table or one JSON line per interval. Needs --once or --json
     #[arg(long)]

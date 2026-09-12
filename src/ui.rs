@@ -17,6 +17,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Cell, Clear, Padding, Paragraph, Row, Table, Wrap};
 
+use crate::caps;
 use crate::config::{self, View};
 use crate::cpu;
 use crate::glyph;
@@ -110,9 +111,29 @@ const TREND: usize = 9;
 /// detected: `TERM` names a terminal, not what it implements.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum TrendMode {
+    /// Ask the terminal, once, before the first frame.
+    Auto,
     Chars,
     Kitty,
     Sixel,
+}
+
+/// Turn what the terminal answered into what to draw.
+///
+/// The kitty protocol ties its image to the cell grid, so it survives a
+/// scroll without repainting, and where the terminal is on this machine its
+/// pixels go through shared memory and cost tens of bytes a frame. That makes
+/// it the first choice locally. Over ssh the same transport has to send every
+/// pixel inline -- measured at about 146 KB a sample against sixel's 559 bytes
+/// a frame, because a line is mostly empty and sixel run-length-encodes the
+/// empty part -- so where the terminal is at the other end of a connection and
+/// offers sixel, sixel wins.
+fn resolve_trend(caps: caps::Caps, remote: bool) -> TrendMode {
+    match (caps.kitty, caps.sixel, remote) {
+        (true, true, true) | (false, true, _) => TrendMode::Sixel,
+        (true, _, _) => TrendMode::Kitty,
+        (false, false, _) => TrendMode::Chars,
+    }
 }
 
 pub fn run(
@@ -130,6 +151,16 @@ pub fn run(
     enable_raw_mode()?;
     let mut out = stdout();
     execute!(out, EnterAlternateScreen, Hide)?;
+    // After raw mode and inside the alternate screen: the reply would
+    // otherwise be line-buffered and echoed, and any terminal that prints the
+    // query instead of answering it has that wiped by the first frame.
+    let trend = if trend == TrendMode::Auto {
+        let resolved = resolve_trend(caps::probe(), kgp::is_remote());
+        caps::drain();
+        resolved
+    } else {
+        trend
+    };
     let backend = CrosstermBackend::new(out);
     let mut terminal = Terminal::new(backend)?;
     let result = run_loop(&mut terminal, interval, pss_interval, view, cols, trend);
@@ -848,7 +879,9 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &mut App, rows: &[Flat]) {
     // the table and not just within a row.
     let full = trend_scale(Sort::from_label(&app.view.sort), rows, &app.history);
     let (trend_img, trend_pixels) = match app.trend {
-        TrendMode::Chars => (false, None),
+        // `run` resolves Auto before the first frame, so it never reaches
+        // here; drawing characters is the right answer if it ever did.
+        TrendMode::Auto | TrendMode::Chars => (false, None),
         TrendMode::Kitty => (
             spark_shown && end > start && send_trend(app, rows, start, end, full),
             None,
@@ -1658,6 +1691,28 @@ mod tests {
             trimmable,
             search: None,
         }
+    }
+
+    /// What the terminal answers decides what is drawn, and where two answers
+    /// are possible the cheaper transport for that connection wins.
+    #[test]
+    fn auto_prefers_the_cell_grid_locally_and_the_wire_cost_remotely() {
+        let caps = |kitty, sixel| caps::Caps { kitty, sixel };
+        // Locally the kitty protocol's pixels go through shared memory, and
+        // its image is tied to the cell grid rather than repainted.
+        assert_eq!(resolve_trend(caps(true, true), false), TrendMode::Kitty);
+        assert_eq!(resolve_trend(caps(true, false), false), TrendMode::Kitty);
+        // Over ssh that transport sends every pixel inline: ~146 KB a sample
+        // against sixel's 559 bytes a frame.
+        assert_eq!(resolve_trend(caps(true, true), true), TrendMode::Sixel);
+        // Only one on offer, so the connection does not come into it.
+        assert_eq!(resolve_trend(caps(false, true), false), TrendMode::Sixel);
+        assert_eq!(resolve_trend(caps(false, true), true), TrendMode::Sixel);
+        assert_eq!(resolve_trend(caps(true, false), true), TrendMode::Kitty);
+        // A terminal that answered neither gets the character ramp, which is
+        // also what a terminal that did not answer at all gets.
+        assert_eq!(resolve_trend(caps(false, false), false), TrendMode::Chars);
+        assert_eq!(resolve_trend(caps::Caps::default(), true), TrendMode::Chars);
     }
 
     /// A sum is not on the scale the entries are drawn against, so it gets

@@ -14,6 +14,10 @@
   extension tree (`codex`, `language_server_linux_x64`, `vscode-tailscale`,
   `code-tunnel`) bill to that editor instead of taking their own rows.
 - `deskflow-core` bills to `deskflow`.
+- Trinity (TDE): apps tdeinit launches (konsole, kate, konqueror) get their
+  own rows instead of all merging into `tdeinit`, and the session itself
+  (twin, kicker, kdesktop, kded, artsd, tdeio slaves, tray helpers) is one
+  `tdeinit` row under User Services.
 
 ## 0.8.1 - 2026-09-12
 

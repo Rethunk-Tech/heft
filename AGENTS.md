@@ -89,7 +89,13 @@ runtime ever reports a truncated id.
   read that empty line and `user_unit` returned `None` — which left User
   Services empty on every v1 host, since that split needs a unit name.
 - Display name is `classify::name_of` (`exe` basename else `comm`), not the
-  inherited cgroup. `identity::lying_unit` skips terminal transients, Chromium
+  inherited cgroup. The exception is an `exe` of `tdeinit`, which runs
+  programs as in-process modules, so there `comm` names the program. TDE
+  session processes merge as `tdeinit` (`classify::trinity_session`, checked
+  before Plasma because both ship `kded` and `ksmserver`). An editor's
+  install or extension tree bills its binaries to that editor
+  (`classify::bundled_helper_app`), by `exe` path rather than PPID so a real
+  app started from its terminal keeps its row. `identity::lying_unit` skips terminal transients, Chromium
   toolkit scopes (`org.chromium.chromium`), `dbus:` activation, `run-u*`, and
   `flatpak-session-helper` for unit-based identity. `instance_key` uses a real
   user unit only when it is not lying; otherwise `pgid`.

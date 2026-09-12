@@ -386,7 +386,10 @@ number gets read as a current one.
   in User Services even when D-Bus used an `app-` or `dbus:` unit. Everything
   else under the user is an application. Merge identities:
   [AGENTS.md](AGENTS.md). Plasma workspace session processes merge as
-  `plasmashell`, and kwin plus its helpers as `kwin`. A sway session still
+  `plasmashell`, and kwin plus its helpers as `kwin`. A Trinity (TDE)
+  session (tdeinit, twin, kicker, kdesktop, artsd, its tdeio slaves and tray
+  helpers) merges as `tdeinit`, while konsole, kate and the other apps tdeinit
+  launches keep their own rows. A sway session still
   lands in the right buckets but merges more coarsely under User Services.
 - **Containers** under a user are workloads heft can attribute: the owner of
   the container's workdir label, else the owner of the first bind mount it

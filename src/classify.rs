@@ -71,6 +71,12 @@ pub(crate) fn basename(path: &str) -> String {
 pub(crate) fn name_of(p: &Process) -> String {
     if let Some(exe) = &p.exe {
         let b = basename(exe);
+        // tdeinit runs konsole, kicker or kate as a module in a fork, so `exe`
+        // stays tdeinit for all of them and only `comm` (set by prctl) names
+        // the program. tdelibs `tdeinit.cpp` `launch()`.
+        if b == "tdeinit" && !p.comm.is_empty() {
+            return p.comm.clone();
+        }
         if !b.is_empty() && b != "exe" && !b.starts_with('[') {
             return b;
         }
@@ -151,6 +157,10 @@ pub(crate) fn session_helper_ident(p: &Process) -> Option<&'static str> {
     if gnome_shell_helper(&n, p) {
         return Some("gnome-shell");
     }
+    // Ahead of Plasma: TDE ships `kded`, `ksmserver` and `kaccess` too.
+    if trinity_session(&n, p) {
+        return Some("tdeinit");
+    }
     if plasma_workspace(&n) {
         return Some("plasmashell");
     }
@@ -220,6 +230,62 @@ fn gnome_shell_helper(names: &[String], p: &Process) -> bool {
         });
     }
     false
+}
+
+/// Trinity (TDE) session processes: tdelibs `tdeinit`, tdebase's desktop and
+/// panel, aRts, and the tray helpers TDE autostarts. KDE 3 names nothing else
+/// ships match anywhere. Names Plasma or a KDE app also ships (`kded`,
+/// `ksmserver`, `kteatime`, `ksysguardd`) need a TDE `exe`: the
+/// `/opt/trinity` prefix, or tdeinit itself when it ran them as a module.
+/// `kmix`, `kttsmgr` and `ksnapshot` are apps a user opens, so they stay out.
+fn trinity_session(names: &[String], p: &Process) -> bool {
+    if names_match(names, |n| {
+        n.contains("tdeinit")
+            || n.starts_with("tdeio")
+            || matches!(
+                n,
+                "starttde"
+                    | "kwrapper"
+                    | "dcopserver"
+                    | "tdelauncher"
+                    | "kdesktop"
+                    | "kdesktop_lock"
+                    | "kicker"
+                    | "appletproxy"
+                    | "extensionproxy"
+                    | "compton-tde"
+                    | "kdetcompmgr"
+                    | "artsd"
+                    | "kweatherservice"
+                    | "polkit-agent-tde"
+                    | "tdepowersave"
+            )
+    }) {
+        return true;
+    }
+    p.exe
+        .as_deref()
+        .is_some_and(|e| e.starts_with("/opt/trinity/") || basename(e) == "tdeinit")
+        && names_match(names, |n| {
+            matches!(
+                n,
+                "twin"
+                    | "ksmserver"
+                    | "kded"
+                    | "knotify"
+                    | "kaccess"
+                    | "khotkeys"
+                    | "kxkb"
+                    | "klipper"
+                    | "kcminit"
+                    | "kcminit_startup"
+                    | "ksplash"
+                    | "ksplashsimple"
+                    | "ksysguardd"
+                    | "kteatime"
+                    | "kttsd"
+            )
+        })
 }
 
 /// plasma-workspace / kactivitymanagerd / kglobalacceld / kded session
@@ -902,6 +968,55 @@ mod tests {
             bundled_helper_app(&exe("/usr/bin/deskflow-core")),
             Some("deskflow")
         );
+        let tdeinit_module = |comm: &str| Process {
+            comm: comm.into(),
+            exe: Some("/opt/trinity/bin/tdeinit".into()),
+            cmdline: vec![format!("{comm} [tdeinit]")],
+            ..Process::default()
+        };
+        assert_eq!(
+            name_of(&tdeinit_module("konsole")),
+            "konsole",
+            "a tdeinit module is the program, not tdeinit"
+        );
+        assert!(
+            session_helper_ident(&tdeinit_module("konsole")).is_none(),
+            "an app tdeinit launched stays an app"
+        );
+        for comm in ["kicker", "twin", "kded", "tdeio_file", "tdeinit"] {
+            assert_eq!(
+                session_helper_ident(&tdeinit_module(comm)),
+                Some("tdeinit"),
+                "{comm}"
+            );
+        }
+        for comm in [
+            "tdeinit_phase1",
+            "artsd",
+            "kdesktop",
+            "kdesktop_lock",
+            "ksysguardd",
+            "kteatime",
+            "kweatherservice",
+            "kwrapper",
+            "polkit-agent-tde",
+        ] {
+            assert_eq!(
+                session_helper_ident(&exe(&format!("/opt/trinity/bin/{comm}"))),
+                Some("tdeinit"),
+                "{comm}"
+            );
+        }
+        assert!(
+            session_helper_ident(&p("kteatime", &["/usr/bin/kteatime"])).is_none(),
+            "Plasma's kteatime is an app"
+        );
+        assert_eq!(
+            session_helper_ident(&p("ksmserver", &["/usr/bin/ksmserver"])),
+            Some("plasmashell"),
+            "Plasma's ksmserver is not TDE's"
+        );
+        assert!(session_helper_ident(&exe("/opt/trinity/bin/ksnapshot")).is_none());
         assert!(is_worker(&Process {
             comm: "crashhelper".into(),
             exe: Some("/usr/lib64/firefox/crashhelper".into()),

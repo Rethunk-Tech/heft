@@ -338,14 +338,16 @@ mod tests {
 
     /// amdgpu before it adopted drm_show_memory_stats: engine counters, and
     /// `drm-memory-*` as the only memory keys.
-    const AMDGPU_LEGACY: &str = "drm-driver:\tamdgpu\ndrm-client-id:\t99\ndrm-memory-vram:\t1024 KiB\ndrm-memory-gtt: \t2048 KiB\ndrm-memory-cpu: \t0 KiB\namd-requested-vram:\t4096 KiB\ndrm-engine-gfx:\t7000 ns\n";
+    const AMDGPU_LEGACY: &str = "drm-driver:\tamdgpu\ndrm-client-id:\t550\ndrm-memory-vram:\t23048 KiB\ndrm-memory-gtt: \t80128 KiB\ndrm-memory-cpu: \t0 KiB\namd-evicted-vram:\t59648 KiB\namd-requested-vram:\t82696 KiB\ndrm-shared-vram:\t8 KiB\ndrm-shared-gtt:\t5632 KiB\ndrm-engine-gfx:\t301893603834 ns\ndrm-engine-compute:\t31641274970 ns\n";
 
     #[test]
     fn legacy_amdgpu_memory_keys_are_not_blank() {
         let g = merge_fdinfo_texts(&[AMDGPU_LEGACY.to_string()]);
-        assert_eq!(g.vram_bytes, Some(1024 * 1024));
-        assert_eq!(g.gtt_bytes, Some(2048 * 1024));
-        assert_eq!(g.gfx_ns, Some(7000));
+        // drm-shared-* is a subset of the region, never a tier of its own.
+        assert_eq!(g.vram_bytes, Some(23048 * 1024));
+        assert_eq!(g.gtt_bytes, Some(80128 * 1024));
+        assert_eq!(g.gfx_ns, Some(301_893_603_834));
+        assert_eq!(g.compute_ns, Some(31_641_274_970));
     }
 
     #[test]

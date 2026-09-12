@@ -359,7 +359,10 @@ number gets read as a current one.
   rather than which application is using it, read the kernel's own
   `/sys/class/drm/card*/device/mem_info_*` totals. Swap, when the machine has
   any, is a third tank on that same row rather than a segment of MEM: swapped
-  pages are not in RAM. A machine with `SwapTotal: 0` gets no swap tank and no
+  pages are not in RAM. It takes a fixed slice of the row rather than an equal
+  share of it — its figures need the same couple of dozen columns however wide
+  the terminal is, so MEM keeps the rest and grows with the window while SWAP
+  stays put. A machine with `SwapTotal: 0` gets no swap tank and no
   `SWAP` figures at all.
 
 - **User** is a unix uid, shown by login name. Terminals and the compositor

@@ -1219,17 +1219,36 @@ fn mem_header_line(tree: &HostTree, width: usize) -> (Line<'static>, usize) {
     (Line::from(spans), mem_bar_w)
 }
 
+/// What a VRAM or SWAP tank is given: ` SWAP [` and `] 1.2G/8.0G  ` are about
+/// 24 columns of fixed text between them, so this is that plus a bar you can
+/// read.
+const SIDE_TANK: usize = 32;
+
 /// Split one header row across its bar groups so the parts still sum to
 /// `width`; a `width / tanks` each would lose the remainder and shorten the
 /// line, which is exactly what the rendered-width assertions catch.
+///
+/// MEM keeps what the others do not need, rather than an equal share. Split
+/// evenly, a machine with swap gave half the row to a tank whose bar says one
+/// thing, and because `cpu_header_line` matches its bar to MEM's, the CPU bar
+/// was halved along with it -- two headline bars shrunk to make room for a
+/// readout that needs 24 columns whatever the terminal is.
+///
+/// The budget is capped at half the row so a narrow terminal degrades to the
+/// even split rather than starving MEM, and the remainder still lands inside
+/// it, so the parts sum to `width` exactly.
 fn tank_widths(width: usize, tanks: usize) -> Vec<usize> {
-    (0..tanks)
-        .scan(width, |rest, i| {
-            let w = *rest / (tanks - i);
-            *rest -= w;
-            Some(w)
-        })
-        .collect()
+    let Some(extras) = tanks.checked_sub(1).filter(|e| *e > 0) else {
+        return vec![width];
+    };
+    let budget = (SIDE_TANK * extras).min(width / 2);
+    let mut out = vec![width - budget];
+    out.extend((0..extras).scan(budget, |rest, i| {
+        let w = *rest / (extras - i);
+        *rest -= w;
+        Some(w)
+    }));
+    out
 }
 
 /// Slash-joined coloured labels plus the columns they occupy. The bar width
@@ -2080,8 +2099,18 @@ mod tests {
                 assert_eq!(w.iter().sum::<usize>(), width, "{width}/{tanks}");
             }
         }
-        // The pre-swap split, unchanged: MEM first, the second tank the rest.
-        assert_eq!(tank_widths(101, 2), vec![50, 51]);
+        // MEM keeps the remainder: a side tank needs a fixed 32 whatever the
+        // terminal is, and an even split halved the CPU bar along with it.
+        assert_eq!(tank_widths(101, 2), vec![69, 32]);
+        // Two side tanks want 64, but the half-row cap binds first, so MEM
+        // still keeps half rather than a third.
+        assert_eq!(tank_widths(120, 3), vec![60, 30, 30]);
+        assert_eq!(tank_widths(200, 2), vec![168, 32], "MEM takes the slack");
+        // Narrow enough that the fixed budget would starve MEM: back to an
+        // even split rather than a bar with nothing in it.
+        assert_eq!(tank_widths(40, 2), vec![20, 20]);
+        assert_eq!(tank_widths(60, 3), vec![30, 15, 15]);
+        assert_eq!(tank_widths(80, 1), vec![80], "no side tanks, no split");
     }
 
     /// The machine this was written on has `SwapTotal: 0`, and there the header
@@ -2116,6 +2145,43 @@ mod tests {
         let text = mem_header_line(&tree, 120).0.to_string();
         assert!(text.contains("VRAM [") && text.contains("SWAP ["), "{text}");
         assert_eq!(text.chars().count(), 120);
+    }
+
+    /// The reported defect: swap took half the row, and since the CPU bar is
+    /// matched to MEM's, both headline bars were halved to make room for a
+    /// readout whose fixed text is the same 24 columns at any terminal size.
+    #[test]
+    fn swap_does_not_halve_the_mem_and_cpu_bars() {
+        let g = 1024 * 1024 * 1024;
+        let tree = tree_with_gpu(&mem::GpuPool::default());
+        let plain = mem_header_line(&tree, 120).1;
+        let mut swapped = tree.clone();
+        swapped.swap_total_bytes = 8 * g;
+        swapped.swap_used_bytes = 2 * g;
+        let with_swap = mem_header_line(&swapped, 120).1;
+        // The invariant, and the whole fix: MEM gives up the side tank's
+        // fixed budget and not a share of the row. On a 120-column header
+        // that is 84 columns of bar becoming 52; the even split made it 24.
+        assert_eq!(
+            plain - with_swap,
+            SIDE_TANK,
+            "MEM bar fell from {plain} to {with_swap}"
+        );
+        // And the CPU bar, which is sized to match it, comes with it.
+        let cpu = cpu_header_line(&swapped, 120, with_swap).to_string();
+        let bar = cpu.split_once('[').unwrap().1.split_once(']').unwrap().0;
+        assert_eq!(bar.chars().count(), with_swap, "the two bars stack");
+        assert_eq!(cpu.chars().count(), 120);
+        // The swap tank still has a bar in it rather than only its figures.
+        let text = mem_header_line(&swapped, 120).0.to_string();
+        let swap_bar = text
+            .split_once("SWAP [")
+            .unwrap()
+            .1
+            .split_once(']')
+            .unwrap()
+            .0;
+        assert!(swap_bar.chars().count() >= 6, "swap bar {swap_bar:?}");
     }
 
     fn flat(depth: u16, name: &str) -> Flat {

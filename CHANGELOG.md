@@ -2,18 +2,7 @@
 
 ## Unreleased
 
-## 0.6.2 - 2026-09-12
-
 ### Added
-
-- TREND is drawn against one scale for the whole frame rather than against
-  each row's own peak: a percentage is full at 100, and everything else scales
-  to the heaviest row that is an entry rather than a sum. Against its own peak
-  a row sitting flat at 2% had every sample equal to its own maximum, so it
-  drew nine full-height marks — "flat and idle" and "flat and busy" were
-  opposites, most of the column was a solid block, and no two rows could be
-  compared at all. It still follows the sort column and still clears when that
-  changes.
 
 - `--trend kitty` draws TREND as a kitty-graphics-protocol image rather than
   nine block characters, as a line joined sample to sample rather than a
@@ -25,6 +14,21 @@
   they go inline, which measured about 146 KB a sample on a 24-row terminal,
   so `--trend chars` stays the default and the flag says so. Opt-in, never
   detected: `TERM` names a terminal, not what it implements.
+
+### Fixed
+
+- TREND is drawn against one scale for the whole frame rather than against
+  each row's own peak: a percentage is full at 100, and everything else scales
+  to the heaviest row that is an entry rather than a sum. Against its own peak
+  a row sitting flat at 2% had every sample equal to its own maximum, so it
+  drew nine full-height marks — "flat and idle" and "flat and busy" were
+  opposites, most of the column was a solid block, and no two rows could be
+  compared at all. It still follows the sort column and still clears when that
+  changes.
+
+## 0.6.2 - 2026-09-12
+
+### Added
 
 - `--glyphs legacy`, for a font that draws the header bars but not the
   sparkline. TREND's ramp needs eight rising steps and six of them — every

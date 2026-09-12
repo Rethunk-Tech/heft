@@ -1,7 +1,7 @@
 # Maintainer: Damon Blais <damon.blais@gmail.com>
 
 pkgname=heft-bin
-pkgver=0.8.0
+pkgver=0.8.1
 pkgrel=1
 pkgdesc="Read-only Linux TUI for application-weight process accounting"
 arch=('x86_64' 'aarch64')
@@ -19,9 +19,9 @@ _url_rel="$url/releases/download/v$pkgver"
 source=("heft-completions-man-$pkgver.tar.gz::$_url_rel/heft-completions-man.tar.gz")
 source_x86_64=("heft-$pkgver-x86_64::$_url_rel/heft-x86_64-unknown-linux-musl")
 source_aarch64=("heft-$pkgver-aarch64::$_url_rel/heft-aarch64-unknown-linux-musl")
-sha256sums=('521fafab60d16016d9d4b1e7b659787c999337c51a2139d65f9468bcc60e88b0')
-sha256sums_x86_64=('65d67328bf8c393f465b8137a10a6db172938a84cfa785bf3b0eaa24d3eee8fe')
-sha256sums_aarch64=('46a1b8352e74789263ea09e7526cf695c58b4c7335a5fd5ff1dc788600c16dc1')
+sha256sums=('6f89b362625e61989b4ed08cd89cf239f9d8201620f176a7e853a660b914ab91')
+sha256sums_x86_64=('8046d917aa9f178f11c6ffd543fbc0ea7371f0d21cbb2b849ad8125cca074715')
+sha256sums_aarch64=('bbe643c363715a1879a9d631abb65df2fe137c0fb691370410627a4886360652')
 
 package() {
   # Apache-2.0 is an SPDX common licence shipped in /usr/share/licenses/spdx

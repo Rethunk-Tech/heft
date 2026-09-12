@@ -553,6 +553,22 @@ legitimately uses on a busy host. It guards the `0a9ee0a` class of regression,
 which was found by a person noticing rather than by a gate. Docker sock is optional in CI;
 grouping tests use `tests/fixtures/` via `tests/grouping.rs`.
 
+Clippy runs at its default level. The wider groups are measured, not assumed:
+`pedantic` + `nursery` + `cargo` report 216 warnings, of which 87 are the one
+nursery lint `redundant_pub_crate` objecting to a visibility style this crate
+keeps deliberately. Most of the rest is `doc_markdown`, `too_many_lines` over
+render functions that are one piece on purpose, and casts in pixel and column
+arithmetic bounded by the code around them. Adopting the group wholesale is a
+mechanical rewrite buying style, and is refused.
+
+Four of them were worth keeping and are denied in `Cargo.toml`'s `[lints]`:
+`needless_pass_by_ref_mut`, `assigning_clones`, `redundant_clone` and
+`format_push_string`. Each found something real — a `&mut self` on
+`psi::set_row` and `proc::WalkPool::collect` that never mutated, a clone
+assigned over a live `String` once a frame, a temporary formatted once a frame
+in `sixel::encode` — and each is now at zero, which is what makes denying them
+free.
+
 Release profile: LTO, `codegen-units = 1`, strip, `panic = abort`.
 
 ## Git

@@ -354,9 +354,9 @@ mod tests {
         );
         assert_eq!(m.gfx_pct, None);
         // amdgpu / i915 keep the ns path even with cycle fields present.
-        let mut ns = b.clone();
+        let mut ns = b;
         ns.gpu.gfx_ns = Some(500_000_000);
-        let mut ns_prev = a.clone();
+        let mut ns_prev = a;
         ns_prev.gpu.gfx_ns = Some(0);
         let m = process_metrics(Some(&ns_prev), &ns, Duration::from_secs(1), &consts);
         assert!((m.gfx_pct.unwrap() - 50.0).abs() < 1e-9, "{:?}", m.gfx_pct);

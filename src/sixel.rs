@@ -22,6 +22,8 @@
 //! there: a sparkline is mostly empty, and sixel run-length-encodes the empty
 //! part, so a frame is a couple of kilobytes rather than the whole bitmap.
 
+use std::fmt::Write;
+
 use crate::kgp::Image;
 
 /// Sixel data characters run `?` (0x3F, six blank pixels) to `~` (0x7E, six
@@ -64,13 +66,16 @@ fn push_run(out: &mut String, ch: u8, n: usize) {
 pub(crate) fn encode(img: &Image, colour: [u8; 3]) -> String {
     let mut out = String::with_capacity(1024);
     out.push_str("\x1bP0;1;0q");
-    out.push_str(&format!("\"1;1;{};{}", img.w, img.h));
-    out.push_str(&format!(
+    // Written into the buffer rather than formatted into a temporary and
+    // copied: `encode` runs once a frame.
+    let _ = write!(out, "\"1;1;{};{}", img.w, img.h);
+    let _ = write!(
+        out,
         "#0;2;{};{};{}",
         percent(colour[0]),
         percent(colour[1]),
         percent(colour[2])
-    ));
+    );
     let lit = |x: u32, y: u32| y < img.h && img.rgba[((y * img.w + x) * 4 + 3) as usize] != 0;
     let bands = img.h.div_ceil(6);
     for band in 0..bands {

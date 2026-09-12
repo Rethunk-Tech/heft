@@ -261,7 +261,7 @@ fn run_loop(
         // After `j`/`k` (and after a gone row landed on its parent) pin the
         // id we will look up on the next flatten, not the one we arrived with.
         if let Some(r) = rows.get(app.cursor) {
-            cursor_id = r.id.clone();
+            cursor_id.clone_from(&r.id);
         }
         // Taken even while paused, so the sampler's slot never backs up and
         // unpausing shows the machine as it is rather than as it was.
@@ -2284,9 +2284,8 @@ mod tests {
     #[test]
     fn swap_costs_the_mem_and_cpu_bars_nothing() {
         let g = 1024 * 1024 * 1024;
-        let tree = tree_with_gpu(&mem::GpuPool::default());
-        let plain = mem_header_line(&tree, 120).1;
-        let mut swapped = tree.clone();
+        let mut swapped = tree_with_gpu(&mem::GpuPool::default());
+        let plain = mem_header_line(&swapped, 120).1;
         swapped.swap_total_bytes = 8 * g;
         swapped.swap_used_bytes = 2 * g;
         let with_swap = mem_header_line(&swapped, 120).1;

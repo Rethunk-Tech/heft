@@ -77,7 +77,7 @@ impl WalkPool {
     }
 
     fn collect(
-        &mut self,
+        &self,
         want_pss: bool,
         want_swap: bool,
         prev: Option<&Arc<HashMap<u32, Process>>>,
@@ -460,7 +460,7 @@ impl Sampler {
         let overrides = crate::config::load_overrides();
         let mut inspect_cache = InspectCache::default();
         let mut net = net::Sampler::default();
-        let mut pool = WalkPool::new();
+        let pool = WalkPool::new();
         let prev = Arc::new(pool.collect(false, false, None));
         // Netns counters are levels, so the first published tick needs a
         // baseline here or `--once` and `--json` would always print a blank

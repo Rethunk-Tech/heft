@@ -45,3 +45,22 @@ clap = { version = "4", default-features = false, features = [
 ] }
 clap_complete = "4.6.9"
 clap_mangen = "0.3.3"
+
+# Clippy runs at its default level in CI and the pre-commit hook. The wider
+# groups were measured rather than assumed: pedantic + nursery + cargo report
+# 216 warnings, and 87 of those are one nursery lint, `redundant_pub_crate`,
+# against a visibility style this crate keeps on purpose. The rest is mostly
+# `doc_markdown`, `too_many_lines` over render functions that are deliberately
+# one piece, and casts in pixel and column arithmetic that are bounded by the
+# code around them. Adopting the group wholesale would be a mechanical rewrite
+# buying style, so it is refused -- see AGENTS.md.
+#
+# These four are the part that was worth keeping. Each found something real
+# here (an `&mut self` that never mutated, a clone assigned over a live
+# String, a temporary formatted once a frame), each is now at zero, and
+# denying them is what stops that coming back.
+[lints.clippy]
+needless_pass_by_ref_mut = "deny"
+assigning_clones = "deny"
+redundant_clone = "deny"
+format_push_string = "deny"

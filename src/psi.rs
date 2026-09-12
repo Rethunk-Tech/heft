@@ -145,7 +145,7 @@ impl Apply<'_> {
     /// The root cgroup is excluded for the reason a `--network=host`
     /// container's RX/TX is: its pressure is the machine's, and printing the
     /// machine's figure on a kernel-thread row would read as that row's cost.
-    fn set_row(&mut self, m: &mut Metrics, pids: &[u32]) {
+    fn set_row(&self, m: &mut Metrics, pids: &[u32]) {
         if let Some(path) = self.one_cgroup(pids) {
             write(m, self.rates.get(path));
         }

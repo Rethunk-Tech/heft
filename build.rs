@@ -1,3 +1,4 @@
+use std::fmt::Write;
 use std::path::PathBuf;
 
 use clap::CommandFactory;
@@ -24,7 +25,7 @@ fn extra_sections() -> String {
             .replace("{left}", "Left")
             .replace("{right}", "Right")
             .replace('-', "\\-");
-        s.push_str(&format!(".TP\n\\fB{k}\\fR\n{desc}\n"));
+        let _ = write!(s, ".TP\n\\fB{k}\\fR\n{desc}\n");
     }
     s.push_str(
         ".SH FILES

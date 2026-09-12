@@ -409,9 +409,14 @@ pub(crate) fn cell_px() -> Option<(u32, u32)> {
     Some((xp / cols, yp / rows))
 }
 
-/// Paint one band per row, each `cols` samples wide, scaled to that row's own
-/// peak -- the same rule `ui::spark` follows, so the two renderings of TREND
-/// say the same thing.
+/// Paint one band per row: a line tracing that row's %CORE across the samples,
+/// on the same fixed 0-`full` scale `ui::spark` uses, so the two renderings of
+/// TREND say the same thing.
+///
+/// A line and not a filled bar. Filled, every row that was doing any work at
+/// all became a solid block of colour with the movement hidden inside it --
+/// the shape is the whole point of the column, and ink under the shape is not
+/// carrying any of it.
 ///
 /// A row with no history is left transparent rather than painted flat: that
 /// is heft's blank, and the cursor's reverse-video highlight has to show
@@ -421,6 +426,7 @@ pub(crate) fn paint(
     cols: u32,
     (cell_w, cell_h): (u32, u32),
     colour: [u8; 3],
+    full: f64,
 ) -> Option<Image> {
     let w = cols.checked_mul(cell_w)?;
     let h = u32::try_from(rows.len()).ok()?.checked_mul(cell_h)?;
@@ -431,37 +437,53 @@ pub(crate) fn paint(
         return None;
     }
     let mut rgba = vec![0u8; px * 4];
-    // One pixel of gutter between samples, so nine bars read as nine rather
-    // than as one wide shape. A one-pixel cell has no room for it.
-    let bar_w = cell_w.saturating_sub(1).max(1);
+    let mut put = |x: u32, y: u32| {
+        if x < w && y < h {
+            let o = ((y * w + x) * 4) as usize;
+            rgba[o] = colour[0];
+            rgba[o + 1] = colour[1];
+            rgba[o + 2] = colour[2];
+            rgba[o + 3] = 0xff;
+        }
+    };
     for (band, buf) in rows.iter().enumerate() {
         let Some(buf) = buf.filter(|b| !b.is_empty()) else {
             continue;
         };
         let top = band as u32 * cell_h;
-        let peak = buf.iter().copied().fold(0.0_f64, f64::max);
+        let mut prev: Option<u32> = None;
         for (i, v) in buf.iter().enumerate().take(cols as usize) {
-            // A flat-at-zero row is a history and it is flat: one pixel, the
-            // pixel equivalent of the ramp's lowest step.
-            let tall = if peak <= 0.0 {
-                1
-            } else {
-                ((v / peak) * f64::from(cell_h)).round().max(1.0) as u32
-            };
-            let tall = tall.min(cell_h);
+            let y = sample_y(*v, full, cell_h) + top;
             let x0 = i as u32 * cell_w;
-            for y in (top + cell_h - tall)..(top + cell_h) {
-                for x in x0..(x0 + bar_w).min(w) {
-                    let o = ((y * w + x) * 4) as usize;
-                    rgba[o] = colour[0];
-                    rgba[o + 1] = colour[1];
-                    rgba[o + 2] = colour[2];
-                    rgba[o + 3] = 0xff;
+            for x in x0..(x0 + cell_w).min(w) {
+                put(x, y);
+            }
+            // Join this sample to the last, so nine marks read as one line
+            // moving rather than as nine unrelated dashes.
+            if let Some(py) = prev {
+                for y in py.min(y)..=py.max(y) {
+                    put(x0, y);
                 }
             }
+            prev = Some(y);
         }
     }
     Some(Image { w, h, rgba })
+}
+
+/// The row of pixels a sample sits on, within a band `cell_h` tall: the bottom
+/// row at zero and the top row at or above `full`. Above full it pins rather
+/// than rescaling, so one row flat out does not flatten every row beside it.
+fn sample_y(v: f64, full: f64, cell_h: u32) -> u32 {
+    let last = cell_h.saturating_sub(1);
+    // Spelled out rather than negating a comparison: these are floats, so
+    // "not greater than zero" and "less than or equal to zero" differ on NaN,
+    // and a NaN reaching the subtraction below would wrap the row index.
+    if v.is_nan() || v <= 0.0 || full.is_nan() || full <= 0.0 {
+        return last;
+    }
+    let frac = (v / full).min(1.0);
+    last - (frac * f64::from(last)).round() as u32
 }
 
 /// The cells a table row puts in its TREND column to show band `band` of the
@@ -797,7 +819,7 @@ mod tests {
     #[test]
     fn the_inline_transport_round_trips_the_pixels() {
         let mut k = Kgp::with_transport(Transport::Direct);
-        let img = paint(&[Some(&buf(&[1.0, 2.0]))], 2, (4, 8), [10, 20, 30]).unwrap();
+        let img = paint(&[Some(&buf(&[1.0, 2.0]))], 2, (4, 8), [10, 20, 30], 100.0).unwrap();
         let mut out = Vec::new();
         k.send(&mut out, &img, 9, 1).unwrap();
         let s = String::from_utf8(out).unwrap();
@@ -830,7 +852,7 @@ mod tests {
     #[test]
     fn an_unchanged_image_is_not_sent_twice() {
         let mut k = Kgp::with_transport(Transport::Direct);
-        let img = paint(&[Some(&buf(&[1.0]))], 1, (4, 8), [1, 2, 3]).unwrap();
+        let img = paint(&[Some(&buf(&[1.0]))], 1, (4, 8), [1, 2, 3], 100.0).unwrap();
         let mut first = Vec::new();
         k.send(&mut first, &img, 9, 1).unwrap();
         assert!(!first.is_empty());
@@ -838,7 +860,7 @@ mod tests {
         k.send(&mut again, &img, 9, 1).unwrap();
         assert!(again.is_empty(), "same pixels, nothing on the wire");
         // A changed row sends again.
-        let other = paint(&[Some(&buf(&[1.0, 9.0]))], 2, (4, 8), [1, 2, 3]).unwrap();
+        let other = paint(&[Some(&buf(&[1.0, 9.0]))], 2, (4, 8), [1, 2, 3], 100.0).unwrap();
         let mut third = Vec::new();
         k.send(&mut third, &other, 9, 1).unwrap();
         assert!(!third.is_empty());
@@ -884,21 +906,42 @@ mod tests {
         assert_eq!(IMAGE_ID >> 24, 0, "no third diacritic needed");
     }
 
+    /// The scale rule, which is the whole reason the column is readable: the
+    /// floor at zero, the ceiling at `full`, and anything above `full` pinned
+    /// rather than rescaling every row beside it.
     #[test]
-    fn a_band_is_painted_against_its_own_peak() {
+    fn a_sample_sits_where_the_fixed_scale_puts_it() {
+        assert_eq!(sample_y(0.0, 100.0, 8), 7, "zero is the floor");
+        assert_eq!(sample_y(100.0, 100.0, 8), 0, "full scale is the ceiling");
+        assert_eq!(
+            sample_y(400.0, 100.0, 8),
+            0,
+            "above full pins, never rescales"
+        );
+        // Eight pixel rows span 0..=7, so half scale is 3.5 steps up from
+        // the floor and lands on row 3.
+        assert_eq!(sample_y(50.0, 100.0, 8), 3);
+        // Nothing on screen has a figure yet: everything is on the floor
+        // rather than dividing by zero.
+        assert_eq!(sample_y(5.0, 0.0, 8), 7);
+    }
+
+    #[test]
+    fn a_line_joins_the_samples_and_leaves_the_rest_clear() {
         let cell = (4, 8);
         let rows = [Some(&buf(&[0.0, 100.0])), None];
-        let img = paint(&rows, 2, cell, [1, 2, 3]).unwrap();
+        let img = paint(&rows, 2, cell, [1, 2, 3], 100.0).unwrap();
         assert_eq!((img.w, img.h), (8, 16));
         let at = |x: u32, y: u32| img.rgba[((y * img.w + x) * 4 + 3) as usize];
-        // Sample 1 is the peak: full cell height, in the first band.
-        assert_eq!(at(4, 0), 0xff, "peak reaches the top of its band");
-        assert_eq!(at(4, 7), 0xff);
-        // Sample 0 is zero against a non-zero peak: the floor, one pixel.
+        // Sample 0 is zero: a mark on the floor, and nothing above it.
         assert_eq!(at(0, 7), 0xff);
-        assert_eq!(at(0, 6), 0, "zero is one pixel, not a column");
-        // The gutter column is never painted, so nine bars read as nine.
-        assert_eq!(at(3, 7), 0, "one pixel of gutter between samples");
+        assert_eq!(at(0, 6), 0, "a line, not a bar filled up from the floor");
+        // Sample 1 is full scale: a mark on the ceiling, and nothing below it
+        // except the riser joining it to the sample before.
+        assert_eq!(at(7, 0), 0xff);
+        assert_eq!(at(7, 7), 0, "no fill under the mark");
+        // The riser sits on the new sample's first column.
+        assert!((0..8).all(|y| at(4, y) == 0xff), "samples are joined");
         // A row with no history is transparent, not flat: heft's blank, and
         // the cursor highlight has to show through it.
         assert!(
@@ -908,13 +951,28 @@ mod tests {
         );
     }
 
+    /// The reported defect: against its own peak a row sitting flat at 2% drew
+    /// every sample at full height, so the column was a solid block and the
+    /// movement it exists to show was not in it.
     #[test]
-    fn a_flat_row_is_a_floor_and_an_absurd_cell_is_refused() {
-        let rows = [Some(&buf(&[0.0, 0.0]))];
-        let img = paint(&rows, 2, (2, 4), [9, 9, 9]).unwrap();
-        // Flat at zero is a history and it is flat, so it draws.
+    fn a_flat_busy_row_is_a_flat_line_near_the_floor() {
+        let rows = [Some(&buf(&[2.0, 2.0, 2.0]))];
+        let img = paint(&rows, 3, (4, 16), [9, 9, 9], 100.0).unwrap();
+        let lit: Vec<u32> = (0..img.h)
+            .filter(|y| (0..img.w).any(|x| img.rgba[((y * img.w + x) * 4 + 3) as usize] != 0))
+            .collect();
+        assert_eq!(lit.len(), 1, "a flat row is one row of pixels, not a block");
+        assert_eq!(lit[0], 15, "2 of 100 rounds onto the floor");
+        // Flat at zero draws too: a history that is flat is still a history.
+        let zero = [Some(&buf(&[0.0, 0.0]))];
+        let img = paint(&zero, 2, (2, 4), [9, 9, 9], 100.0).unwrap();
         assert!(img.rgba.iter().any(|b| *b != 0));
-        assert!(paint(&rows, 2, (100_000, 100_000), [0, 0, 0]).is_none());
-        assert!(paint(&[], 9, (8, 16), [0, 0, 0]).is_none());
+    }
+
+    #[test]
+    fn an_absurd_cell_or_an_empty_table_is_refused() {
+        let rows = [Some(&buf(&[0.0, 0.0]))];
+        assert!(paint(&rows, 2, (100_000, 100_000), [0, 0, 0], 100.0).is_none());
+        assert!(paint(&[], 9, (8, 16), [0, 0, 0], 100.0).is_none());
     }
 }

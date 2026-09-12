@@ -38,10 +38,11 @@ pub(crate) const COLUMNS: &[Column] = &[
         fmt: |name, _, _| name.to_string(),
         key: None,
     },
-    // A picture of the sort metric's recent history. Its `fmt` is empty and
-    // the TUI substitutes the drawn cell: `--once` and `--json` take two walks
-    // and have no history, so a blank there is the truth rather than a gap.
-    // `key: None` and not in the sort cycle — a trend has no order.
+    // A picture of %CORE's recent history, on a fixed 0-100 scale. Its `fmt`
+    // is empty and the TUI substitutes the drawn cell: `--once` and `--json`
+    // take two walks and have no history, so a blank there is the truth
+    // rather than a gap. `key: None` and not in the sort cycle — a trend has
+    // no order.
     Column {
         label: "spark",
         header: "TREND",
@@ -339,6 +340,20 @@ impl Sort {
     /// from the one `key` the column already defines.
     pub(crate) fn value(self, nproc: u32, m: &Metrics) -> Option<f64> {
         (COLUMNS[self.0].key?)(nproc, m)
+    }
+
+    /// The value a full-height trend mark stands for, when the metric has one
+    /// that does not depend on what else is on screen. A percentage does: it
+    /// is full at 100 whatever the rest of the machine is doing, and a row
+    /// above that pins to the top rather than rescaling every row beside it.
+    /// Bytes, counts and rates do not, so they return `None` and the caller
+    /// scales against the heaviest row it is drawing.
+    pub(crate) fn trend_full(self) -> Option<f64> {
+        matches!(
+            self.label(),
+            "core" | "machine" | "gfx" | "compute" | "cpustall" | "iostall" | "memstall"
+        )
+        .then_some(100.0)
     }
 
     fn exact(s: &str) -> Option<Self> {

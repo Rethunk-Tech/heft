@@ -156,8 +156,8 @@ fn run_loop(
         detail: false,
         paused: None,
         history: HashMap::new(),
-        sorted_by: String::new(),
         kgp: trend_kitty.then(kgp::Kgp::new),
+        sorted_by: String::new(),
     };
     // The highlight is this id, not `cursor`'s slot: PSS desc (the default)
     // reshuffles the flattened list every sample, and so do `c`/`d`, `/`,
@@ -332,26 +332,58 @@ fn record_history(app: &mut App, rows: &[Flat]) {
     }
 }
 
-/// A row's recent history as rising blocks, scaled against its own peak so the
-/// shape is "when was this row busy", not "how does it compare to the machine".
+/// What a full-height mark stands for this tick: the metric's own full scale
+/// where it has one, else the heaviest history among the rows that are
+/// entries rather than totals.
+///
+/// `Flat::trimmable` is the same "is this an entry" test `--top` uses, and it
+/// is what keeps Host out of it: Host is the sum of the machine, so scaling
+/// against it would draw every real row flat along the bottom.
+///
+/// Zero when nothing has a figure yet, which `spark` and `paint` both read as
+/// "put the mark on the floor".
+fn trend_scale(sort: Sort, rows: &[Flat], history: &HashMap<String, VecDeque<f64>>) -> f64 {
+    if let Some(full) = sort.trend_full() {
+        return full;
+    }
+    rows.iter()
+        .filter(|r| r.trimmable)
+        .filter_map(|r| history.get(&r.id))
+        .flat_map(|b| b.iter().copied())
+        .fold(0.0_f64, f64::max)
+}
+
+/// A row's recent history as rising blocks against `full`, not against the
+/// row's own peak.
+///
+/// Its own peak is what this did first, and it made most of the column solid:
+/// a row sitting flat at 2% had every sample equal to its own maximum, so it
+/// drew nine full-height blocks, while a row flat at zero drew a line along
+/// the bottom. "Flat and idle" and "flat and busy" came out as opposites, and
+/// no two rows could be compared at all.
 ///
 /// Zero to the lowest step rather than to a blank: a row that has been at zero
 /// throughout has a history, and it is flat. A row with no history at all --
 /// one that has just appeared -- gets an empty cell, which is heft's blank:
 /// no figure exists yet.
-fn spark(buf: Option<&VecDeque<f64>>) -> String {
+fn spark(buf: Option<&VecDeque<f64>>, full: f64) -> String {
     let Some(buf) = buf.filter(|b| !b.is_empty()) else {
         return String::new();
     };
     let ramp = glyph::spark_ramp();
-    let peak = buf.iter().copied().fold(0.0_f64, f64::max);
+    if full.is_nan() || full <= 0.0 {
+        // Nothing on screen has a figure yet, so every row is on the floor
+        // rather than dividing by it.
+        return ramp[0].to_string().repeat(buf.len());
+    }
+    let top = (ramp.len() - 1) as f64;
     buf.iter()
         .map(|v| {
-            if peak <= 0.0 {
+            if v.is_nan() || *v <= 0.0 {
                 return ramp[0];
             }
-            let step = (v / peak * (ramp.len() - 1) as f64).round() as usize;
-            ramp[step.min(ramp.len() - 1)]
+            let step = ((v / full).min(1.0) * top).round();
+            ramp[(step as usize).min(ramp.len() - 1)]
         })
         .collect()
 }
@@ -695,7 +727,7 @@ fn sort_header<'a>(cols: impl Iterator<Item = &'a Column>, sort: &str) -> Row<'s
 /// Any reason it cannot be done -- a terminal that reports no pixel size, an
 /// absurd cell, a write that failed -- falls back to the character ramp for
 /// that frame rather than leaving the column blank.
-fn send_trend(app: &mut App, rows: &[Flat], start: usize, end: usize) -> bool {
+fn send_trend(app: &mut App, rows: &[Flat], start: usize, end: usize, full: f64) -> bool {
     let Some(cell) = kgp::cell_px() else {
         return false;
     };
@@ -720,7 +752,7 @@ fn send_trend(app: &mut App, rows: &[Flat], start: usize, end: usize) -> bool {
     } else {
         [0xbc, 0xbc, 0xbc]
     };
-    let Some(img) = kgp::paint(&bands, TREND as u32, cell, colour) else {
+    let Some(img) = kgp::paint(&bands, TREND as u32, cell, colour, full) else {
         return false;
     };
     let rows_tall = match u32::try_from(bands.len()) {
@@ -757,7 +789,10 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &mut App, rows: &[Flat]) {
         .skip(skip)
         .take(fit)
         .any(|c| c.label == "spark");
-    let trend_img = spark_shown && end > start && send_trend(app, rows, start, end);
+    // One scale for every row of the frame, so the column is comparable down
+    // the table and not just within a row.
+    let full = trend_scale(Sort::from_label(&app.view.sort), rows, &app.history);
+    let trend_img = spark_shown && end > start && send_trend(app, rows, start, end, full);
     let mut table_rows = Vec::new();
     for (i, r) in rows[start..end].iter().enumerate() {
         let mark = if r.expandable {
@@ -784,7 +819,7 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &mut App, rows: &[Flat]) {
                 };
                 let text = match (&placed, c.label) {
                     (Some(p), _) => p.clone(),
-                    (None, "spark") => spark(app.history.get(&r.id)),
+                    (None, "spark") => spark(app.history.get(&r.id), full),
                     _ => (c.fmt)(&name, r.nproc, &r.metrics),
                 };
                 let cell = Cell::from(text);
@@ -1479,26 +1514,87 @@ mod tests {
         }
     }
 
-    /// The trend answers "when was this row busy", so it scales to the row's
-    /// own peak. A row that has been flat at zero has a history and it is
-    /// flat; a row with none yet is blank, which is heft's no-figure cell.
+    /// The trend is drawn against a scale the whole frame shares, not against
+    /// each row's own peak. A row that has been flat at zero has a history and
+    /// it is flat; a row with none yet is blank, which is heft's no-figure
+    /// cell.
     #[test]
-    fn a_trend_draws_against_the_rows_own_peak() {
+    fn a_trend_draws_against_the_frames_scale() {
         let buf = |v: &[f64]| VecDeque::from(v.to_vec());
         let ramp = glyph::spark_ramp();
         let low = ramp[0];
         let high = ramp[ramp.len() - 1];
 
-        assert_eq!(spark(None), "");
-        assert_eq!(spark(Some(&buf(&[]))), "");
+        assert_eq!(spark(None, 100.0), "");
+        assert_eq!(spark(Some(&buf(&[])), 100.0), "");
         // Steadily zero is flat at the bottom, not blank.
-        assert_eq!(spark(Some(&buf(&[0.0, 0.0]))), format!("{low}{low}"));
-        // The peak tops out and the quiet samples sit at the floor, whatever
-        // the absolute scale is -- 400% CPU and 4% draw the same shape.
-        assert_eq!(spark(Some(&buf(&[0.0, 400.0]))), format!("{low}{high}"));
-        assert_eq!(spark(Some(&buf(&[0.0, 4.0]))), format!("{low}{high}"));
+        assert_eq!(spark(Some(&buf(&[0.0, 0.0])), 100.0), format!("{low}{low}"));
+        // The reported defect: against its own peak a row flat at 4% drew
+        // every sample full height, so most of the column was solid and two
+        // rows could not be told apart.
+        assert_eq!(
+            spark(Some(&buf(&[4.0; 3])), 100.0),
+            format!("{low}{low}{low}")
+        );
+        // 400% and 4% are now different pictures, which is the point.
+        assert_eq!(
+            spark(Some(&buf(&[0.0, 400.0])), 100.0),
+            format!("{low}{high}")
+        );
+        assert_eq!(spark(Some(&buf(&[0.0, 4.0])), 100.0), format!("{low}{low}"));
+        // Full scale tops out, and above it pins rather than rescaling.
+        assert_eq!(spark(Some(&buf(&[100.0])), 100.0), high.to_string());
+        // Nothing on screen has a figure yet: the floor, not a divide by zero.
+        assert_eq!(spark(Some(&buf(&[5.0])), 0.0), low.to_string());
         // One sample per value, so the cell never outgrows the column.
-        assert_eq!(spark(Some(&buf(&[1.0; TREND]))).chars().count(), TREND);
+        assert_eq!(
+            spark(Some(&buf(&[1.0; TREND])), 100.0).chars().count(),
+            TREND
+        );
+    }
+
+    fn flat_row(id: &str, trimmable: bool) -> Flat {
+        Flat {
+            id: id.to_string(),
+            depth: 0,
+            name: id.to_string(),
+            nproc: 1,
+            metrics: Metrics::default(),
+            expandable: false,
+            trimmable,
+            search: None,
+        }
+    }
+
+    /// A percentage is full at 100 whatever else is on screen. Everything else
+    /// scales to the heaviest entry -- never to Host, which is the sum of the
+    /// machine and would draw every real row flat along the bottom.
+    #[test]
+    fn the_scale_is_the_metric_s_own_or_the_heaviest_entry() {
+        let mut history = HashMap::new();
+        history.insert("host".to_string(), VecDeque::from(vec![9_000.0]));
+        history.insert("a".to_string(), VecDeque::from(vec![10.0, 40.0]));
+        history.insert("b".to_string(), VecDeque::from(vec![25.0]));
+        let rows = vec![
+            flat_row("host", false),
+            flat_row("a", true),
+            flat_row("b", true),
+        ];
+        assert_eq!(
+            trend_scale(Sort::from_label("core"), &rows, &history),
+            100.0,
+            "a percentage does not depend on what else is drawn"
+        );
+        assert_eq!(
+            trend_scale(Sort::from_label("pss"), &rows, &history),
+            40.0,
+            "the heaviest entry, and Host is not one"
+        );
+        assert_eq!(
+            trend_scale(Sort::from_label("pss"), &rows, &HashMap::new()),
+            0.0,
+            "nothing measured yet"
+        );
     }
 
     /// A clipped number is a wrong number: at 50 columns ratatui drew `20.1G`
@@ -1888,8 +1984,8 @@ mod tests {
             detail: false,
             paused: None,
             history: HashMap::new(),
-            sorted_by: String::new(),
             kgp: None,
+            sorted_by: String::new(),
         }
     }
 

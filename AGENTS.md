@@ -292,6 +292,17 @@ time, which is why `i` clears `help`.
 
 ## Columns
 
+`ui::trend_scale` gives a frame one scale for every row: `Sort::trend_full`
+where the metric is a percentage, else the largest history among `trimmable`
+rows — the same "is this an entry" test `--top` uses, which is what keeps Host
+out of it, since scaling against the machine's own sum draws every real row
+flat on the floor. Aggregate rows still draw and pin to the top. Against each
+row's own peak instead, which is what this did first, a row flat at 2% had
+every sample equal to its own maximum and drew nine full-height marks, so most
+of the column was solid and two rows could not be compared. `kgp::sample_y`
+and `ui::spark` share that scale so the image and the ramp say the same thing;
+`kgp` draws a line joined to the previous sample rather than a filled bar.
+
 `spark` is the one column whose cell is not a function of the current sample,
 so its `Column::fmt` returns empty and `ui::draw` substitutes `ui::spark` from
 `App::history` — a `VecDeque` per row id, `TREND` deep, appended once per

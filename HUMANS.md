@@ -408,12 +408,25 @@ so a process that spiked to 400% and went quiet looked exactly like one that
 was idle throughout — by the time you read the row, the spike had already been
 overwritten.
 
-It scales to that row's own peak, so the shape answers "when was this row
-busy", not "how does it compare to the machine": a row that touched 400% and a
-row that touched 4% both draw a full block at their own maximum. A row that has
-been flat at zero draws a flat line along the bottom, because that is a history
-and it is flat. A row that has only just appeared is blank — heft's usual
-blank, no figure yet.
+Every row in a frame is drawn against one scale, so the column reads down the
+table as well as across a row. Where the metric has a full scale of its own —
+`%CORE`, `%MACH`, `gfx%`, `compute%` and the three stall columns are all
+percentages — that is 100, and a row above it pins to the top rather than
+rescaling every row beside it. For bytes, counts and rates there is no such
+number, so the scale is the heaviest row on screen that is an *entry*: Host,
+the User rows and the folder headers are sums, and scaling against a sum would
+draw everything real flat along the bottom. It is the same "is this an entry"
+test `--top` uses. Those aggregate rows still draw, pinned at the top.
+
+A row that has been flat at zero draws a flat line along the bottom, because
+that is a history and it is flat. A row that has only just appeared is blank —
+heft's usual blank, no figure yet.
+
+Scaling against each row's own peak is what this did first, and it was wrong
+in a way that made the column useless: a row sitting flat at 2% had every
+sample equal to its own maximum, so it drew nine full-height marks. "Flat and
+idle" and "flat and busy" came out as opposites, most of the column was a
+solid block, and no two rows could be compared at all.
 
 Changing the sort column clears it. The buffer would otherwise hold two
 different metrics in two different units and draw them as one picture.
@@ -427,6 +440,11 @@ using the kitty graphics protocol — so it needs kitty or ghostty, and it is
 opt-in rather than detected, because `TERM` says which terminal you are on and
 not what that terminal implements. You get pixel resolution instead of eight
 quantised steps, and it is immune to the font gap `--glyphs legacy` exists for.
+
+It is a line, not a filled bar: the shape is the whole point of the column, and
+ink underneath the shape carries none of it. Marks are joined to the one before
+them, so nine samples read as one line moving rather than nine unrelated
+dashes.
 
 Where the terminal is on this machine the pixels go through shared memory and
 the escape carries only a name, so the column costs tens of bytes a sample.

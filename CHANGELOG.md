@@ -6,8 +6,18 @@
 
 ### Added
 
+- TREND is drawn against one scale for the whole frame rather than against
+  each row's own peak: a percentage is full at 100, and everything else scales
+  to the heaviest row that is an entry rather than a sum. Against its own peak
+  a row sitting flat at 2% had every sample equal to its own maximum, so it
+  drew nine full-height marks — "flat and idle" and "flat and busy" were
+  opposites, most of the column was a solid block, and no two rows could be
+  compared at all. It still follows the sort column and still clears when that
+  changes.
+
 - `--trend kitty` draws TREND as a kitty-graphics-protocol image rather than
-  nine block characters: pixel resolution instead of eight quantised steps,
+  nine block characters, as a line joined sample to sample rather than a
+  filled bar: pixel resolution instead of eight quantised steps,
   and no dependence on the font at all. One image covers the whole column —
   the protocol's row diacritics index into it — so a frame is one escape
   rather than one per row. Where the terminal is local the pixels travel

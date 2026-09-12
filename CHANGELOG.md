@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Fixed
+
+- VRAM and GTT were blank on an amdgpu older than its switch to
+  `drm_show_memory_stats`, while gfx% and compute% beside them worked. Those
+  kernels publish the region sizes as `drm-memory-vram` and `drm-memory-gtt`,
+  the driver's own pre-standard pair, and heft matched only the standardised
+  `drm-resident-*`. It now takes the first tier a client publishes —
+  `drm-resident-*`, then `drm-total-*`, then `drm-memory-*` — so a current
+  kernel still reports what the region is actually holding rather than what
+  may be evicted, and an older one reports what it has. Measured on a
+  4750G. `drm-total-*` had been documented as the fallback and was never
+  matched either.
+
 ## 0.6.0 - 2026-09-09
 
 ### Added

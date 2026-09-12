@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.6.1 - 2026-09-12
+
 ### Fixed
 
 - VRAM and GTT were blank on an amdgpu older than its switch to

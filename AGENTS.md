@@ -507,7 +507,7 @@ against `--interval`: it is documented as "at least `--interval`", so
 
 `ui::columns_that_fit` lays out only columns whose full width fits the pane.
 ratatui clips a cell that runs out of room, so a 50-column terminal drew
-`20.1G` as `2`; a column is now drawn whole or dropped, and `[` / `]` reach the
+`20.1G` as `2`; a column is now drawn whole or dropped, and `←` / `→` reach the
 rest. At least one column always survives, and the name column is a label
 rather than a figure, so cutting it misleads nobody.
 

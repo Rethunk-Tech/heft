@@ -376,23 +376,34 @@ impl Sort {
     /// The next visible column, wrapping. Cycling onto a hidden one would move
     /// the sort somewhere the reader cannot watch it happen.
     pub(crate) fn next(self, cols: &Columns) -> Self {
-        let start = cols
-            .0
-            .iter()
-            .position(|&i| i == self.0)
-            // A saved view may legally sort by a column it also hides; the
-            // cycle then restarts at the first visible one.
-            .map_or(0, |p| p + 1);
+        self.step(cols, false)
+    }
+
+    /// `next` in the other direction.
+    pub(crate) fn prev(self, cols: &Columns) -> Self {
+        self.step(cols, true)
+    }
+
+    fn step(self, cols: &Columns, back: bool) -> Self {
+        let n = cols.0.len();
+        // A saved view may legally sort by a column it also hides; the cycle
+        // then restarts at the first visible one, or the last going back.
+        let start = match (cols.0.iter().position(|&i| i == self.0), back) {
+            (Some(p), false) => p + 1,
+            (Some(p), true) => p + n - 1,
+            (None, false) => 0,
+            (None, true) => n - 1,
+        };
         // Skips a column that cannot be ordered — `spark` draws a trend, and
         // there is no ordering of pictures. `name` has no numeric key either
         // but sorts alphabetically, so it stays in the cycle.
-        for step in 0..cols.0.len() {
-            let i = cols.0[(start + step) % cols.0.len()];
+        for k in 0..n {
+            let i = cols.0[if back { start + n - k } else { start + k } % n];
             if i == 0 || COLUMNS[i].key.is_some() {
                 return Self(i);
             }
         }
-        Self(cols.0[start % cols.0.len()])
+        Self(cols.0[start % n])
     }
 }
 
@@ -1277,6 +1288,10 @@ mod tests {
         let mut expect: Vec<Sort> = all[1..].to_vec();
         expect.push(all[0]);
         assert_eq!(seen, expect);
+        for want in seen.iter().rev().skip(1) {
+            s = s.prev(&cols);
+            assert_eq!(s, *want);
+        }
     }
 
     /// `c` in the TUI can see `spark`, so the skip has to hold there too --

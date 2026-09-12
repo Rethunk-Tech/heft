@@ -277,10 +277,10 @@ virtualise those, so nothing heft could read there would be namespace-local.
 | `q` / `Esc` / `Ctrl-C` | quit |
 | `↑` `↓` / `j` `k` | move the cursor |
 | `PgUp` `PgDn` / `Home` `End` | page or jump the cursor |
-| `←` `→` / `h` `l` / Enter / Space | collapse or expand |
-| `[` `]` / `<` `>` | scroll columns when the terminal is narrower than the table |
+| Enter / Space | collapse or expand |
+| `←` `→` / `h` `l` | scroll columns when the terminal is narrower than the table |
+| `Shift-←` `Shift-→` / `c` | previous or next sort column (default PSS descending); `c` is for terminals that send Shift-arrow as a bare arrow, such as the Linux console |
 | `/` | filter by regex on the name (Enter applies, Esc cancels) |
-| `c` | cycle the sort column (default PSS descending) |
 | `d` | reverse the sort direction |
 | `H` | hide the current sort column (`name` is refused) |
 | `u` | unhide the last hidden column |
@@ -308,7 +308,7 @@ selected.
 `i` opens a detail pane for the row under the cursor. It lists **every**
 column for that row — the ones `H` hid and the ones the terminal is too narrow
 to reach included — so you can read the whole row at once rather than scrolling
-it past with `[` and `]`. A blank there is the blank the table would show: no
+it past with `←` and `→`. A blank there is the blank the table would show: no
 figure exists, which is not a zero.
 
 When the cursor is on a single process it also prints what that process *is*,
@@ -680,7 +680,7 @@ restores on the way out. Never `/proc`, sysfs, or cgroup files.
 A column is drawn whole or not at all. Where the terminal cannot hold one at
 its full width it is left off rather than cut short, because a clipped `20.1G`
 reads as `2` and a wrong figure is the one thing heft will not print — the same
-rule as the blank cells. `[` and `]` reach the columns that were left off.
+rule as the blank cells. `←` and `→` reach the columns that were left off.
 
 The table has twenty columns and most terminals cannot hold them. `H` hides
 the column you are sorting by (and moves the sort to the next visible one in

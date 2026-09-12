@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Changed
+
+- TUI keys: Enter and Space alone expand and collapse; `←` `→` (and `h` `l`)
+  scroll columns, replacing `[` `]` and `<` `>`; `Shift-←` `Shift-→` step the
+  sort column back and forward, with `c` kept for terminals that send
+  Shift-arrow as a bare arrow.
+
+### Added
+
+- The TUI footer shows `heft <version>` bottom-right when the footer leaves
+  room for it.
+
 ## 0.7.0 - 2026-09-12
 
 ### Added

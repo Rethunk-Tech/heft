@@ -677,12 +677,20 @@ fn handle_key(
                 app.cursor += 1;
             }
         }
-        KeyCode::Left | KeyCode::Char('h') => {
-            if let Some(r) = rows.get(app.cursor) {
-                app.expand.remove(&r.id);
-            }
+        // `c` stays beside these: the Linux console and some multiplexers send
+        // Shift-arrow as a bare arrow, which would scroll instead.
+        KeyCode::Left | KeyCode::Right if mods.contains(KeyModifiers::SHIFT) => {
+            let s = Sort::from_label(&app.view.sort);
+            let s = if code == KeyCode::Left {
+                s.prev(&app.cols)
+            } else {
+                s.next(&app.cols)
+            };
+            app.view.sort = s.label().into();
         }
-        KeyCode::Right | KeyCode::Char('l' | ' ') | KeyCode::Enter => {
+        KeyCode::Left | KeyCode::Char('h') => app.col_off = app.col_off.saturating_sub(1),
+        KeyCode::Right | KeyCode::Char('l') => app.col_off = app.col_off.saturating_add(1),
+        KeyCode::Char(' ') | KeyCode::Enter => {
             if let Some(r) = rows.get(app.cursor)
                 && r.expandable
                 && !app.expand.insert(r.id.clone())
@@ -696,8 +704,6 @@ fn handle_key(
         }
         KeyCode::Home => app.cursor = 0,
         KeyCode::End => app.cursor = rows.len().saturating_sub(1),
-        KeyCode::Char('[' | '<') => app.col_off = app.col_off.saturating_sub(1),
-        KeyCode::Char(']' | '>') => app.col_off = app.col_off.saturating_add(1),
         _ => {}
     }
     Ok(false)
@@ -721,7 +727,7 @@ fn refresh_columns(app: &mut App) {
 /// `20.1G` as `2` and `548.5` as `5` with nothing to say they had been cut —
 /// heft showing a figure that is wrong, which is the one thing every other
 /// rule in it avoids. A column is now either drawn whole or not drawn, and
-/// `[` / `]` reach the ones left off, which is what those keys are for.
+/// `←` / `→` reach the ones left off, which is what those keys are for.
 ///
 /// At least one column always survives. The name column is a label rather than
 /// a figure, so a cut name misleads nobody; `once::trunc` already ellipsises
@@ -1448,7 +1454,7 @@ fn help_text() -> String {
 
 /// Every column for one row, hidden ones included, plus what the row *is*
 /// when it is a single process. A narrow terminal shows six of twenty columns
-/// and `[` `]` reaches the rest one screen at a time; this reads them all at
+/// and `←` `→` reach the rest one screen at a time; this reads them all at
 /// once for the row under the cursor, which is the question a scroll is
 /// usually standing in for. A blank stays blank here for the same reason it
 /// does in the table: no figure exists, which is not a zero.
@@ -1859,7 +1865,7 @@ mod tests {
 
     /// A clipped number is a wrong number: at 50 columns ratatui drew `20.1G`
     /// as `2`. Every column the layout keeps must have room for its whole
-    /// width, and the ones it drops stay reachable with `[` / `]`.
+    /// width, and the ones it drops stay reachable with `←` / `→`.
     #[test]
     fn a_column_is_drawn_whole_or_not_at_all() {
         let cols = Columns::for_tui(&View::default());

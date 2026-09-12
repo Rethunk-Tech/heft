@@ -17,6 +17,11 @@
 
 ### Fixed
 
+- Host, the User rows and the folder headers have no TREND. They are sums,
+  and the scale the trend is drawn against is built from the entries, so a
+  sum has no figure on it: drawn anyway they sat pinned to the ceiling saying
+  only that they were the total, which the header already draws to scale.
+
 - TREND is drawn against one scale for the whole frame rather than against
   each row's own peak: a percentage is full at 100, and everything else scales
   to the heaviest row that is an entry rather than a sum. Against its own peak

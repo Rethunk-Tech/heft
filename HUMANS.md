@@ -416,7 +416,13 @@ rescaling every row beside it. For bytes, counts and rates there is no such
 number, so the scale is the heaviest row on screen that is an *entry*: Host,
 the User rows and the folder headers are sums, and scaling against a sum would
 draw everything real flat along the bottom. It is the same "is this an entry"
-test `--top` uses. Those aggregate rows still draw, pinned at the top.
+test `--top` uses.
+
+Those rows get no trend at all — Host, the Users and the folder headers are
+blank there, which is heft's ordinary blank: no figure exists, because the
+scale is built out of the entries and a sum is not one of them. Drawn against
+it, Host sat pinned to the ceiling saying only that it was the total, which
+the header already draws to scale and in more detail.
 
 A row that has been flat at zero draws a flat line along the bottom, because
 that is a history and it is flat. A row that has only just appeared is blank —

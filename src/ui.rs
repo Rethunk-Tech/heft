@@ -739,7 +739,7 @@ fn send_trend(app: &mut App, rows: &[Flat], start: usize, end: usize, full: f64)
     };
     let bands: Vec<Option<&VecDeque<f64>>> = rows[start..end]
         .iter()
-        .map(|r| history.get(&r.id))
+        .map(|r| r.trimmable.then(|| history.get(&r.id)).flatten())
         .collect();
     if bands.len() > kgp::MAX_BANDS {
         return false;
@@ -812,13 +812,18 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &mut App, rows: &[Flat]) {
                 // The one column whose value is not a function of this
                 // sample, so `Column::fmt` (which sees only this sample)
                 // cannot produce it.
-                let placed = if c.label == "spark" && trend_img {
+                let placed = if c.label == "spark" && trend_img && r.trimmable {
                     kgp::placeholder(i, TREND)
                 } else {
                     None
                 };
                 let text = match (&placed, c.label) {
                     (Some(p), _) => p.clone(),
+                    // Blank on a row that is not an entry. The scale is built
+                    // from entries, so a sum has no figure on it -- Host would
+                    // sit pinned to the ceiling saying only that it is the
+                    // total, which the header already draws to scale.
+                    (None, "spark") if !r.trimmable => String::new(),
                     (None, "spark") => spark(app.history.get(&r.id), full),
                     _ => (c.fmt)(&name, r.nproc, &r.metrics),
                 };
@@ -1564,6 +1569,23 @@ mod tests {
             trimmable,
             search: None,
         }
+    }
+
+    /// A sum is not on the scale the entries are drawn against, so it gets
+    /// heft's blank rather than a mark pinned to the ceiling.
+    #[test]
+    fn an_aggregate_row_has_no_trend() {
+        let history = HashMap::from([
+            ("host".to_string(), VecDeque::from(vec![50.0])),
+            ("a".to_string(), VecDeque::from(vec![50.0])),
+        ]);
+        let rows = [flat_row("host", false), flat_row("a", true)];
+        let bands: Vec<Option<&VecDeque<f64>>> = rows
+            .iter()
+            .map(|r| r.trimmable.then(|| history.get(&r.id)).flatten())
+            .collect();
+        assert!(bands[0].is_none(), "Host is a sum, not an entry");
+        assert!(bands[1].is_some());
     }
 
     /// A percentage is full at 100 whatever else is on screen. Everything else

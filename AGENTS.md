@@ -349,8 +349,8 @@ and `ui::spark` share that scale so the image and the ramp say the same thing;
 `spark` is the one column whose cell is not a function of the current sample,
 so its `Column::fmt` returns empty and `ui::draw` substitutes `ui::spark` from
 `App::history` — a `VecDeque` per row id, `App::trend_w` deep (`name` first
-grows to the longest row title in the tree, TREND takes the slack after that,
-and `name` absorbs it all only when TREND is off screen), appended once per
+grows to the longest row title in the tree, TREND takes the slack after that up to
+`TREND_MAX`, and `name` absorbs whatever is left), appended once per
 published sample rather than once per frame. `Sort::value` gives the buffer the
 same number the sort uses, so the two cannot disagree. The buffers clear when
 the sort label changes (two units in one picture) and rows that stop appearing

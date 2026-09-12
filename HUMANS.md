@@ -419,8 +419,7 @@ blank is not a zero: those rows sort last whichever way the sort runs.
 `TREND` (`spark`) draws the recent history of whatever column you are
 sorting by, one sample per cell, as rising blocks. It is nine cells at its
 narrowest. Spare width goes to NAME first, until the longest name in the tree
-fits, and the rest to TREND, so hiding columns buys a longer history rather
-than empty space beside the names. Every other column is the current interval only,
+fits, then to TREND up to 30 cells, and anything past that back to NAME. Every other column is the current interval only,
 so a process that spiked to 400% and went quiet looked exactly like one that
 was idle throughout — by the time you read the row, the spike had already been
 overwritten.

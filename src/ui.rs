@@ -119,6 +119,11 @@ const SIXEL_MARK: Color = Color::Rgb(0, 0, 1);
 /// first frame has measured the table.
 const TREND: usize = 9;
 
+/// The widest TREND is drawn. Uncapped, a table with a few columns hidden gave
+/// it every spare cell -- about 55 on a 137-column terminal -- which is a
+/// minute of history nobody reads across, taken from the name column beside it.
+const TREND_MAX: u16 = 30;
+
 /// How the TREND column is drawn. Resolved in `main` from `--trend`, never
 /// detected: `TERM` names a terminal, not what it implements.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -928,7 +933,7 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &mut App, rows: &[Flat]) {
     let trend_cells = shown
         .iter()
         .find(|c| c.label == "spark")
-        .map(|c| c.width + slack - name_extra);
+        .map(|c| (c.width + slack - name_extra).min(TREND_MAX));
     if let Some(w) = trend_cells.map(usize::from) {
         if w < app.trend_w {
             for b in app.history.values_mut() {
@@ -1033,8 +1038,8 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &mut App, rows: &[Flat]) {
         .iter()
         .map(|c| match (c.label, trend_cells) {
             ("spark", Some(w)) => Constraint::Length(w),
-            ("name", None) => Constraint::Min(c.width),
-            ("name", Some(_)) => Constraint::Length(c.width + name_extra),
+            // Min, so whatever TREND_MAX leaves over lands on the name.
+            ("name", _) => Constraint::Min(c.width + name_extra),
             _ => Constraint::Length(c.width),
         })
         .collect();

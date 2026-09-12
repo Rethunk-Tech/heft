@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- TREND stops at 30 cells; spare width past that widens NAME instead.
+
 ## 0.8.0 - 2026-09-12
 
 ### Added

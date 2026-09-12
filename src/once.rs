@@ -1,7 +1,8 @@
 use std::cmp::Ordering;
 use std::io::{self, Write};
 use std::time::Duration;
-use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+use unicode_truncate::UnicodeTruncateStr;
+use unicode_width::UnicodeWidthStr;
 
 use crate::config::{self, View};
 use crate::proc;
@@ -972,24 +973,14 @@ fn write_rows(out: &mut impl Write, cols: &Columns, rows: &[TableRow]) -> io::Re
 /// name is one char per two columns, and counting chars pushed every column
 /// right of the name out by the difference. The ellipsis is one column, so it
 /// costs one; a wide character that will not fit in what is left is dropped
-/// rather than half-drawn.
+/// rather than half-drawn. Cutting on grapheme clusters rather than chars is
+/// what keeps a combining mark attached to the base it modifies.
 fn trunc(s: &str, width: usize) -> String {
     if s.width() <= width {
         return s.to_string();
     }
-    let budget = width.saturating_sub(1);
-    let mut out = String::new();
-    let mut used = 0;
-    for ch in s.chars() {
-        let w = ch.width().unwrap_or(0);
-        if used + w > budget {
-            break;
-        }
-        out.push(ch);
-        used += w;
-    }
-    out.push(crate::glyph::ellipsis());
-    out
+    let (head, _) = s.unicode_truncate(width.saturating_sub(1));
+    format!("{head}{}", crate::glyph::ellipsis())
 }
 /// 1024-scale suffix, or None below 1 KiB where the caller decides: a byte
 /// count prints exactly, a rate rounds.
@@ -1222,6 +1213,22 @@ mod tests {
         }
         // A name that already fits keeps every character.
         assert_eq!(trunc("\u{65e5}\u{672c}", 4), "\u{65e5}\u{672c}");
+
+        // A cluster is cut whole. Summing each char's own width, a joiner
+        // and its partner were two separate steps, so the budget could run
+        // out between them and leave the name ending on a joiner whose
+        // partner had been dropped -- which is also the width the early
+        // return above disagreed with, since a ZWJ sequence measures 2 as a
+        // string and 6 char by char.
+        let name = "\u{1f468}\u{200d}\u{1f469}\u{200d}\u{1f467}abc";
+        for w in 2..=4 {
+            let cut = trunc(name, w);
+            let head = &cut[..cut.len() - crate::glyph::ellipsis().len_utf8()];
+            assert!(
+                !head.ends_with('\u{200d}'),
+                "{w} columns left a dangling joiner: {cut:?}"
+            );
+        }
 
         // Every rendered line is the same column count whatever the name is.
         let cols = every_column();

@@ -304,6 +304,7 @@ dependencies = [
  "regex-lite",
  "serde",
  "serde_json",
+ "unicode-truncate",
  "unicode-width",
 ]
 

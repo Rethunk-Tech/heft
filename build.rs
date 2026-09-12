@@ -1,5 +1,6 @@
 use std::fmt::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use clap::CommandFactory;
 use clap_complete::{Shell, generate_to};
@@ -58,14 +59,60 @@ of them names a UTF\\-8 charmap, ASCII substitutes otherwise.
     s
 }
 
+fn git(args: &[&str]) -> Option<String> {
+    let out = Command::new("git").args(args).output().ok()?;
+    out.status
+        .success()
+        .then(|| String::from_utf8_lossy(&out.stdout).trim().to_owned())
+}
+
+/// `0.7.0~1a2b3c4`, so two builds of main can be told apart in a bug report.
+///
+/// Git is asked only when this crate is the top of its own checkout: an AUR
+/// `heft` build extracts the tag tarball inside the AUR package's clone, and
+/// `rev-parse` there answers with that repository's commit. A tarball has no
+/// `.git` of its own, so `.git-sha` carries the commit through `export-subst`;
+/// unsubstituted it reads `$Format:%H$`, fails the hex check, and the version
+/// is the bare release number.
+fn version() -> String {
+    let root = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR");
+    let own = git(&["rev-parse", "--show-toplevel"])
+        .is_some_and(|t| Path::new(&t).canonicalize().ok() == Path::new(&root).canonicalize().ok());
+    let sha = if own {
+        // The reflog is appended on every commit, checkout and reset, so it
+        // is the one file that moves whenever HEAD does.
+        for p in ["logs/HEAD", "HEAD"] {
+            if let Some(p) = git(&["rev-parse", "--git-path", p]).filter(|p| Path::new(p).exists())
+            {
+                println!("cargo::rerun-if-changed={p}");
+                break;
+            }
+        }
+        git(&["rev-parse", "HEAD"])
+    } else {
+        println!("cargo::rerun-if-changed=.git-sha");
+        std::fs::read_to_string(".git-sha").ok()
+    };
+    let pkg = env!("CARGO_PKG_VERSION");
+    match sha.as_deref().map(str::trim) {
+        Some(s) if s.len() >= 7 && s.bytes().all(|b| b.is_ascii_hexdigit()) => {
+            format!("{pkg}~{}", &s[..7])
+        }
+        _ => pkg.to_owned(),
+    }
+}
+
 fn main() -> std::io::Result<()> {
     println!("cargo::rerun-if-changed=src/cli.rs");
     println!("cargo::rerun-if-changed=src/keys.rs");
 
+    let version = version();
+    println!("cargo::rustc-env=HEFT_VERSION={version}");
+
     let out = PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR")).join("assets");
     std::fs::create_dir_all(&out)?;
 
-    let mut cmd = Cli::command();
+    let mut cmd = Cli::command().version(&*version.leak());
     for shell in [Shell::Bash, Shell::Zsh, Shell::Fish] {
         generate_to(shell, &mut cmd, "heft", &out)?;
     }

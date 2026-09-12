@@ -1058,7 +1058,7 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &mut App, rows: &[Flat]) {
     render_rule(f, chunks[3]);
     // Drawn only into space the footer leaves, so a bug report's screenshot
     // names its build without ever costing a key hint or the filter text.
-    let label = concat!("heft ", env!("CARGO_PKG_VERSION"), " ");
+    let label = concat!("heft ", env!("HEFT_VERSION"), " ");
     let fits = Line::from(footer.as_str()).width() + label.len() < chunks[4].width as usize;
     f.render_widget(Paragraph::new(footer), chunks[4]);
     if fits {

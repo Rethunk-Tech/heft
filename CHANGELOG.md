@@ -11,8 +11,9 @@
 
 ### Added
 
-- The TUI footer shows `heft <version>` bottom-right when the footer leaves
-  room for it.
+- The version carries the commit, `0.7.0~1a2b3c4`, on `--version`, the man
+  page, and bottom-right of the TUI footer when the footer leaves room for it.
+  Tag tarballs carry it too, through `.git-sha`.
 
 ## 0.7.0 - 2026-09-12
 

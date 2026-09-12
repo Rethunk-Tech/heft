@@ -31,7 +31,9 @@ pub(crate) enum Trend {
 #[derive(Parser)]
 #[command(
     name = "heft",
-    version,
+    // `build.rs` sets HEFT_VERSION for the crate but compiles this file
+    // before it has, so it falls back here and sets the man page's itself.
+    version = option_env!("HEFT_VERSION").unwrap_or(env!("CARGO_PKG_VERSION")),
     about = "Read-only Linux application-weight process monitor"
 )]
 pub(crate) struct Cli {

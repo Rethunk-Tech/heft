@@ -1,0 +1,2 @@
+# A tag tarball has no .git, so git archive writes the commit into this file.
+.git-sha export-subst

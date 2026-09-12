@@ -12,7 +12,8 @@ Read-only Linux process monitor. Binary name `heft`.
 src/cli.rs           clap Cli; build.rs includes it so completions/man cannot drift
 src/main.rs          dispatch: TUI default, --once, --json
 src/lib.rs           modules
-build.rs             clap_complete + clap_mangen → OUT_DIR/assets (build-deps only)
+build.rs             clap_complete + clap_mangen → OUT_DIR/assets (build-deps only); HEFT_VERSION = version~sha
+.git-sha             export-subst commit for tag tarballs, which have no .git for build.rs to ask
 demo.tape            vhs script for README.md's demo.gif; regenerate with `vhs demo.tape`
 src/types.rs         Process, Metrics, HostTree, JSON shape
 src/proc.rs          every visible PID; blank metrics on EACCES

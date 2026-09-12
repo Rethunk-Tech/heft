@@ -161,6 +161,12 @@ fn config_dir() -> PathBuf {
     base.join("heft")
 }
 
+/// The directory both config files live in, for messages that tell a user
+/// where to write one.
+pub(crate) fn view_dir() -> String {
+    config_dir().join("grouping.json").display().to_string()
+}
+
 pub(crate) fn view_path() -> PathBuf {
     config_dir().join("view.json")
 }

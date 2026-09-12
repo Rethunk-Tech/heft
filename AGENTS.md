@@ -28,6 +28,7 @@ src/containers.rs    GET-only docker/podman; project vs per-container
 src/group.rs         Host → User → Applications | User Services | Containers, System
 src/config.rs        XDG view.json (sort, filter, hide_columns, column_order; write on save) and grouping.json (read-only); both accept // and /* */
 src/once.rs          columns, tree ordering, table and JSON
+src/explain.rs       --explain PID: resolved placement and the grouping.json key
 src/ui.rs            ratatui header + tree table
 src/tty.rs           panic hook + signal handler; restores the terminal
 src/glyph.rs         unicode vs ascii bar/rule/marker characters; resolved once
@@ -363,6 +364,18 @@ workdir and bind-mount inference in `containers::insert_resolved`.
 
 Malformed JSON or an unknown key (`serde(deny_unknown_fields)`) warns once on
 stderr from `config::load_overrides` and grouping continues built-in.
+
+`--explain <PID>` (`src/explain.rs`) reports the resolved placement and the
+identity that is the override key, because a wrong key is silent: an identity
+matching nothing is never consulted, and nothing else in heft shows what a
+process resolved to. It reads the verdict off a built tree rather than
+narrating which rule fired — a reason string threaded through grouping would
+be paid per process per tick to serve one invocation. `locate` recurses
+through `ProcNode::children`, since the pid asked about is usually a folded
+worker rather than a top-level entry, and it offers no key for a container or
+System row because `override_place` cannot move one. It is exempt from
+`main`'s stdout-is-a-terminal check for the same reason `--once` and `--json`
+are.
 
 ## Sampler
 

@@ -25,7 +25,9 @@ fn main() -> ExitCode {
     // got, and surfacing that at the end of a `/proc` walk would burn a whole
     // `--interval` first. Non-zero, and no quiet fall back to `--once`, which
     // would surprise anyone piping heft expecting a TUI.
-    if !cli.once && !cli.json && !std::io::stdout().is_terminal() {
+    // `--explain` is plain text on stdout like the other two, so it is exempt
+    // for the same reason they are: it is not the TUI.
+    if !cli.once && !cli.json && cli.explain.is_none() && !std::io::stdout().is_terminal() {
         eprintln!(
             "heft: the TUI needs a terminal on stdout. Use --once for one table, or --json for one JSON document."
         );
@@ -116,12 +118,16 @@ fn main() -> ExitCode {
     // nodes, which the JSON tree has, where "keep the ancestors" had nothing
     // to mean there.
     view.users = cli.user.iter().map(|who| check_user(who)).collect();
-    let result = match (cli.json, cli.once, cli.follow) {
-        (true, _, false) => heft::once::print_json(interval, &view),
-        (true, _, true) => heft::once::follow_json(interval, pss_interval, &view),
-        (_, true, false) => heft::once::print_table(interval, &view),
-        (_, true, true) => heft::once::follow_table(interval, pss_interval, &view),
-        _ => heft::ui::run(interval, pss_interval, view, cli.trend == Trend::Kitty),
+    let result = if let Some(pid) = cli.explain {
+        heft::explain::run(pid, interval)
+    } else {
+        match (cli.json, cli.once, cli.follow) {
+            (true, _, false) => heft::once::print_json(interval, &view),
+            (true, _, true) => heft::once::follow_json(interval, pss_interval, &view),
+            (_, true, false) => heft::once::print_table(interval, &view),
+            (_, true, true) => heft::once::follow_table(interval, pss_interval, &view),
+            _ => heft::ui::run(interval, pss_interval, view, cli.trend == Trend::Kitty),
+        }
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

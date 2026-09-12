@@ -15,6 +15,13 @@
   so `--trend chars` stays the default and the flag says so. Opt-in, never
   detected: `TERM` names a terminal, not what it implements.
 
+- `--explain <PID>` says where a process landed in the tree, what identity it
+  resolved to, and the `grouping.json` snippet that moves it. The override
+  file is keyed on identities, and nothing showed you one: the `i` pane has a
+  process's cgroup, exe and cmdline but never what they resolved to, and a
+  wrong key is silent, since an identity matching nothing is never consulted.
+  On a container or a kernel thread it says no override can reach the row.
+
 - Both config files take `//` and `/* */` comments. `s` now writes `view.json`
   with a header above it explaining every key and listing the column labels,
   generated from the binary so it cannot go stale — the file explains itself

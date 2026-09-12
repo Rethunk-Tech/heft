@@ -99,6 +99,7 @@ heft --glyphs ascii       # bars and markers without block characters
 heft --glyphs legacy      # block bars, but an ASCII TREND ramp
 heft --trend kitty        # draw TREND as an image (kitty, ghostty)
 heft --proc-root /mnt/tree   # read /proc and /sys under here instead of /
+heft --explain 1234       # where this pid landed, and the key that moves it
 ```
 
 The TUI needs a terminal. `heft > file`, or heft in a script, says so and
@@ -691,7 +692,29 @@ and is ignored rather than taking the monitor down. `//` and `/* */` comments
 are allowed, and since heft never writes this file they stay where you put
 them.
 
-Keys are the identities the tree shows you, not pids or comms.
+Keys are the identities the tree shows you, not pids or comms. `heft --explain
+<PID>` tells you what a process resolved to, so you do not have to guess one:
+
+```
+$ heft --explain 156859
+pid 156859
+  EXE       /tmp/.mount_cursorgHNPBN/usr/share/cursor/cursor
+  CGROUP    0::/user.slice/.../app.slice/flatpak-session-helper.service
+  ...
+  placed    Host → damonblais (1000) → Applications
+  identity  cursor
+  instance  pgid:3743373 (3 processes)
+  override  none
+
+  "cursor" is the grouping.json key for this row.
+  To pin it to a folder, in ~/.config/heft/grouping.json:
+    { "applications": ["cursor"] }
+```
+
+A wrong key is silent — an identity that matches nothing is simply never
+consulted — so reading the real one off a running heft is the difference
+between writing the file and guessing at it. On a container or a kernel thread
+it says so instead: no override can move those rows.
 
 | key | effect |
 | --- | --- |

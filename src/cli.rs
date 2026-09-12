@@ -55,6 +55,9 @@ pub(crate) struct Cli {
     /// Characters for bars, rules and markers
     #[arg(long, value_enum, default_value_t = Glyphs::Auto, value_name = "SET")]
     pub glyphs: Glyphs,
+    /// Say where this pid landed in the tree and the grouping.json key that moves it
+    #[arg(long, value_name = "PID", conflicts_with_all = ["once", "json", "follow"])]
+    pub explain: Option<u32>,
     /// How TREND is drawn. `kitty` needs a terminal with the graphics protocol
     #[arg(long, value_enum, default_value_t = Trend::Chars, value_name = "MODE", conflicts_with_all = ["once", "json"])]
     pub trend: Trend,

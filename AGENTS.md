@@ -161,8 +161,8 @@ record.
 
 `main` resolves one `View` and hands it to whichever surface runs, so
 precedence lives in one place: `--sort`, `--asc` / `--desc`, `--filter`,
-`--user`, `--top`, `--hide` and `--order` overwrite whatever the saved view
-held, and only `sort`, `desc`, `filter`, `hide_columns` and `column_order` are
+`--user`, `--top` and `--order` overwrite whatever the saved view held,
+`--hide` adds to its list, and only `sort`, `desc`, `filter`, `hide_columns` and `column_order` are
 ever read back from it — `users` and `top` are `#[serde(skip)]`. `--once`
 starts from `config::load_view()`; `--json` starts from `View::default()` and
 never reads the file, because a human's saved preference must not reshape a
@@ -372,6 +372,9 @@ the list names it. `name` is refused for hide and an unknown label in
 `--order` is a clap `InvalidValue`, the same split as `--sort`. `Sort::next`
 cycles over the visible list only, which is also how `H` picks the next sort
 so hiding PSS lands on RSS in the default table rather than `name`.
+`View::default` and an absent `hide_columns` key hide the stall trio
+(`config::default_hidden`); `--hide` extends the list rather than replacing
+it, so `--hide vram` cannot bring them back.
 
 Visibility is a **view** preference, so it lives in `view.json` beside sort and
 filter, never in the read-only `grouping.json`, which is about identity. It

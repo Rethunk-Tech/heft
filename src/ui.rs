@@ -2528,10 +2528,13 @@ mod tests {
         let mut app = test_app();
         assert_eq!(app.view.sort, "pss");
         handle_key(&mut app, KeyCode::Char('H'), none, &rows).unwrap();
-        assert_eq!(app.view.hide_columns, ["pss"]);
+        assert_eq!(
+            app.view.hide_columns.last().map(String::as_str),
+            Some("pss")
+        );
         assert_eq!(app.view.sort, "rss");
         handle_key(&mut app, KeyCode::Char('u'), none, &rows).unwrap();
-        assert!(app.view.hide_columns.is_empty());
+        assert_eq!(app.view.hide_columns, View::default().hide_columns);
         assert!(app.cols.iter().any(|c| c.label == "pss"));
     }
 

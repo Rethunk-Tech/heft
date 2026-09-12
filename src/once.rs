@@ -1195,7 +1195,10 @@ mod tests {
     }
 
     fn every_column() -> Columns {
-        Columns::from_view(&View::default())
+        Columns::from_view(&View {
+            hide_columns: Vec::new(),
+            ..View::default()
+        })
     }
 
     #[test]
@@ -1331,6 +1334,7 @@ mod tests {
     fn column_order_pins_listed_after_name() {
         let cols = Columns::from_view(&View {
             column_order: vec!["pss".into(), "rss".into()],
+            hide_columns: Vec::new(),
             ..View::default()
         });
         let got = labels(&cols);
@@ -1361,7 +1365,13 @@ mod tests {
 
     #[test]
     fn hide_column_refuses_name_and_unhide_pops() {
-        let mut view = View::default();
+        // The stall trio is opt-in: a default view never draws it.
+        let default = labels(&Columns::from_view(&View::default()));
+        assert!(!default.iter().any(|l| l.ends_with("stall")), "{default:?}");
+        let mut view = View {
+            hide_columns: Vec::new(),
+            ..View::default()
+        };
         assert!(!hide_column(&mut view, "name"));
         assert!(view.hide_columns.is_empty());
         assert!(!hide_column(&mut view, "not-a-column"));

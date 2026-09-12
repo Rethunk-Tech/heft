@@ -17,7 +17,7 @@ pub struct View {
     /// Column labels left out of the table. A hide list rather than a show
     /// list: heft grows columns, and a show list would silently withhold every
     /// column added after the file was written.
-    #[serde(default)]
+    #[serde(default = "default_hidden")]
     pub hide_columns: Vec<String>,
     /// Column labels left to right. Listed columns come first, in this order;
     /// anything not listed keeps its default place after them. `name` stays
@@ -43,12 +43,21 @@ impl Default for View {
             sort: "pss".into(),
             desc: true,
             filter: String::new(),
-            hide_columns: Vec::new(),
+            hide_columns: default_hidden(),
             column_order: Vec::new(),
             users: Vec::new(),
             top: None,
         }
     }
+}
+
+/// The stall trio. Pressure answers a diagnostic question most sessions never
+/// ask, and three more columns crowd out the ones every session reads, so a
+/// view shows them only once `u` or a saved list without them asks.
+fn default_hidden() -> Vec<String> {
+    ["cpustall", "iostall", "memstall"]
+        .map(String::from)
+        .to_vec()
 }
 
 /// Blank out `//` and `/* */` comments so the config files can carry them.
@@ -141,7 +150,8 @@ fn view_header() -> String {
          // sort:          one of the labels below\n\
          // desc:          true for high to low\n\
          // filter:        a regex, case-insensitive unless it says (?-i)\n\
-         // hide_columns:  labels to leave out; `name` cannot be hidden\n\
+         // hide_columns:  labels to leave out; `name` cannot be hidden;\n\
+         //                absent, the three stall columns\n\
          // column_order:  labels left to right; the rest keep their place\n\
          //\n\
          // labels: {labels}\n"

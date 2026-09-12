@@ -88,12 +88,13 @@ fn main() -> ExitCode {
     } else if cli.desc {
         view.desc = true;
     }
-    if !cli.hide.is_empty() {
-        view.hide_columns = cli
-            .hide
-            .iter()
-            .map(|label| check_hide(label).to_string())
-            .collect();
+    // Adds to what the view hides rather than replacing it, or `--hide vram`
+    // would bring back the stall columns a default view keeps out.
+    for label in &cli.hide {
+        let label = check_hide(label).to_string();
+        if !view.hide_columns.contains(&label) {
+            view.hide_columns.push(label);
+        }
     }
     if !cli.order.is_empty() {
         let mut seen = std::collections::HashSet::new();

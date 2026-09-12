@@ -566,6 +566,11 @@ the `/proc/<pid>/stat` heft already reads for CPU, so neither costs a read.
 
 ## CPU ST / IO ST / MEM ST
 
+Hidden until you ask for them: `u` brings the last one back and `s` keeps it,
+or write a `hide_columns` list in `view.json` that leaves them out. They answer
+a diagnostic question most sessions never ask, and three more columns crowd out
+the ones every session reads.
+
 The stall columns say whether a row was *waiting* rather than working. `%CORE`
 says a row used the processor and `PSS` says it holds memory, but neither can
 tell an application that is busy from one that is stuck: both look idle in
@@ -674,7 +679,7 @@ and NAME stays put while they scroll.
 The table has twenty columns and most terminals cannot hold them. `H` hides
 the column you are sorting by (and moves the sort to the next visible one in
 the order on screen); `u` puts the last hidden column back. `--hide` does the
-same for `--once`, repeatable, and overwrites whatever `view.json` held.
+same for `--once`, repeatable, and adds to whatever `view.json` hides.
 
 `--order` sets left-to-right order, also repeatable, and also overwrites the
 saved list. Columns you name come first, in that order; anything you leave out
@@ -707,8 +712,9 @@ Labels are `name`, `spark`, `nproc`, `threads`, `age`, `core`,
 `diskw`, `cpustall`, `iostall`, `memstall`, `netns_rx`, `netns_tx`. `--sort`
 and `Shift-←` `Shift-→` take all of them except `spark`, which draws a trend rather than a
 number and so has no ordering; `--hide` and `--order` take it like any other,
-since hiding and moving a column are presentation. No file, or no key, shows every
-column in compiled order. An unknown label in the file warns on stderr and is
+since hiding and moving a column are presentation. No file, or no
+`hide_columns` key, hides `cpustall`, `iostall` and `memstall` and shows the
+rest in compiled order. An unknown label in the file warns on stderr and is
 ignored; on `--hide` or `--order` it is a usage error, the same split as
 `--sort`. `name` cannot be hidden — a table of numbers with no labels is
 unreadable — but it can be moved.

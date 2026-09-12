@@ -11,6 +11,9 @@
   stops once the last column is on screen.
 - Spare table width widens NAME until the longest name fits, then TREND, one
   more sample per cell; NAME used to absorb all of it.
+- CPU ST, IO ST and MEM ST are hidden unless `view.json` holds a
+  `hide_columns` list without them (`u` then `s` brings them back), and
+  `--hide` adds to the saved list rather than replacing it.
 
 ### Fixed
 

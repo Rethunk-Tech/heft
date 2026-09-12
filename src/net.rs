@@ -263,15 +263,13 @@ mod tests {
             id: id.into(),
             title: id.into(),
             nproc: 1,
-            metrics: Metrics::default(),
-            instances: Vec::new(),
             containers: vec![MemberContainer {
                 id: member.into(),
                 title: member.into(),
                 nproc: 1,
-                metrics: Metrics::default(),
-                processes: Vec::new(),
+                ..MemberContainer::default()
             }],
+            ..IdentNode::default()
         }
     }
 
@@ -287,8 +285,8 @@ mod tests {
                 uid: 1000,
                 name: "u".into(),
                 applications: vec![ident("supabase:demo", "supabase_db_demo")],
-                user_services: Vec::new(),
                 containers: vec![ident("supabase:demo", "supabase_db_demo")],
+                ..UserNode::default()
             }],
             ..HostTree::default()
         };

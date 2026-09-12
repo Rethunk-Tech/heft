@@ -209,7 +209,7 @@ pub struct HostTree {
     pub system: Vec<IdentNode>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct UserNode {
     pub uid: u32,
     pub(crate) name: String,
@@ -218,7 +218,7 @@ pub struct UserNode {
     pub containers: Vec<IdentNode>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct IdentNode {
     pub id: String,
     pub title: String,
@@ -230,7 +230,7 @@ pub struct IdentNode {
     pub containers: Vec<MemberContainer>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct MemberContainer {
     pub(crate) id: String,
     pub(crate) title: String,
@@ -240,7 +240,7 @@ pub struct MemberContainer {
     pub(crate) processes: Vec<ProcNode>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct InstanceNode {
     pub(crate) key: String,
     pub(crate) nproc: u32,
@@ -249,7 +249,7 @@ pub struct InstanceNode {
     pub processes: Vec<ProcNode>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct ProcNode {
     pub(crate) pid: u32,
     pub name: String,

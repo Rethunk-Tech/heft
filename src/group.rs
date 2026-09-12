@@ -425,9 +425,7 @@ fn assemble(
                 let user = users.entry(uid).or_insert_with(|| UserNode {
                     uid,
                     name: proc::username(uid),
-                    applications: Vec::new(),
-                    user_services: Vec::new(),
-                    containers: Vec::new(),
+                    ..UserNode::default()
                 });
                 match folder {
                     Folder::Applications => user.applications.push(node),

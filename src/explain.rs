@@ -182,15 +182,13 @@ pub fn run(pid: u32, interval: Duration) -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{IdentNode, InstanceNode, Metrics, UserNode};
+    use crate::types::{IdentNode, InstanceNode, UserNode};
 
     fn proc_node(pid: u32) -> ProcNode {
         ProcNode {
             pid,
             name: format!("p{pid}"),
-            cmdline: String::new(),
-            metrics: Metrics::default(),
-            children: Vec::new(),
+            ..ProcNode::default()
         }
     }
 
@@ -199,14 +197,13 @@ mod tests {
             id: title.into(),
             title: title.into(),
             nproc: pids.len() as u32,
-            metrics: Metrics::default(),
             instances: vec![InstanceNode {
                 key: format!("{title}/1"),
                 nproc: pids.len() as u32,
-                metrics: Metrics::default(),
                 processes: pids.iter().copied().map(proc_node).collect(),
+                ..InstanceNode::default()
             }],
-            containers: Vec::new(),
+            ..IdentNode::default()
         }
     }
 
@@ -223,7 +220,7 @@ mod tests {
             name: "nomad".into(),
             applications: apps,
             user_services: services,
-            containers: Vec::new(),
+            ..UserNode::default()
         }
     }
 

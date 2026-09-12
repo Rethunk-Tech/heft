@@ -1075,17 +1075,14 @@ mod tests {
         tree.users.push(UserNode {
             uid: 0,
             name: "root".into(),
-            applications: Vec::new(),
-            user_services: Vec::new(),
-            containers: Vec::new(),
+            ..UserNode::default()
         });
         tree.system = vec![IdentNode {
             id: "kthread".into(),
             title: "kthread".into(),
             nproc: 1,
             metrics: metrics(Some(1), 0.0),
-            instances: Vec::new(),
-            containers: Vec::new(),
+            ..IdentNode::default()
         }];
 
         // An empty list is "no --user was given", never "keep nobody".
@@ -1132,8 +1129,7 @@ mod tests {
                     ],
                     containers: Vec::new(),
                 }],
-                user_services: Vec::new(),
-                containers: Vec::new(),
+                ..UserNode::default()
             }],
             ..HostTree::default()
         }
@@ -1465,8 +1461,7 @@ mod tests {
                 uid: 1000,
                 name: "u".into(),
                 applications: vec![named("firefox"), named("vim")],
-                user_services: Vec::new(),
-                containers: Vec::new(),
+                ..UserNode::default()
             }],
             ..HostTree::default()
         };
@@ -1504,8 +1499,7 @@ mod tests {
                 uid: 1000,
                 name: "u".into(),
                 applications: vec![worker("8080"), worker("9090")],
-                user_services: Vec::new(),
-                containers: Vec::new(),
+                ..UserNode::default()
             }],
             ..HostTree::default()
         };
@@ -1534,8 +1528,7 @@ mod tests {
                 uid: 1000,
                 name: "u".into(),
                 applications: vec![sample_ident(1.0)],
-                user_services: Vec::new(),
-                containers: Vec::new(),
+                ..UserNode::default()
             }],
             ..HostTree::default()
         };

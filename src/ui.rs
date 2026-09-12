@@ -2573,8 +2573,7 @@ mod tests {
                 uid: cpu::euid(),
                 name: "me".into(),
                 applications: apps,
-                user_services: Vec::new(),
-                containers: Vec::new(),
+                ..UserNode::default()
             }],
             ..HostTree::default()
         }
@@ -2631,8 +2630,7 @@ mod tests {
                 uid: me,
                 name: "me".into(),
                 applications: vec![ident("app")],
-                user_services: Vec::new(),
-                containers: Vec::new(),
+                ..UserNode::default()
             }],
             ..HostTree::default()
         };

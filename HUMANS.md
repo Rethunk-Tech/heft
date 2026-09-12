@@ -409,8 +409,10 @@ blank is not a zero: those rows sort last whichever way the sort runs.
 
 ## TREND
 
-`TREND` (`spark`) draws the last nine samples of whatever column you are
-sorting by, as rising blocks. Every other column is the current interval only,
+`TREND` (`spark`) draws the recent history of whatever column you are
+sorting by, one sample per cell, as rising blocks. It is nine cells at its
+narrowest and takes every column of spare width the table has, so hiding
+columns buys a longer history rather than a wider NAME. Every other column is the current interval only,
 so a process that spiked to 400% and went quiet looked exactly like one that
 was idle throughout — by the time you read the row, the spike had already been
 overwritten.
@@ -480,8 +482,9 @@ dashes.
 Where the terminal is on this machine the pixels go through shared memory and
 the escape carries only a name, so the column costs tens of bytes a sample.
 Over ssh they have to go inline, base64, and that is not free: measured on a
-24-row terminal with 19 rows showing, about 146 KB per sample, or a bit over a
-megabit a second. It is sent once per sample rather than once per frame, so
+24-row terminal with 19 rows showing and TREND nine cells wide, about 146 KB
+per sample, or a bit over a megabit a second, and a wider TREND costs
+proportionally more. It is sent once per sample rather than once per frame, so
 holding a key down does not multiply it — but on a slow link, `--trend chars`
 is the flag you want.
 
@@ -680,7 +683,8 @@ restores on the way out. Never `/proc`, sysfs, or cgroup files.
 A column is drawn whole or not at all. Where the terminal cannot hold one at
 its full width it is left off rather than cut short, because a clipped `20.1G`
 reads as `2` and a wrong figure is the one thing heft will not print — the same
-rule as the blank cells. `←` and `→` reach the columns that were left off.
+rule as the blank cells. `←` and `→` reach the columns that were left off,
+and NAME stays put while they scroll.
 
 The table has twenty columns and most terminals cannot hold them. `H` hides
 the column you are sorting by (and moves the sort to the next visible one in

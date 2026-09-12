@@ -258,7 +258,7 @@ fn sample_y(v: f64, full: f64, cell_h: u32) -> u32 {
 ///
 /// Only the first cell spells out its row and column. The protocol reads a
 /// bare placeholder as "the cell to the left, one column on", provided the
-/// colours match -- which they do, since all nine are one span.
+/// colours match -- which they do, since the whole column is one span.
 pub(crate) fn placeholder(band: usize, cols: usize) -> Option<String> {
     let row = diacritic(band)?;
     let mut s = String::with_capacity(cols * 4);

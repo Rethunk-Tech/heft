@@ -102,16 +102,20 @@ struct App {
     /// The sort label `history` was collected under, so a change to it can
     /// clear the buffers rather than mixing units.
     sorted_by: String,
+    /// Cells TREND was last drawn with, which is also how many samples each
+    /// `history` buffer keeps: the column takes the table's spare width, so
+    /// this moves with the terminal and with what is hidden.
+    trend_w: usize,
 }
 
 /// Foreground colour the TREND cells carry under `--trend sixel`, so the
 /// rectangle they occupy can be read back out of the rendered frame. The cells
-/// themselves are spaces, so it is never seen; the layout puts the name column
-/// on a `Constraint::Min` and only ratatui's solver knows what that absorbed.
+/// themselves are spaces, so it is never seen; reading the frame back keeps
+/// ratatui's layout the one place that decides where the column landed.
 const SIXEL_MARK: Color = Color::Rgb(0, 0, 1);
 
-/// How many samples the trend keeps: the `spark` column's width, since a cell
-/// can draw no more than that.
+/// The narrowest TREND is drawn, and the depth `history` starts at before the
+/// first frame has measured the table.
 const TREND: usize = 9;
 
 /// How the TREND column is drawn. Resolved in `main` from `--trend`, never
@@ -217,6 +221,7 @@ fn run_loop(
         trend,
         sixel_out: None,
         sorted_by: String::new(),
+        trend_w: TREND,
     };
     // The highlight is this id, not `cursor`'s slot: PSS desc (the default)
     // reshuffles the flattened list every sample, and so do the sort keys, `/`,
@@ -394,7 +399,7 @@ fn record_history(app: &mut App, rows: &[Flat]) {
     for r in rows {
         let v = sort.value(r.nproc, &r.metrics).unwrap_or(0.0);
         let buf = app.history.entry(r.id.clone()).or_default();
-        if buf.len() == TREND {
+        while buf.len() >= app.trend_w.max(1) {
             buf.pop_front();
         }
         buf.push_back(v);
@@ -703,19 +708,27 @@ fn handle_key(
     Ok(false)
 }
 
-#[expect(
-    clippy::cast_possible_truncation,
-    reason = "a column index is bounded by the table width, which ratatui already holds as u16"
-)]
 fn refresh_columns(app: &mut App) {
     app.cols = Columns::for_tui(&app.view);
-    let max = app.cols.len().saturating_sub(1) as u16;
-    if app.col_off > max {
-        app.col_off = max;
-    }
 }
 
-/// How many columns, starting at `skip`, fit in `avail` at their full width.
+/// The columns `←` / `→` scroll: every one past `skip`, plus `name`, which
+/// stays put because it is the only column saying whose figures these are.
+fn scrolled(cols: &Columns, skip: usize) -> Vec<&'static Column> {
+    let mut k = 0;
+    cols.iter()
+        .filter(|c| {
+            if c.label == "name" {
+                return true;
+            }
+            k += 1;
+            k > skip
+        })
+        .collect()
+}
+
+/// How many of `cols` fit in `avail` at their full width, and the width
+/// those take.
 ///
 /// ratatui clips a cell that runs out of room, so a 50-column terminal drew
 /// `20.1G` as `2` and `548.5` as `5` with nothing to say they had been cut —
@@ -726,25 +739,20 @@ fn refresh_columns(app: &mut App) {
 /// At least one column always survives. The name column is a label rather than
 /// a figure, so a cut name misleads nobody; `once::trunc` already ellipsises
 /// it.
-fn columns_that_fit(cols: &Columns, skip: usize, avail: u16, name_on_screen: bool) -> usize {
+fn columns_that_fit(cols: &[&Column], avail: u16) -> (usize, u16) {
     // ratatui's default spacing between two columns.
     const SPACING: u16 = 1;
     let mut used = 0u16;
     let mut n = 0usize;
-    for (i, c) in cols.iter().skip(skip).enumerate() {
-        let w = if c.label == "name" || name_on_screen {
-            c.width
-        } else {
-            8
-        };
-        let need = if i == 0 { w } else { w + SPACING };
+    for (i, c) in cols.iter().enumerate() {
+        let need = if i == 0 { c.width } else { c.width + SPACING };
         if used + need > avail {
             break;
         }
         used += need;
         n += 1;
     }
-    n.max(1)
+    (n.max(1), used)
 }
 
 /// A cgroup stalled for this share of an interval is contending for the
@@ -809,7 +817,6 @@ fn sort_header<'a>(cols: impl Iterator<Item = &'a Column>, sort: &str) -> Row<'s
 /// that frame rather than leaving the column blank.
 /// The image both image transports draw, or `None` where one cannot be made:
 /// a terminal that reports no pixel size, an absurd cell, an empty table.
-#[expect(clippy::cast_possible_truncation, reason = "TREND is 9")]
 fn trend_image(
     app: &App,
     rows: &[Flat],
@@ -825,7 +832,13 @@ fn trend_image(
     if bands.is_empty() || bands.len() > kgp::MAX_BANDS {
         return None;
     }
-    kgp::paint(&bands, TREND as u32, cell, trend_colour(), full)
+    kgp::paint(
+        &bands,
+        u32::try_from(app.trend_w).ok()?,
+        cell,
+        trend_colour(),
+        full,
+    )
 }
 
 /// The cyan the CPU bar's `usr` segment already uses, and a neutral grey under
@@ -840,9 +853,8 @@ fn trend_colour() -> [u8; 3] {
 }
 
 /// The top-left cell of the marked TREND column, read back out of the frame
-/// ratatui just filled. Computing it instead would mean re-deriving the layout
-/// solver: the name column is a `Constraint::Min` and only the solver knows
-/// what it absorbed.
+/// ratatui just filled. Computing it instead would be a second copy of
+/// ratatui's column layout, wrong the first time that layout changed.
 fn marked_corner(buf: &ratatui::buffer::Buffer, area: Rect) -> Option<(u16, u16)> {
     let mut best: Option<(u16, u16)> = None;
     for y in area.top()..area.bottom() {
@@ -858,19 +870,17 @@ fn marked_corner(buf: &ratatui::buffer::Buffer, area: Rect) -> Option<(u16, u16)
     best
 }
 
-#[expect(clippy::cast_possible_truncation, reason = "TREND is 9")]
 fn send_trend(app: &mut App, rows: &[Flat], start: usize, end: usize, full: f64) -> bool {
     let Some(img) = trend_image(app, rows, start, end, full) else {
         return false;
     };
-    let Ok(rows_tall) = u32::try_from(end - start) else {
+    let (Ok(rows_tall), Ok(cols)) = (u32::try_from(end - start), u32::try_from(app.trend_w)) else {
         return false;
     };
     let Some(k) = app.kgp.as_mut() else {
         return false;
     };
-    k.send(&mut io::stdout(), &img, TREND as u32, rows_tall)
-        .is_ok()
+    k.send(&mut io::stdout(), &img, cols, rows_tall).is_ok()
 }
 
 fn draw(f: &mut ratatui::Frame<'_>, app: &mut App, rows: &[Flat]) {
@@ -885,20 +895,42 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &mut App, rows: &[Flat]) {
     draw_header(f, chunks[0], app);
     render_rule(f, chunks[1]);
 
-    let skip = (app.col_off as usize).min(app.cols.len().saturating_sub(1));
-    let name_on_screen = app.cols.iter().skip(skip).any(|c| c.label == "name");
-    let fit = columns_that_fit(&app.cols, skip, chunks[2].width, name_on_screen);
+    // Once every remaining column fits, another `→` would only trade a figure
+    // for blank space, so the offset walks back to the last one that scrolled
+    // something into view. That also undoes presses past the end.
+    let fits = |off: u16| {
+        let s = scrolled(&app.cols, usize::from(off));
+        columns_that_fit(&s, chunks[2].width).0 == s.len()
+    };
+    while app.col_off > 0 && fits(app.col_off - 1) {
+        app.col_off -= 1;
+    }
+    let mut shown = scrolled(&app.cols, usize::from(app.col_off));
+    let (fit, used) = columns_that_fit(&shown, chunks[2].width);
+    shown.truncate(fit);
+    // A name past its compiled width is only more of a label, while every
+    // extra TREND cell is one more sample, so the table's slack widens TREND
+    // whenever it is on screen and falls to the name only when it is not.
+    let trend_cells = shown
+        .iter()
+        .find(|c| c.label == "spark")
+        .map(|c| c.width + chunks[2].width.saturating_sub(used));
+    if let Some(w) = trend_cells.map(usize::from) {
+        if w < app.trend_w {
+            for b in app.history.values_mut() {
+                while b.len() > w {
+                    b.pop_front();
+                }
+            }
+        }
+        app.trend_w = w;
+    }
     let start = app.row_off.min(rows.len());
     let end = start.saturating_add(app.row_vis.max(1)).min(rows.len());
     // Only when the column is actually on screen: an image nothing references
     // is invisible either way, and on the inline transport it is most of a
     // megabyte of escape for nothing.
-    let spark_shown = app
-        .cols
-        .iter()
-        .skip(skip)
-        .take(fit)
-        .any(|c| c.label == "spark");
+    let spark_shown = trend_cells.is_some();
     // One scale for every row of the frame, so the column is comparable down
     // the table and not just within a row.
     let full = trend_scale(Sort::from_label(&app.view.sort), rows, &app.history);
@@ -929,8 +961,7 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &mut App, rows: &[Flat]) {
             "  "
         };
         let name = format!("{}{}{}", "  ".repeat(r.depth as usize), mark, r.name);
-        let cells: Vec<Cell> = app
-            .cols
+        let cells: Vec<Cell> = shown
             .iter()
             .map(|c| {
                 // The one column whose value is not a function of this
@@ -942,7 +973,7 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &mut App, rows: &[Flat]) {
                     && r.trimmable
                     && app.trend == TrendMode::Kitty
                 {
-                    kgp::placeholder(i, TREND)
+                    kgp::placeholder(i, app.trend_w)
                 } else {
                     None
                 };
@@ -951,7 +982,7 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &mut App, rows: &[Flat]) {
                     // Spaces the image is painted over. The cells still have
                     // to be written, or ratatui would leave whatever was in
                     // them showing through a transparent sparkline.
-                    (None, "spark") if sixel_cell => " ".repeat(TREND),
+                    (None, "spark") if sixel_cell => " ".repeat(app.trend_w),
                     // Blank on a row that is not an entry. The scale is built
                     // from entries, so a sum has no figure on it -- Host would
                     // sit pinned to the ceiling saying only that it is the
@@ -976,8 +1007,6 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &mut App, rows: &[Flat]) {
                     cell
                 }
             })
-            .skip(skip)
-            .take(fit)
             .collect();
         let row = Row::new(cells);
         table_rows.push(if start + i == app.cursor {
@@ -986,27 +1015,16 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &mut App, rows: &[Flat]) {
             row
         });
     }
-    // Name keeps Min so the tree can use leftover width. Once it is scrolled
-    // off, every remaining column is numeric and shares one width.
-    let widths: Vec<Constraint> = app
-        .cols
+    let widths: Vec<Constraint> = shown
         .iter()
-        .skip(skip)
-        .take(fit)
-        .map(|c| {
-            if c.label == "name" {
-                Constraint::Min(c.width)
-            } else if name_on_screen {
-                Constraint::Length(c.width)
-            } else {
-                Constraint::Length(8)
-            }
+        .map(|c| match (c.label, trend_cells) {
+            ("spark", Some(w)) => Constraint::Length(w),
+            ("name", None) => Constraint::Min(c.width),
+            _ => Constraint::Length(c.width),
         })
         .collect();
-    let table = Table::new(table_rows, widths).header(sort_header(
-        app.cols.iter().skip(skip).take(fit),
-        &app.view.sort,
-    ));
+    let table =
+        Table::new(table_rows, widths).header(sort_header(shown.iter().copied(), &app.view.sort));
     f.render_widget(table, chunks[2]);
     // After the widget, because the marks only exist once it has filled the
     // buffer; written to the terminal only after ratatui flushes, since sixel
@@ -1865,10 +1883,11 @@ mod tests {
     fn a_column_is_drawn_whole_or_not_at_all() {
         let cols = Columns::for_tui(&View::default());
         let width_of = |i: usize| cols.iter().nth(i).expect("column").width;
+        let shown = scrolled(&cols, 0);
         for avail in [10_u16, 20, 30, 44, 50, 70, 100, 160, 400] {
-            let n = columns_that_fit(&cols, 0, avail, true);
+            let (n, _) = columns_that_fit(&shown, avail);
             assert!(n >= 1, "at least one column always survives");
-            if n < cols.len() {
+            if n < shown.len() {
                 // The next column was refused, so it genuinely did not fit.
                 let used: u16 = (0..n).map(|i| width_of(i) + u16::from(i > 0)).sum();
                 assert!(
@@ -1884,9 +1903,14 @@ mod tests {
             }
         }
         // Wider is never fewer columns.
-        let narrow = columns_that_fit(&cols, 0, 50, true);
-        let wide = columns_that_fit(&cols, 0, 160, true);
+        let (narrow, _) = columns_that_fit(&shown, 50);
+        let (wide, _) = columns_that_fit(&shown, 160);
         assert!(wide > narrow, "a wider table must show more columns");
+        // Scrolling moves the figures and never the name they belong to.
+        let all = shown.len();
+        let shown = scrolled(&cols, 3);
+        assert_eq!(shown[0].label, "name");
+        assert_eq!(shown.len(), all - 3);
     }
 
     /// `%CORE` reads a D-state process as idle and a stalled cgroup as quiet,
@@ -2374,6 +2398,7 @@ mod tests {
             trend: TrendMode::Chars,
             sixel_out: None,
             sorted_by: String::new(),
+            trend_w: TREND,
         }
     }
 

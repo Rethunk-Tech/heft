@@ -7,6 +7,10 @@
 - TUI keys: Enter and Space alone expand and collapse; `←` `→` (and `h` `l`)
   scroll columns, replacing `[` `]` and `<` `>`; `Shift-←` `Shift-→` step the
   sort column back and forward, replacing `c`.
+- NAME stays on screen while `←` `→` scroll the other columns, and scrolling
+  stops once the last column is on screen.
+- TREND takes the table's spare width, one more sample per cell, where NAME
+  used to absorb it.
 
 ### Added
 

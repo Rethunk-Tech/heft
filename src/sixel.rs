@@ -9,8 +9,8 @@
 //! Sixel has no equivalent of kitty's Unicode placeholders: an image is
 //! painted wherever the cursor is, with nothing tying it to the cell grid. So
 //! this one has to be positioned, and the position cannot be computed --
-//! the name column is a `Constraint::Min` and ratatui's layout solver decides
-//! what it absorbs. Instead the TREND cells are rendered as spaces carrying a
+//! ratatui's layout decides where TREND lands, and TREND's own width moves
+//! with the table's spare room. Instead the TREND cells are rendered as spaces carrying a
 //! marker colour, and `ui` reads the rectangle back out of the frame buffer
 //! afterwards. Re-deriving the solver's arithmetic here would be a second
 //! implementation of it, wrong the first time the layout changed.

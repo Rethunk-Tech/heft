@@ -314,10 +314,6 @@ impl Columns {
         )
     }
 
-    pub(crate) const fn len(&self) -> usize {
-        self.0.len()
-    }
-
     pub(crate) fn iter(&self) -> impl Iterator<Item = &'static Column> + '_ {
         self.0.iter().map(|&i| &COLUMNS[i])
     }
@@ -1300,7 +1296,7 @@ mod tests {
     fn the_sort_cycle_never_lands_on_the_trend() {
         let cols = Columns::for_tui(&View::default());
         let mut s = Sort::from_label("name");
-        for _ in 0..cols.len() + 2 {
+        for _ in 0..cols.iter().count() + 2 {
             s = s.next(&cols);
             assert_ne!(s.label(), "spark", "the sort cycle landed on a picture");
         }

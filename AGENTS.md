@@ -297,8 +297,8 @@ terminals the kitty protocol misses. Two things differ. Sixel has no
 placeholder mechanism, so the image must be positioned: the TREND cells are
 rendered as spaces carrying `SIXEL_MARK` and `ui::marked_corner` reads the
 rectangle back out of the frame buffer after `render_widget` — computing it
-would mean re-deriving ratatui's layout solver, since the name column is a
-`Constraint::Min`. And it is written after `terminal.draw` returns rather than
+would be a second copy of ratatui's column layout, and TREND's width moves
+with the table's slack. And it is written after `terminal.draw` returns rather than
 inside the closure, because sixel paints over cells instead of into them, so a
 cell ratatui rewrites erases the pixels; it is repainted every frame rather
 than hashed. That is affordable where the kitty inline transport was not:
@@ -349,7 +349,9 @@ and `ui::spark` share that scale so the image and the ramp say the same thing;
 
 `spark` is the one column whose cell is not a function of the current sample,
 so its `Column::fmt` returns empty and `ui::draw` substitutes `ui::spark` from
-`App::history` — a `VecDeque` per row id, `TREND` deep, appended once per
+`App::history` — a `VecDeque` per row id, `App::trend_w` deep (TREND takes
+the table's slack; `name` keeps its compiled width while TREND is on screen
+and absorbs the slack only when it is not), appended once per
 published sample rather than once per frame. `Sort::value` gives the buffer the
 same number the sort uses, so the two cannot disagree. The buffers clear when
 the sort label changes (two units in one picture) and rows that stop appearing
@@ -509,7 +511,7 @@ against `--interval`: it is documented as "at least `--interval`", so
 `ui::columns_that_fit` lays out only columns whose full width fits the pane.
 ratatui clips a cell that runs out of room, so a 50-column terminal drew
 `20.1G` as `2`; a column is now drawn whole or dropped, and `←` / `→` reach the
-rest. At least one column always survives, and the name column is a label
+rest, past a `name` that `ui::scrolled` keeps out of the scroll. At least one column always survives, and the name column is a label
 rather than a figure, so cutting it misleads nobody.
 
 JSON shape (`src/types.rs` `HostTree`): `host.sampled_at`,

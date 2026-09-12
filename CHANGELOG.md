@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.7.0 - 2026-09-12
+
 ### Added
 
 - `--trend kitty` draws TREND as a kitty-graphics-protocol image rather than
@@ -11,9 +13,8 @@
   the protocol's row diacritics index into it — so a frame is one escape
   rather than one per row. Where the terminal is local the pixels travel
   through POSIX shared memory and the escape carries only its name; over ssh
-  they go inline, which measured about 146 KB a sample on a 24-row terminal,
-  so `--trend chars` stays the default and the flag says so. Opt-in, never
-  detected: `TERM` names a terminal, not what it implements.
+  they go inline, which measured about 146 KB a sample on a 24-row terminal —
+  the reason `--trend auto`, below, prefers sixel over ssh.
 
 - `--trend auto` is now the default: heft asks the terminal whether it has the
   kitty graphics protocol or sixel and draws the trend as an image when it
@@ -52,6 +53,15 @@
   comments of your own.
 
 ### Fixed
+
+- `--glyphs ascii` now reaches the detail pane and `--explain`. A command line
+  cut at 240 characters ended in `…` rather than `~`, the one non-ASCII
+  character left on a screen that had asked for none.
+
+- A name cut to fit its column no longer ends on half an emoji. Truncation
+  counted each character's width on its own, so a zero-width joiner could fit
+  where its partner did not, leaving the name ending on a joiner that pointed
+  at a character already dropped. It now cuts whole grapheme clusters.
 
 - On a machine with swap, the MEM and CPU bars were half the width they
   should be. Swap shared the MEMORY row, and that row was split equally

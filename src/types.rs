@@ -104,16 +104,16 @@ pub(crate) struct Metrics {
     pub(crate) net_rx_bps: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) net_tx_bps: Option<f64>,
-    /// Percent of the interval this row's cgroup had at least one task stalled
-    /// on the resource. Like the netns pair, `accumulate` leaves these out: a
-    /// percentage of an interval is not a quantity, so summing two cgroups'
-    /// stall would produce a number the kernel never measured. A row only
-    /// carries them when it *is* one non-root cgroup; see `psi`.
     /// Processes in uninterruptible sleep. A count, so unlike the three
     /// percentages below it sums, and a folder, User or Host row carries one
     /// where PSI has to leave a blank. Never an `Option`: every process heft
     /// can see at all has a state, so `0` here is an answer, not a blank.
     pub(crate) d_state_procs: u32,
+    /// Percent of the interval this row's cgroup had at least one task stalled
+    /// on the resource. Like the netns pair, `accumulate` leaves these out: a
+    /// percentage of an interval is not a quantity, so summing two cgroups'
+    /// stall would produce a number the kernel never measured. A row only
+    /// carries them when it *is* one non-root cgroup; see `psi`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) cpu_stall_pct: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]

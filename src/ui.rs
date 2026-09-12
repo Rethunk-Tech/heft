@@ -114,10 +114,6 @@ const SIXEL_MARK: Color = Color::Rgb(0, 0, 1);
 /// can draw no more than that.
 const TREND: usize = 9;
 
-/// # Errors
-///
-/// Returns an error if the terminal cannot enter or leave raw mode, the sampler
-/// thread cannot be spawned, a frame cannot be drawn, or a view save fails.
 /// How the TREND column is drawn. Resolved in `main` from `--trend`, never
 /// detected: `TERM` names a terminal, not what it implements.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -147,6 +143,10 @@ fn resolve_trend(caps: caps::Caps, remote: bool) -> TrendMode {
     }
 }
 
+/// # Errors
+///
+/// Returns an error if the terminal cannot enter or leave raw mode, the sampler
+/// thread cannot be spawned, a frame cannot be drawn, or a view save fails.
 pub fn run(
     interval: Duration,
     pss_interval: Duration,

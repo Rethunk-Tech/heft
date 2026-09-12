@@ -231,14 +231,6 @@ fn opt_u(v: Option<u64>) -> Option<f64> {
 pub(crate) struct Columns(Vec<usize>);
 
 impl Columns {
-    /// `view.hide_columns` and `view.column_order` applied to `COLUMNS`.
-    ///
-    /// An unknown or duplicate label warns and is ignored, the way a malformed
-    /// `grouping.json` warns and leaves grouping alone: a monitor that refuses
-    /// to start over a stale config entry is worse than one with no config.
-    /// This is deliberately not `Sort::from_label`'s silent fallback — a
-    /// mistyped sort still produces a usable table, a mistyped hide or order
-    /// entry would hide nothing / move nothing and say nothing.
     /// The one-shot surfaces' columns: everything except `spark`, which draws
     /// a history two `/proc` walks cannot have. A column that is blank on
     /// every row of every `--once` is noise, not a blank contract.
@@ -252,6 +244,14 @@ impl Columns {
         Self::resolve(view, true)
     }
 
+    /// `view.hide_columns` and `view.column_order` applied to `COLUMNS`.
+    ///
+    /// An unknown or duplicate label warns and is ignored, the way a malformed
+    /// `grouping.json` warns and leaves grouping alone: a monitor that refuses
+    /// to start over a stale config entry is worse than one with no config.
+    /// This is deliberately not `Sort::from_label`'s silent fallback — a
+    /// mistyped sort still produces a usable table, a mistyped hide or order
+    /// entry would hide nothing / move nothing and say nothing.
     fn resolve(view: &View, live: bool) -> Self {
         let path = config::view_path();
         let mut hidden: Vec<&str> = Vec::new();
@@ -392,9 +392,6 @@ impl Sort {
     }
 }
 
-/// Every hideable label, so `--hide` can name the valid ones in its usage
-/// error. `name` is not among them: a table of numbers with no labels is
-/// unreadable.
 /// Every column label, in compiled order. `--order` takes all of them: moving
 /// a column is presentation, so it is not limited to the ones a sort can use.
 #[must_use]
@@ -402,6 +399,9 @@ pub fn column_labels() -> Vec<&'static str> {
     COLUMNS.iter().map(|c| c.label).collect()
 }
 
+/// Every hideable label, so `--hide` can name the valid ones in its usage
+/// error. `name` is not among them: a table of numbers with no labels is
+/// unreadable.
 #[must_use]
 pub fn hideable_labels() -> Vec<&'static str> {
     COLUMNS.iter().skip(1).map(|c| c.label).collect()
@@ -590,9 +590,6 @@ fn layout(cols: &Columns, cell: impl Fn(&Column) -> String) -> String {
     line
 }
 
-/// # Errors
-///
-/// Returns an error if writing the table to stdout fails.
 /// Keep the `n` heaviest rows under each parent, at every depth.
 ///
 /// A row-level trim, deliberately, and not a tree one. Rows are built from the
@@ -666,6 +663,11 @@ pub(crate) fn keep_users(tree: &mut HostTree, uids: &[u32]) {
     tree.users.retain(|u| uids.contains(&u.uid));
 }
 
+/// One table on stdout, from two `/proc` walks an `--interval` apart.
+///
+/// # Errors
+///
+/// Returns an error if writing the table to stdout fails.
 pub fn print_table(interval: Duration, view: &View) -> Result<(), Error> {
     let cols = Columns::from_view(view);
     let tree = proc::sample_world(interval);

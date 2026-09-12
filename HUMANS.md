@@ -308,8 +308,9 @@ selected.
 `i` opens a detail pane for the row under the cursor. It lists **every**
 column for that row — the ones `H` hid and the ones the terminal is too narrow
 to reach included — so you can read the whole row at once rather than scrolling
-it past with `←` and `→`. A blank there is the blank the table would show: no
-figure exists, which is not a zero.
+it past with `←` and `→`. A `-` there is the blank the table would show: no
+figure exists, which is not a zero. Host never carries a stall or NETNS
+figure, so on Host that whole column is `-`.
 
 When the cursor is on a single process it also prints what that process *is*,
 which no column says: pid, parent pid, state, owning uid, the `exe` path, the
@@ -357,7 +358,11 @@ number gets read as a current one.
   the kernel reported 45.7 GiB of GTT in use while heft's Host row accounted
   for 18.1 GiB of it. When the question is how much of the card is in use
   rather than which application is using it, read the kernel's own
-  `/sys/class/drm/card*/device/mem_info_*` totals. Swap, when the machine has
+  `/sys/class/drm/card*/device/mem_info_*` totals. The MEM bar's `used` is
+  what the kernel cannot hand back, so page cache is not in it; `shm` is the
+  tmpfs and shared memory that is, and on a zram host `zram` is the RAM its
+  compressed swap occupies. No process's PSS holds that store, which is why a
+  zram machine's `used` can sit gigabytes above the Host row. Swap, when the machine has
   any, gets a third row of its own rather than a segment of MEM: swapped pages
   are not in RAM. A row rather than a tank beside MEM, because its figures
   need the same couple of dozen columns however wide the terminal is — sharing

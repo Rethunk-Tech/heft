@@ -16,7 +16,14 @@
 
 - The `i` detail pane no longer ends a column at its labels when that
   column's figures are blank, and its grid no longer overruns the pane by two
-  columns and wraps.
+  columns and wraps. A blank figure there is drawn as `-`.
+- The MEM bar painted all of `Cached` and `Buffers` inside `used`, which
+  already excludes reclaimable cache, so it drew anon at about 14 GiB on a
+  host with 23.7 GiB of `AnonPages`. It now paints `shm`, the cache that is in
+  `used`.
+- On a zram host the compressed swap store is its own `zram` segment of the
+  MEM bar rather than unlabelled remainder: it is RAM that no process's PSS
+  holds. The JSON host carries `mem_shmem_bytes` and `zram_used_bytes`.
 
 ### Added
 

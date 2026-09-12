@@ -18,7 +18,7 @@ demo.tape            vhs script for README.md's demo.gif; regenerate with `vhs d
 src/types.rs         Process, Metrics, HostTree, JSON shape
 src/proc.rs          every visible PID; blank metrics on EACCES
 src/cpu.rs           /proc/stat split (usr/sys/wait) + per-pid utime/stime rates
-src/mem.rs           meminfo used/Buffers/Cached/Swap, unified APU clip, host VRAM
+src/mem.rs           meminfo used/Shmem/Swap, zram mm_stat, unified APU clip, host VRAM
 src/io.rs            /proc/pid/io rates and smaps_rollup PSS + SwapPss
 src/net.rs           per-netns rx/tx from /proc/pid/net/dev; container rows only
 src/psi.rs           cgroup cpu/io/memory.pressure; single-cgroup rows only
@@ -445,7 +445,7 @@ are.
 | surface | rule |
 | --- | --- |
 | CPU bar | `/proc/stat` Δ user+nice / system+irq+softirq / iowait; idle+steal unfilled |
-| MEM bar | one MemTotal width when APU VRAM is unified; VRAM (unified only) / GTT resident, then Cached/Buffers, then anon; clip so the stack never exceeds `used.min(MemTotal)` (`mem::clip_used`) |
+| MEM bar | one MemTotal width when APU VRAM is unified; VRAM (unified only) / GTT resident, then zram `mem_used_total`, then Shmem, then the rest; never Cached/Buffers, which `used` already excludes (`mem::clip_used` has the measurement); clip so the stack never exceeds `used.min(MemTotal)` (`mem::clip_used`) |
 | Discrete VRAM | own tank against `mem_info_vram_total`, sharing the MEMORY row with the MEM bar; only `vram` drops from that legend — GTT is pinned system RAM and stays in MEM |
 | Swap | own tank against `SwapTotal`, never a MEM segment: swapped pages are not in RAM. Absent entirely when `SwapTotal` is 0, so a swapless host renders as it did before swap existed |
 | Layout | CPU and MEMORY, unbordered, plus a SWAP row on a machine that has swap (`ui::header_rows`). Swap shared the MEMORY row once and cost MEM half its width, which the CPU bar matches, so both headline bars halved for a readout needing ~24 columns at any terminal size: 84 columns of bar became 24. A swapless host still draws the two rows it always did. Discrete VRAM does still share the MEMORY row, since it is the memory MEM is being compared against, and `ui::tank_widths` gives it a fixed `SIDE_TANK` rather than an equal share, capped at half the row so a narrow terminal degrades to the even split instead of starving MEM; persistent rules: header↔tree and tree↔footer. `ui::bar_prefix` right-aligns every label to the longest one `ui::label_width`
@@ -457,7 +457,7 @@ than the one above it reads as a different scale. One helper rather than a
 literal per row: `cpu_header_line` and `swap_header_line` build their own
 prefixes while `bar_group` builds MEM's and VRAM's, so three copies would
 drift the first time a label changed. Every row draws its bar to one width so
-the closing brackets stack: `mem_header_line` returns its first tank's width and `cpu_header_line` and `swap_header_line` take it, clamped to their own slack and padded on the right. The MEM group spends more of its row on `] used/total` and a fourth legend label, so the CPU row is normally the one with columns to spare — only a tree with no memory inverts that, and there the clamp wins |
+the closing brackets stack: `mem_header_line` returns its first tank's width and `cpu_header_line` and `swap_header_line` take it, clamped to their own slack and padded on the right. `mem_header_line` caps its own bar to the CPU row's slack (`ui::cpu_parts`) as well, because which suffix is longer depends on the legend: `gtt/shm` is shorter than `usr/sys/wait` |
 | Disk R/W | table columns only (formatted rates change width every tick); after compute, before the stall trio |
 | `D` | left of `%CORE`, which reads D-state as idle; a count, so folder, User and Host rows carry a figure the stall columns must leave blank |
 | THR / AGE | beside `N`, before the metric columns: all three say what the row *is* rather than what it is currently costing |

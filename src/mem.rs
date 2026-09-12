@@ -9,6 +9,14 @@ pub(crate) struct RamInfo {
     pub total_bytes: u64,
     pub buffers_bytes: u64,
     pub cached_bytes: u64,
+    /// tmpfs and shared memory: the part of `Cached` that `MemAvailable` cannot
+    /// reclaim, and so the only cache that is inside `used`.
+    pub shmem_bytes: u64,
+    /// RAM held by every zram device's compressed store (`mm_stat`
+    /// `mem_used_total`). Kernel memory that no process's PSS carries and no
+    /// `/proc/meminfo` line names, so on a zram host it is most of the gap
+    /// between `used` and anything the tree can account for.
+    pub zram_bytes: u64,
     pub swap_used_bytes: u64,
     pub swap_total_bytes: u64,
 }
@@ -26,16 +34,16 @@ pub(crate) struct MemParts {
     pub total: u64,
     pub vram: u64,
     pub gtt: u64,
-    pub cache: u64,
-    pub buffers: u64,
+    pub zram: u64,
+    pub shmem: u64,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct MemSegments {
     pub vram: u64,
     pub gtt: u64,
-    pub cache: u64,
-    pub buffers: u64,
+    pub zram: u64,
+    pub shmem: u64,
     pub anon: u64,
 }
 
@@ -43,7 +51,31 @@ pub(crate) fn read_ram() -> RamInfo {
     let Ok(text) = fs::read_to_string(crate::root::path("/proc/meminfo")) else {
         return RamInfo::default();
     };
-    parse_meminfo(&text)
+    RamInfo {
+        zram_bytes: read_zram(),
+        ..parse_meminfo(&text)
+    }
+}
+
+/// `mem_used_total` summed over every zram device; a missing or unconfigured
+/// device reads 0.
+fn read_zram() -> u64 {
+    let Ok(entries) = fs::read_dir(crate::root::path("/sys/block")) else {
+        return 0;
+    };
+    entries
+        .flatten()
+        .filter(|e| e.file_name().to_string_lossy().starts_with("zram"))
+        .filter_map(|e| fs::read_to_string(e.path().join("mm_stat")).ok())
+        .filter_map(|s| zram_used(&s))
+        .fold(0, u64::saturating_add)
+}
+
+/// The third `mm_stat` field, `mem_used_total`, in bytes: the compressed data
+/// plus allocator overhead, which is what the device costs in RAM
+/// (docs.kernel.org/admin-guide/blockdev/zram).
+fn zram_used(mm_stat: &str) -> Option<u64> {
+    mm_stat.split_whitespace().nth(2)?.parse().ok()
 }
 
 pub(crate) fn parse_meminfo(text: &str) -> RamInfo {
@@ -51,6 +83,7 @@ pub(crate) fn parse_meminfo(text: &str) -> RamInfo {
     let mut avail = 0u64;
     let mut buffers = 0u64;
     let mut cached = 0u64;
+    let mut shmem = 0u64;
     let mut swap_total = 0u64;
     let mut swap_free = 0u64;
     for line in text.lines() {
@@ -62,6 +95,8 @@ pub(crate) fn parse_meminfo(text: &str) -> RamInfo {
             buffers = v.saturating_mul(1024);
         } else if let Some(v) = field_u64(line, "Cached:") {
             cached = v.saturating_mul(1024);
+        } else if let Some(v) = field_u64(line, "Shmem:") {
+            shmem = v.saturating_mul(1024);
         } else if let Some(v) = field_u64(line, "SwapTotal:") {
             swap_total = v.saturating_mul(1024);
         } else if let Some(v) = field_u64(line, "SwapFree:") {
@@ -73,6 +108,8 @@ pub(crate) fn parse_meminfo(text: &str) -> RamInfo {
         total_bytes: total,
         buffers_bytes: buffers,
         cached_bytes: cached,
+        shmem_bytes: shmem,
+        zram_bytes: 0,
         // `SwapCached:` is swapped-out pages that also still sit in RAM, so it
         // is neither free swap nor a separate tank: total - free is what is
         // actually out on disk.
@@ -136,9 +173,16 @@ pub(crate) fn is_unified(mem_total: u64, gpu: &GpuPool) -> bool {
     vram.saturating_mul(8) < mem_total
 }
 
-/// Paint VRAM, GTT, cache, buffers, then anon inside `used`. Clip GPU first when
-/// vram+gtt exceed used; clip cache/buffers afterward. Sum never exceeds
+/// Paint VRAM, GTT, zram, shmem, then the rest inside `used`. Clip GPU first
+/// when vram+gtt exceed used; clip zram/shmem afterward. Sum never exceeds
 /// `used.min(total)`.
+///
+/// `Cached` and `Buffers` are not segments. `used` is `MemTotal -
+/// MemAvailable`, and `MemAvailable` already counts reclaimable page cache as
+/// free, so painting them inside `used` claimed room that was process memory:
+/// measured on a 125 GiB host, 18.4 GiB of `Cached` drawn inside 52.7 GiB used
+/// left anon at about 14 GiB against `AnonPages` 23.7 GiB. Shmem is the cache
+/// `MemAvailable` cannot reclaim, so it is the slice that is actually there.
 pub(crate) fn clip_used(p: MemParts) -> MemSegments {
     if p.total == 0 {
         return MemSegments::default();
@@ -147,14 +191,14 @@ pub(crate) fn clip_used(p: MemParts) -> MemSegments {
     let vram = p.vram.min(used);
     let gtt = p.gtt.min(used.saturating_sub(vram));
     let after_gpu = used.saturating_sub(vram).saturating_sub(gtt);
-    let cache = p.cache.min(after_gpu);
-    let buffers = p.buffers.min(after_gpu.saturating_sub(cache));
-    let anon = after_gpu.saturating_sub(cache).saturating_sub(buffers);
+    let zram = p.zram.min(after_gpu);
+    let shmem = p.shmem.min(after_gpu.saturating_sub(zram));
+    let anon = after_gpu.saturating_sub(zram).saturating_sub(shmem);
     MemSegments {
         vram,
         gtt,
-        cache,
-        buffers,
+        zram,
+        shmem,
         anon,
     }
 }
@@ -166,12 +210,13 @@ mod tests {
     #[test]
     fn meminfo_used() {
         let ram = parse_meminfo(
-            "MemTotal: 1000 kB\nMemAvailable: 400 kB\nBuffers: 10 kB\nCached: 50 kB\nSwapCached: 7 kB\nSwapTotal: 800 kB\nSwapFree: 300 kB\n",
+            "MemTotal: 1000 kB\nMemAvailable: 400 kB\nBuffers: 10 kB\nCached: 50 kB\nSwapCached: 7 kB\nShmem: 20 kB\nShmemHugePages: 9 kB\nSwapTotal: 800 kB\nSwapFree: 300 kB\n",
         );
         assert_eq!(ram.total_bytes, 1000 * 1024);
         assert_eq!(ram.used_bytes, 600 * 1024);
         assert_eq!(ram.buffers_bytes, 10 * 1024);
         assert_eq!(ram.cached_bytes, 50 * 1024);
+        assert_eq!(ram.shmem_bytes, 20 * 1024);
         assert_eq!(ram.swap_total_bytes, 800 * 1024);
         assert_eq!(ram.swap_used_bytes, 500 * 1024);
     }
@@ -206,45 +251,52 @@ mod tests {
     }
 
     #[test]
+    fn zram_mm_stat_third_field_is_ram_used() {
+        assert_eq!(zram_used("4096 1024 8192 0 8192 0 0 0 0\n"), Some(8192));
+        assert_eq!(zram_used("0 0 0 0 0 0 0 0 0"), Some(0));
+        assert_eq!(zram_used("garbage"), None);
+    }
+
+    #[test]
     fn clip_gpu_when_vram_gtt_exceed_used() {
         let s = clip_used(MemParts {
             used: 100,
             total: 200,
             vram: 80,
             gtt: 50,
-            cache: 40,
-            buffers: 10,
+            zram: 40,
+            shmem: 10,
         });
         assert_eq!(
             s,
             MemSegments {
                 vram: 80,
                 gtt: 20,
-                cache: 0,
-                buffers: 0,
+                zram: 0,
+                shmem: 0,
                 anon: 0,
             }
         );
-        assert_eq!(s.vram + s.gtt + s.cache + s.buffers + s.anon, 100);
+        assert_eq!(s.vram + s.gtt + s.zram + s.shmem + s.anon, 100);
     }
 
     #[test]
-    fn clip_cache_buffers_after_gpu() {
+    fn clip_zram_shmem_after_gpu() {
         let s = clip_used(MemParts {
             used: 100,
             total: 200,
             vram: 10,
             gtt: 10,
-            cache: 200,
-            buffers: 50,
+            zram: 200,
+            shmem: 50,
         });
         assert_eq!(
             s,
             MemSegments {
                 vram: 10,
                 gtt: 10,
-                cache: 80,
-                buffers: 0,
+                zram: 80,
+                shmem: 0,
                 anon: 0,
             }
         );
@@ -257,14 +309,17 @@ mod tests {
             total: 100,
             vram: 40,
             gtt: 30,
-            cache: 20,
-            buffers: 10,
+            zram: 20,
+            shmem: 10,
         });
-        let sum = s.vram + s.gtt + s.cache + s.buffers + s.anon;
+        let sum = s.vram + s.gtt + s.zram + s.shmem + s.anon;
         assert_eq!(sum, 100);
         assert_eq!(s.anon, 0);
     }
 
+    /// The reported host: 17.3 GiB used, 5.2 GiB of PSS, 10 GiB out on zram.
+    /// The store is RAM inside `used`, so it is a segment of its own rather
+    /// than more of the unlabelled remainder read as process memory.
     #[test]
     fn clip_anon_is_used_remainder() {
         let s = clip_used(MemParts {
@@ -272,10 +327,10 @@ mod tests {
             total: 200,
             vram: 5,
             gtt: 15,
-            cache: 20,
-            buffers: 10,
+            zram: 20,
+            shmem: 10,
         });
         assert_eq!(s.anon, 50);
-        assert_eq!(s.vram + s.gtt + s.cache + s.buffers + s.anon, 100);
+        assert_eq!(s.vram + s.gtt + s.zram + s.shmem + s.anon, 100);
     }
 }

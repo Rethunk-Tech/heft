@@ -287,6 +287,8 @@ pub(crate) fn header_from(c: &HostHeader, a: &HostCpu, b: &HostCpu) -> HostTree 
         mem_total_bytes: ram.total_bytes,
         mem_buffers_bytes: ram.buffers_bytes,
         mem_cached_bytes: ram.cached_bytes,
+        mem_shmem_bytes: ram.shmem_bytes,
+        zram_used_bytes: ram.zram_bytes,
         swap_used_bytes: ram.swap_used_bytes,
         swap_total_bytes: ram.swap_total_bytes,
         vram_used_bytes: gpu.vram_used,

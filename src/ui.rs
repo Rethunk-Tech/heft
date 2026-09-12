@@ -1150,30 +1150,16 @@ fn pct_weight(p: f64) -> u64 {
     (p.clamp(0.0, 100.0) * 100.0).round() as u64
 }
 
-/// `bar_w` is the MEMORY row's first tank, not this row's own slack. The MEM
-/// group's suffix is the longer of the two — `] 78.2G/125.1G  ` and a
-/// four-label legend against `] 10.3%  ` and three — so left to itself this bar
-/// overruns the one below it by about thirteen columns. Drawing both to the
-/// same width and padding this row on the right is what makes the two brackets
-/// stack. Where the MEMORY row splits into tanks (a discrete card, a host with
+/// `bar_w` is the MEMORY row's first tank, not this row's own slack. Which
+/// row's suffix is longer depends on its legend — `] 78.2G/125.1G  ` and
+/// `gtt/shm` against `] 10.3%  ` and `usr/sys/wait` — so `mem_header_line`
+/// caps its bar to this row's slack too, and both are drawn to the narrower
+/// fit and padded on the right, which is what makes the two brackets stack. Where the MEMORY row splits into tanks (a discrete card, a host with
 /// swap) it is the first tank that is matched: those are the two brackets in
 /// the same place on the screen, and the pad simply runs under the tanks
 /// beside it.
 fn cpu_header_line(tree: &HostTree, width: usize, bar_w: usize) -> Line<'static> {
-    let prefix = bar_prefix("CPU", label_width(tree));
-    let mid = format!("] {:>5}%  ", fmt_pct(tree.cpu_pct));
-    let (tail, legend_len) = legend(&[
-        ("usr", Color::Cyan, glyph::full()),
-        ("sys", Color::Magenta, glyph::dark()),
-        ("wait", Color::Yellow, glyph::medium()),
-    ]);
-    // No host `psi` tail here: it is text on the row whose point is a bar.
-    // `--once` and `--json` still carry the figures, where nothing is drawn to
-    // scale. Nor is a tail here a way to line the two bars up: measured, one
-    // cancels most of the suffix difference above by accident, and with no
-    // tail the bars sit fourteen columns apart rather than four. `bar_w` is
-    // what closes them.
-    let fits = width.saturating_sub(prefix.len() + mid.len() + legend_len);
+    let (prefix, mid, tail, fits) = cpu_parts(tree, width);
     let bar_w = bar_w.min(fits);
     let parts = [
         (pct_weight(tree.cpu_user_pct), Color::Cyan, glyph::full()),
@@ -1194,6 +1180,26 @@ fn cpu_header_line(tree: &HostTree, width: usize, bar_w: usize) -> Line<'static>
     spans.extend(tail);
     spans.push(Span::raw(" ".repeat(fits - bar_w)));
     Line::from(spans)
+}
+
+/// The CPU row's prefix, suffix and legend, and the bar width left between
+/// them.
+fn cpu_parts(tree: &HostTree, width: usize) -> (String, String, Vec<Span<'static>>, usize) {
+    let prefix = bar_prefix("CPU", label_width(tree));
+    let mid = format!("] {:>5}%  ", fmt_pct(tree.cpu_pct));
+    let (tail, legend_len) = legend(&[
+        ("usr", Color::Cyan, glyph::full()),
+        ("sys", Color::Magenta, glyph::dark()),
+        ("wait", Color::Yellow, glyph::medium()),
+    ]);
+    // No host `psi` tail here: it is text on the row whose point is a bar.
+    // `--once` and `--json` still carry the figures, where nothing is drawn to
+    // scale. Nor is a tail here a way to line the two bars up: measured, one
+    // cancels most of the suffix difference above by accident, and with no
+    // tail the bars sit fourteen columns apart rather than four. `bar_w` is
+    // what closes them.
+    let fits = width.saturating_sub(prefix.len() + mid.len() + legend_len);
+    (prefix, mid, tail, fits)
 }
 
 /// `LABEL [bar] used/total  legend` sized to exactly `width` columns (the bar
@@ -1280,8 +1286,8 @@ fn mem_header_line(tree: &HostTree, width: usize) -> (Line<'static>, usize) {
         total: tree.mem_total_bytes,
         vram,
         gtt,
-        cache: tree.mem_cached_bytes,
-        buffers: tree.mem_buffers_bytes,
+        zram: tree.zram_used_bytes,
+        shmem: tree.mem_shmem_bytes,
     });
     // Swap has its own row: it is a device rather than a slice of MemTotal,
     // and as a tank here it took half the width, which the CPU bar matches.
@@ -1296,23 +1302,40 @@ fn mem_header_line(tree: &HostTree, width: usize) -> (Line<'static>, usize) {
         labels.push(("vram", Color::LightRed, glyph::quad_a()));
     }
     labels.push(("gtt", Color::LightCyan, glyph::quad_b()));
-    labels.push(("cache", Color::Blue, glyph::dark()));
-    labels.push(("buf", Color::Green, glyph::medium()));
-    let (mut spans, mem_bar_w) = bar_group(
-        "MEM",
-        label_w,
-        mem_width,
-        &[
-            (seg.vram, Color::LightRed, glyph::quad_a()),
-            (seg.gtt, Color::LightCyan, glyph::quad_b()),
-            (seg.cache, Color::Blue, glyph::dark()),
-            (seg.buffers, Color::Green, glyph::medium()),
-            (seg.anon, Color::Gray, glyph::full()),
-        ],
-        tree.mem_used_bytes,
-        tree.mem_total_bytes,
-        &labels,
-    );
+    // Labelled only where zram holds something, the way a swapless host gets
+    // no SWAP row.
+    if tree.zram_used_bytes > 0 {
+        labels.push(("zram", Color::Blue, glyph::dark()));
+    }
+    labels.push(("shm", Color::Green, glyph::medium()));
+    let parts = [
+        (seg.vram, Color::LightRed, glyph::quad_a()),
+        (seg.gtt, Color::LightCyan, glyph::quad_b()),
+        (seg.zram, Color::Blue, glyph::dark()),
+        (seg.shmem, Color::Green, glyph::medium()),
+        (seg.anon, Color::Gray, glyph::full()),
+    ];
+    let group = |w| {
+        bar_group(
+            "MEM",
+            label_w,
+            w,
+            &parts,
+            tree.mem_used_bytes,
+            tree.mem_total_bytes,
+            &labels,
+        )
+    };
+    let (mut spans, mut mem_bar_w) = group(mem_width);
+    // Capped to the CPU row's slack as well: which suffix is longer depends on
+    // the legend, and a MEM bar the CPU row cannot match leaves the two
+    // closing brackets in different columns.
+    let cap = cpu_parts(tree, width).3;
+    if mem_bar_w > cap {
+        let pad = mem_bar_w - cap;
+        (spans, mem_bar_w) = group(mem_width - pad);
+        spans.push(Span::raw(" ".repeat(pad)));
+    }
     if let Some(vram_total) = discrete {
         let vram_used = tree.vram_used_bytes.unwrap_or(0).min(vram_total);
         spans.extend(
@@ -1526,7 +1549,11 @@ fn metric_grid(row: &Flat, avail: usize) -> Vec<String> {
         .map(|c| {
             let v = (c.fmt)(&row.name, row.nproc, &row.metrics);
             // The label shows even when the value is blank: a blank cell is a
-            // metric heft could not read, which is a fact worth seeing.
+            // metric heft could not read, which is a fact worth seeing. Drawn
+            // as `-`, because a column of labels with nothing after them reads
+            // as figures cut off at the frame rather than figures that do not
+            // exist.
+            let v = if v.is_empty() { "-".to_string() } else { v };
             format!("{:<9} {v:<9}", c.header)
         })
         .collect();
@@ -1747,6 +1774,10 @@ mod tests {
             assert!(text.contains(c.header), "{} missing from {text}", c.header);
         }
         assert!(!text.contains("CGROUP"), "an aggregate row has no one pid");
+        assert!(
+            text.contains("MEM ST    -"),
+            "a blank figure is drawn: {text}"
+        );
 
         row.id = "host/apps/firefox/i/1/p/1".into();
         assert_eq!(row_pid(&row.id), Some(1));
@@ -2133,9 +2164,8 @@ mod tests {
         // width the bar subtracts: the rendered line must land on `width`.
         assert_eq!(text.chars().count(), width);
         assert_eq!(mem.chars().count(), width);
-        // Given its own slack the CPU bar runs about thirteen columns past the
-        // MEMORY bar, which spends more of its row on `] used/total  ` and a
-        // fourth legend label.
+        // Each row's own slack differs with its legend; both bars are drawn to
+        // the narrower one.
         assert_eq!(bracket(&text), bracket(&mem), "{text}\n{mem}");
 
         let (wide, wide_mem) = rows(&tree, 200);
@@ -2218,7 +2248,7 @@ mod tests {
         let text = line.to_string();
         // The bug this guards: GTT dropped entirely once VRAM moved to its own
         // tank, even though it is system RAM sitting inside the MEM bar's used.
-        assert!(text.contains("▄gtt/▓cache/▒buf"), "{text}");
+        assert!(text.contains("▄gtt/▒shm"), "{text}");
         assert!(
             !text.contains("vram/"),
             "discrete vram is not a MEM segment"
@@ -2238,7 +2268,13 @@ mod tests {
         assert!(tree.unified_memory);
         let text = mem_header_line(&tree, 100).0.to_string();
         assert!(!text.contains("VRAM ["), "{text}");
-        assert!(text.contains("▀vram/▄gtt/▓cache/▒buf"), "{text}");
+        assert!(text.contains("▀vram/▄gtt/▒shm"), "{text}");
+        assert_eq!(text.chars().count(), 100);
+        // zram's store is labelled only where zram holds something.
+        let mut zram = tree;
+        zram.zram_used_bytes = g;
+        let text = mem_header_line(&zram, 100).0.to_string();
+        assert!(text.contains("▀vram/▄gtt/▓zram/▒shm"), "{text}");
         assert_eq!(text.chars().count(), 100);
     }
 

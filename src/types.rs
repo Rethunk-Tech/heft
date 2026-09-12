@@ -188,6 +188,12 @@ pub struct HostTree {
     pub(crate) mem_total_bytes: u64,
     pub(crate) mem_buffers_bytes: u64,
     pub(crate) mem_cached_bytes: u64,
+    /// `Shmem:`, the part of `mem_cached_bytes` that is inside
+    /// `mem_used_bytes` because the kernel cannot reclaim it.
+    pub(crate) mem_shmem_bytes: u64,
+    /// RAM held by zram's compressed store, summed over devices: inside
+    /// `mem_used_bytes` and in no process's PSS.
+    pub(crate) zram_used_bytes: u64,
     pub(crate) swap_used_bytes: u64,
     pub(crate) swap_total_bytes: u64,
     #[serde(skip_serializing_if = "Option::is_none")]

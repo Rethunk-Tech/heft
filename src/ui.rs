@@ -1065,7 +1065,7 @@ fn draw_header(f: &mut ratatui::Frame<'_>, area: Rect, app: &App) {
 fn swap_header_line(tree: &HostTree, width: usize, bar_w: usize) -> Option<Line<'static>> {
     let total = (tree.swap_total_bytes > 0).then_some(tree.swap_total_bytes)?;
     let used = tree.swap_used_bytes.min(total);
-    let prefix = bar_prefix("SWAP");
+    let prefix = bar_prefix("SWAP", label_width(tree));
     let mid = format!("] {}/{}  ", fmt_bytes(Some(used)), fmt_bytes(Some(total)));
     // Drawn to MEM's bar width and padded on the right, the same way the CPU
     // row is, so all three brackets stack in one column. Its own suffix is
@@ -1097,7 +1097,7 @@ fn pct_weight(p: f64) -> u64 {
 /// the same place on the screen, and the pad simply runs under the tanks
 /// beside it.
 fn cpu_header_line(tree: &HostTree, width: usize, bar_w: usize) -> Line<'static> {
-    let prefix = bar_prefix("CPU");
+    let prefix = bar_prefix("CPU", label_width(tree));
     let mid = format!("] {:>5}%  ", fmt_pct(tree.cpu_pct));
     let (tail, legend_len) = legend(&[
         ("usr", Color::Cyan, glyph::full()),
@@ -1137,32 +1137,58 @@ fn cpu_header_line(tree: &HostTree, width: usize, bar_w: usize) -> Line<'static>
 /// absorbs the slack), so two of these can share one header row. Returns the
 /// width the bar settled on as well as the spans, because the CPU row above is
 /// drawn to the same scale.
-/// Every bar's label, right-aligned to the longest of them, so `[` lands in
-/// one column on every header row. `SWAP` is the long one; `CPU` and `MEM`
-/// carry the extra space.
+/// Every bar's label, right-aligned to the longest one *this machine draws*,
+/// so `[` lands in one column on every header row.
+///
+/// Aligned to `SWAP` unconditionally instead, a machine with neither swap nor
+/// a discrete card -- the ordinary case -- paid a column of bar for a label
+/// that was never on screen. The header heft draws there has to stay the one
+/// it drew before either existed.
 ///
 /// One helper rather than a literal per row: `cpu_header_line` and
 /// `swap_header_line` build their own prefixes and `bar_group` builds the
 /// rest, so three copies of this would drift the first time a label changed.
-fn bar_prefix(label: &str) -> String {
-    format!(" {label:>4} [")
+fn bar_prefix(label: &str, label_w: usize) -> String {
+    format!(" {label:>label_w$} [")
+}
+
+/// Discrete VRAM is a second device, so it is measured against its own
+/// capacity rather than MemTotal. Unified (APU) VRAM is a carve-out of
+/// MemTotal and stays inside the MEM bar.
+fn discrete_vram(tree: &HostTree) -> Option<u64> {
+    (!tree.unified_memory)
+        .then(|| tree.vram_total_bytes.filter(|v| *v > 0))
+        .flatten()
+}
+
+/// The longest label on screen. `CPU` and `MEM` are always there; `VRAM` and
+/// `SWAP` are a column longer and only sometimes.
+fn label_width(tree: &HostTree) -> usize {
+    if tree.swap_total_bytes > 0 || discrete_vram(tree).is_some() {
+        4
+    } else {
+        3
+    }
 }
 
 fn bar_group(
     label: &str,
+    label_w: usize,
     width: usize,
     parts: &[(u64, Color, char)],
-    cap: u64,
     used: u64,
+    // `total` is both the figure printed after the bar and the scale it is
+    // drawn against; they were separate until every caller passed one value
+    // twice.
     total: u64,
     labels: &[(&str, Color, char)],
 ) -> (Vec<Span<'static>>, usize) {
-    let prefix = bar_prefix(label);
+    let prefix = bar_prefix(label, label_w);
     let mid = format!("] {}/{}  ", fmt_bytes(Some(used)), fmt_bytes(Some(total)));
     let (tail, legend_len) = legend(labels);
     let bar_w = width.saturating_sub(prefix.len() + mid.len() + legend_len);
     let mut spans = vec![Span::raw(prefix)];
-    spans.extend(stacked_bar(bar_w, parts, cap.max(1)));
+    spans.extend(stacked_bar(bar_w, parts, total.max(1)));
     spans.push(Span::raw(mid));
     spans.extend(tail);
     (spans, bar_w)
@@ -1174,9 +1200,8 @@ fn mem_header_line(tree: &HostTree, width: usize) -> (Line<'static>, usize) {
     // Discrete VRAM is a second device, so measuring it against MemTotal is
     // meaningless; it gets its own capacity instead. Unified (APU) VRAM/GTT are
     // carve-outs of MemTotal and stay inside the MEM bar.
-    let discrete = (!tree.unified_memory)
-        .then(|| tree.vram_total_bytes.filter(|v| *v > 0))
-        .flatten();
+    let discrete = discrete_vram(tree);
+    let label_w = label_width(tree);
     // GTT is pinned system RAM on a discrete card too, already counted in
     // `used`, so it paints inside MEM either way. Both figures sum the drm
     // clients heft can see, not the device totals: sysfs has only
@@ -1212,6 +1237,7 @@ fn mem_header_line(tree: &HostTree, width: usize) -> (Line<'static>, usize) {
     labels.push(("buf", Color::Green, glyph::medium()));
     let (mut spans, mem_bar_w) = bar_group(
         "MEM",
+        label_w,
         mem_width,
         &[
             (seg.vram, Color::LightRed, glyph::quad_a()),
@@ -1220,7 +1246,6 @@ fn mem_header_line(tree: &HostTree, width: usize) -> (Line<'static>, usize) {
             (seg.buffers, Color::Green, glyph::medium()),
             (seg.anon, Color::Gray, glyph::full()),
         ],
-        tree.mem_total_bytes,
         tree.mem_used_bytes,
         tree.mem_total_bytes,
         &labels,
@@ -1230,9 +1255,9 @@ fn mem_header_line(tree: &HostTree, width: usize) -> (Line<'static>, usize) {
         spans.extend(
             bar_group(
                 "VRAM",
+                label_w,
                 tanks[1],
                 &[(vram_used, Color::LightRed, glyph::full())],
-                vram_total,
                 vram_used,
                 vram_total,
                 &[],
@@ -2174,13 +2199,43 @@ mod tests {
         assert_eq!(tree.swap_total_bytes, 0);
         let text = mem_header_line(&tree, 100).0.to_string();
         assert!(!text.contains("SWAP"), "{text}");
-        assert!(text.starts_with("  MEM ["), "{text}");
+        assert!(text.starts_with(" MEM ["), "no swap, no padding: {text}");
         assert_eq!(text.chars().count(), 100);
     }
 
     /// Labels are right-aligned to the longest, so the opening bracket lands
     /// in one column on every row: a bar that starts a column further along
     /// than the one above it reads as a different scale.
+    ///
+    /// To the longest *on screen*, though. Most machines have neither swap nor
+    /// a discrete card, and there the header must be the one heft drew before
+    /// either existed rather than one carrying a column of padding for a label
+    /// that is not drawn.
+    #[test]
+    fn a_plain_machine_pads_nothing() {
+        let tree = tree_with_gpu(&mem::GpuPool::default());
+        assert_eq!(tree.swap_total_bytes, 0);
+        assert_eq!(label_width(&tree), 3);
+        let (mem, bar_w) = mem_header_line(&tree, 120);
+        assert!(mem.to_string().starts_with(" MEM ["), "{mem}");
+        let cpu = cpu_header_line(&tree, 120, bar_w).to_string();
+        assert!(cpu.starts_with(" CPU ["), "{cpu}");
+        assert_eq!(mem.to_string().find('[').unwrap(), 5);
+        assert_eq!(cpu.find('[').unwrap(), 5);
+        // A discrete card brings VRAM, which is as long as SWAP, so the pad
+        // arrives for that too rather than only for swap.
+        let mut vram = tree.clone();
+        vram.unified_memory = false;
+        vram.vram_total_bytes = Some(12 * 1024 * 1024 * 1024);
+        assert_eq!(label_width(&vram), 4);
+        assert!(
+            mem_header_line(&vram, 120)
+                .0
+                .to_string()
+                .starts_with("  MEM [")
+        );
+    }
+
     #[test]
     fn every_header_bar_opens_in_the_same_column() {
         let g = 1024 * 1024 * 1024;
@@ -2235,7 +2290,9 @@ mod tests {
         swapped.swap_total_bytes = 8 * g;
         swapped.swap_used_bytes = 2 * g;
         let with_swap = mem_header_line(&swapped, 120).1;
-        assert_eq!(with_swap, plain, "the MEM bar is untouched by swap");
+        // One column, and that one is the label pad that lines `[` up with
+        // SWAP's -- not a share of the row. The even split made it 24.
+        assert_eq!(with_swap, plain - 1, "MEM went {plain} -> {with_swap}");
         // All three brackets stack in one column.
         let cpu = cpu_header_line(&swapped, 120, with_swap).to_string();
         let swap = swap_header_line(&swapped, 120, with_swap).expect("a row");

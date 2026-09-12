@@ -432,8 +432,11 @@ are.
 | MEM bar | one MemTotal width when APU VRAM is unified; VRAM (unified only) / GTT resident, then Cached/Buffers, then anon; clip so the stack never exceeds `used.min(MemTotal)` (`mem::clip_used`) |
 | Discrete VRAM | own tank against `mem_info_vram_total`, sharing the MEMORY row with the MEM bar; only `vram` drops from that legend — GTT is pinned system RAM and stays in MEM |
 | Swap | own tank against `SwapTotal`, never a MEM segment: swapped pages are not in RAM. Absent entirely when `SwapTotal` is 0, so a swapless host renders as it did before swap existed |
-| Layout | CPU and MEMORY, unbordered, plus a SWAP row on a machine that has swap (`ui::header_rows`). Swap shared the MEMORY row once and cost MEM half its width, which the CPU bar matches, so both headline bars halved for a readout needing ~24 columns at any terminal size: 84 columns of bar became 24. A swapless host still draws the two rows it always did. Discrete VRAM does still share the MEMORY row, since it is the memory MEM is being compared against, and `ui::tank_widths` gives it a fixed `SIDE_TANK` rather than an equal share, capped at half the row so a narrow terminal degrades to the even split instead of starving MEM; persistent rules: header↔tree and tree↔footer. `ui::bar_prefix` right-aligns every label to the longest of them (`SWAP`), so
-the opening bracket lands in one column too — a bar starting further along
+| Layout | CPU and MEMORY, unbordered, plus a SWAP row on a machine that has swap (`ui::header_rows`). Swap shared the MEMORY row once and cost MEM half its width, which the CPU bar matches, so both headline bars halved for a readout needing ~24 columns at any terminal size: 84 columns of bar became 24. A swapless host still draws the two rows it always did. Discrete VRAM does still share the MEMORY row, since it is the memory MEM is being compared against, and `ui::tank_widths` gives it a fixed `SIDE_TANK` rather than an equal share, capped at half the row so a narrow terminal degrades to the even split instead of starving MEM; persistent rules: header↔tree and tree↔footer. `ui::bar_prefix` right-aligns every label to the longest one `ui::label_width`
+says is on screen -- 4 where swap or a discrete card brings `SWAP` or `VRAM`,
+3 otherwise -- so the opening bracket lands in one column too. Aligned to
+`SWAP` unconditionally, a machine with neither (the ordinary case: most hosts
+have no swap) spent a column of bar padding a label it never draws — a bar starting further along
 than the one above it reads as a different scale. One helper rather than a
 literal per row: `cpu_header_line` and `swap_header_line` build their own
 prefixes while `bar_group` builds MEM's and VRAM's, so three copies would

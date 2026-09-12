@@ -63,10 +63,14 @@
   width they would be on a machine with no swap at all. A swapless host draws
   the same two-row header it always did.
 
-- The header bars all open in the same column. `SWAP` is a character longer
-  than `CPU` and `MEM`, so its bar started one column further along than
-  theirs, which reads as a different scale. The labels are right-aligned now;
-  the closing brackets already lined up.
+- The header bars all open in the same column. `SWAP` and `VRAM` are a
+  character longer than `CPU` and `MEM`, so their bars started one column
+  further along, which reads as a different scale. The labels are
+  right-aligned now — but only to the longest label actually on screen, so a
+  machine with neither swap nor a discrete card, which is the ordinary case,
+  draws exactly the header it drew before either was supported rather than
+  paying a column to pad a label it never shows. The closing brackets already
+  lined up.
 
 - Discrete VRAM, which does still share the MEMORY row because it is the
   memory MEM is being compared against, now takes a fixed slice of it rather

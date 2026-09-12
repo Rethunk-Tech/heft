@@ -20,6 +20,8 @@
 - The `i` detail pane no longer ends a column at its labels when that
   column's figures are blank, and its grid no longer overruns the pane by two
   columns and wraps. A blank figure there is drawn as `-`.
+- The header rows stop a column short of the terminal's right edge, so the
+  MEM legend is not clipped where a terminal's padding overlaps the last cell.
 - The MEM bar painted all of `Cached` and `Buffers` inside `used`, which
   already excludes reclaimable cache, so it drew anon at about 14 GiB on a
   host with 23.7 GiB of `AnonPages`. It now paints `shm`, the cache that is in

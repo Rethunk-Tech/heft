@@ -1102,7 +1102,10 @@ fn render_rule(f: &mut ratatui::Frame<'_>, area: Rect) {
 }
 
 fn draw_header(f: &mut ratatui::Frame<'_>, area: Rect, app: &App) {
-    let width = area.width as usize;
+    // One column short of the pane: the MEM row is built to land exactly on
+    // its width, and a legend in the last cell reads as cut off wherever the
+    // terminal's padding or scrollbar overlaps that cell.
+    let width = (area.width as usize).saturating_sub(1);
     let (mem, mem_bar_w) = mem_header_line(&app.tree, width);
     // Every row's bar is drawn to MEM's, so the brackets stack in one column
     // however many rows there are.

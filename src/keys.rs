@@ -15,7 +15,7 @@ pub(crate) const KEYS: &[(&str, &str)] = &[
     ("PgUp PgDn  Home End", "page or jump"),
     ("Enter  Space", "expand / collapse"),
     ("{left} {right}  h l", "scroll columns"),
-    ("Shift-{left} Shift-{right}  c", "change sort column"),
+    ("Shift-{left} Shift-{right}", "change sort column"),
     ("/", "filter by regex (Enter apply, Esc cancel)"),
     ("d", "reverse sort"),
     ("H", "hide sort column"),

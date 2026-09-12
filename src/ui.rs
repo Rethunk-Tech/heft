@@ -219,13 +219,13 @@ fn run_loop(
         sorted_by: String::new(),
     };
     // The highlight is this id, not `cursor`'s slot: PSS desc (the default)
-    // reshuffles the flattened list every sample, and so do `c`/`d`, `/`,
+    // reshuffles the flattened list every sample, and so do the sort keys, `/`,
     // `--top`, and expand/collapse.
     let mut cursor_id = String::from("host");
     let mut fresh = true;
     loop {
-        // Re-sorting an already ordered tree each frame is what lets `c` and
-        // `d` reorder every level without re-sampling.
+        // Re-sorting an already ordered tree each frame is what lets the sort
+        // keys reorder every level without re-sampling.
         sort_tree(
             &mut app.tree,
             Sort::from_label(&app.view.sort),
@@ -647,10 +647,6 @@ fn handle_key(
             config::save_view(&app.view)?;
             app.status = format!("saved {}", config::view_path().display());
         }
-        KeyCode::Char('c') => {
-            let next = Sort::from_label(&app.view.sort).next(&app.cols);
-            app.view.sort = next.label().into();
-        }
         KeyCode::Char('d') => app.view.desc = !app.view.desc,
         KeyCode::Char('H') => {
             let label = app.view.sort.clone();
@@ -677,8 +673,6 @@ fn handle_key(
                 app.cursor += 1;
             }
         }
-        // `c` stays beside these: the Linux console and some multiplexers send
-        // Shift-arrow as a bare arrow, which would scroll instead.
         KeyCode::Left | KeyCode::Right if mods.contains(KeyModifiers::SHIFT) => {
             let s = Sort::from_label(&app.view.sort);
             let s = if code == KeyCode::Left {
@@ -789,7 +783,7 @@ fn alarm_style() -> Style {
 
 /// Every header stays bold; the sort column is reversed so it is still marked
 /// when `NO_COLOR` drops hue. The cursor row already uses reverse, so this is
-/// the same highlight, on the one cell `c` is talking about.
+/// the same highlight, on the one cell the sort is talking about.
 fn sort_header<'a>(cols: impl Iterator<Item = &'a Column>, sort: &str) -> Row<'static> {
     Row::new(cols.map(|c| {
         let cell = Cell::from(c.header);
@@ -1047,8 +1041,9 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &mut App, rows: &[Flat]) {
     let paused = app.paused.map_or_else(String::new, |since| {
         format!("  PAUSED {}s", since.elapsed().as_secs())
     });
+    let (_, _, left, right) = glyph::arrows();
     let footer = format!(
-        " q quit  / filter  c sort ({})  i detail  p pause  s save  ? help{}{}  {}  {}",
+        " q quit  / filter  S-{left}{right} sort ({})  i detail  p pause  s save  ? help{}{}  {}  {}",
         app.view.sort,
         paused,
         crate::once::coverage_tail(&app.tree),
@@ -2384,7 +2379,7 @@ mod tests {
 
     /// Reproduced against the real binary in a pty before this existed: from a
     /// default view, one Ctrl-C moved the sort pss -> rss and a second moved it
-    /// to swap, exactly as pressing `c` twice would; Ctrl-D flipped `desc`; and
+    /// to swap, exactly as the bare sort key did; Ctrl-D flipped `desc`; and
     /// Ctrl-S wrote view.json with no `s` ever pressed. Raw mode turns ISIG
     /// off, so nothing else was ever going to catch these.
     #[test]
@@ -2393,7 +2388,6 @@ mod tests {
         let rows = filter_rows();
 
         for (key, what) in [
-            ('c', "sort cycle"),
             ('d', "sort direction"),
             ('s', "view save"),
             ('H', "hide column"),
@@ -2415,20 +2409,26 @@ mod tests {
                 before,
                 "ctrl-{key} reached the {what} binding"
             );
-            // Ctrl-C is the one that means something, and it means quit.
-            assert_eq!(quit, key == 'c', "ctrl-{key} quit = {quit}");
+            assert!(!quit, "ctrl-{key} quit");
         }
 
         // Alt and Super are dropped outright; neither quits nor acts.
         let mut app = test_app();
-        assert!(!handle_key(&mut app, KeyCode::Char('c'), KeyModifiers::ALT, &rows).unwrap());
-        assert_eq!(app.view.sort, View::default().sort);
+        assert!(!handle_key(&mut app, KeyCode::Char('d'), KeyModifiers::ALT, &rows).unwrap());
+        assert_eq!(app.view.desc, View::default().desc);
 
         // A capital is how you type one: SHIFT must still reach the bindings.
         let mut app = test_app();
         app.filter_edit = true;
         handle_key(&mut app, KeyCode::Char('A'), KeyModifiers::SHIFT, &rows).unwrap();
         assert_eq!(app.view.filter, "A");
+
+        // Shift-arrow is the only way to change the sort, so SHIFT on an arrow
+        // must not fall through to the bare arrow's column scroll.
+        let mut app = test_app();
+        handle_key(&mut app, KeyCode::Right, KeyModifiers::SHIFT, &rows).unwrap();
+        assert_ne!(app.view.sort, View::default().sort);
+        assert_eq!(app.col_off, 0);
 
         // And Ctrl-C quits out of the filter editor too, rather than typing.
         let mut app = test_app();

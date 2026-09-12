@@ -139,7 +139,7 @@ A one-shot `--json` / `--once` takes two `/proc` walks separated by
 (`--pss-interval` is ignored). Adding `--follow` makes it a continuous mode
 instead, and there `--pss-interval` applies.
 
-`--sort` takes the labels the `c` key cycles and `view.json` saves (listed
+`--sort` takes the labels `Shift-←` `Shift-→` cycle and `view.json` saves (listed
 under [Columns](#columns)); a name that is not one of them is a
 usage error, so a typo is told to you rather than quietly sorting by PSS the
 way a stale saved view does. `--filter` is the `/` key: it keeps matching rows
@@ -279,7 +279,7 @@ virtualise those, so nothing heft could read there would be namespace-local.
 | `PgUp` `PgDn` / `Home` `End` | page or jump the cursor |
 | Enter / Space | collapse or expand |
 | `←` `→` / `h` `l` | scroll columns when the terminal is narrower than the table |
-| `Shift-←` `Shift-→` / `c` | previous or next sort column (default PSS descending); `c` is for terminals that send Shift-arrow as a bare arrow, such as the Linux console |
+| `Shift-←` `Shift-→` | previous or next sort column (default PSS descending) |
 | `/` | filter by regex on the name (Enter applies, Esc cancels) |
 | `d` | reverse the sort direction |
 | `H` | hide the current sort column (`name` is refused) |
@@ -290,8 +290,8 @@ virtualise those, so nothing heft could read there would be namespace-local.
 | `?` / `F1` | toggle the key help overlay |
 
 Sorting applies to every level of the tree. The TUI reverses the header of
-the column `c` is sorting by, so the sort is on the table as well as in the
-footer (`c sort (pss)`). Sort, filter, hidden columns, and column order last
+the sort column, so the sort is on the table as well as in the
+footer (`S-←→ sort (pss)`). Sort, filter, hidden columns, and column order last
 only for this session until you press `s`; starting heft again loads that file
 if it exists.
 
@@ -301,7 +301,7 @@ A folder with nothing in it is not expandable — it does not draw as open over
 an empty gap — and becomes one when a row appears.
 
 The highlight stays on the same row when the list reorders or shrinks — a
-new sample, `c`/`d`, `/`, `--top`, or expand/collapse. If that row has gone
+new sample, `Shift-←` `Shift-→`/`d`, `/`, `--top`, or expand/collapse. If that row has gone
 (process exited, filter dropped it), the nearest parent still on screen is
 selected.
 
@@ -716,7 +716,7 @@ heft only ever reads, keeps yours forever.
 Labels are `name`, `spark`, `nproc`, `threads`, `age`, `dstate`, `core`,
 `machine`, `pss`, `rss`, `swap`, `vram`, `gtt`, `gfx`, `compute`, `diskr`,
 `diskw`, `cpustall`, `iostall`, `memstall`, `netns_rx`, `netns_tx`. `--sort`
-and `c` take all of them except `spark`, which draws a trend rather than a
+and `Shift-←` `Shift-→` take all of them except `spark`, which draws a trend rather than a
 number and so has no ordering; `--hide` and `--order` take it like any other,
 since hiding and moving a column are presentation. No file, or no key, shows every
 column in compiled order. An unknown label in the file warns on stderr and is
@@ -725,7 +725,7 @@ ignored; on `--hide` or `--order` it is a usage error, the same split as
 unreadable — but it can be moved.
 
 Hiding and order are presentation only: heft reads the same `/proc` files
-either way, `c` skips over what it cannot show, and `--json` ignores both lists
+either way, the sort keys skip over what they cannot show, and `--json` ignores both lists
 entirely. Both flags are refused with `--json`.
 
 ## Grouping overrides

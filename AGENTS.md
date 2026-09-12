@@ -283,7 +283,7 @@ makes the read terminable — universally answered, and answered last, so its
 arrival proves the graphics query has been dealt with; without it every start
 on a non-graphics terminal would wait out the timeout. Only a terminal that
 answers neither does, at 400ms. `caps::drain` then swallows a late reply,
-because a DA1 answer ends in `c` and `c` cycles the sort column.
+because a DA1 answer carries `?` and `?` opens the help overlay.
 `ui::resolve_trend` prefers kitty locally (cell-grid placement, shm transport)
 and sixel when `kgp::is_remote`, on the measured 146 KB-a-sample against
 559-bytes-a-frame gap. An explicit `--trend` value asks nothing. It is also

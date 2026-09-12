@@ -49,7 +49,7 @@ pub(crate) struct Cli {
     /// TUI seconds between PSS (`smaps_rollup`) reads (≥ `--interval`). `--once` / `--json` always read PSS
     #[arg(long, default_value_t = 5.0)]
     pub pss_interval: f64,
-    /// Sort by this column label: the labels `c` cycles and `view.json` saves; a bad one lists them all
+    /// Sort by this column label: the labels Shift-arrows cycle and `view.json` saves; a bad one lists them all
     #[arg(long, value_name = "COLUMN")]
     pub sort: Option<String>,
     /// Keep only rows whose name matches this regex, and their parents
@@ -79,7 +79,7 @@ pub(crate) struct Cli {
     /// Sort low to high, whatever the saved view holds
     #[arg(long)]
     pub asc: bool,
-    /// Leave this column out of the table; repeat. The labels `c` cycles. Refused with --json
+    /// Leave this column out of the table; repeat. The labels Shift-arrows cycle. Refused with --json
     #[arg(long, value_name = "COLUMN", conflicts_with = "json")]
     pub hide: Vec<String>,
     /// Left-to-right column order; repeat. Unlisted keep default order after these. name stays first unless listed. Refused with --json

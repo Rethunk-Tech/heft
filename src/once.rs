@@ -1176,7 +1176,7 @@ mod tests {
             .collect()
     }
 
-    /// The `c` / `d` keys have to reach below an identity row, and an
+    /// The sort keys have to reach below an identity row, and an
     /// unreadable metric is not a zero: it sits last whichever way the sort
     /// runs.
     #[test]
@@ -1294,7 +1294,7 @@ mod tests {
         }
     }
 
-    /// `c` in the TUI can see `spark`, so the skip has to hold there too --
+    /// The TUI's sort keys can see `spark`, so the skip has to hold there too --
     /// that is the surface the column exists on.
     #[test]
     fn the_sort_cycle_never_lands_on_the_trend() {
@@ -1422,7 +1422,7 @@ mod tests {
         );
     }
 
-    /// The cycle has to skip what it cannot show, or `c` moves the sort to a
+    /// The cycle has to skip what it cannot show, or Shift-arrow moves the sort to a
     /// column the reader has no way to see.
     #[test]
     fn sort_cycle_skips_hidden_columns() {

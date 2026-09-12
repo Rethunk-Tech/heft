@@ -122,7 +122,7 @@ fn readable(within: Duration) -> bool {
 }
 
 /// How long to keep swallowing bytes after the probe. A device-attributes
-/// reply ends in `c`, and `c` cycles the sort column, so a reply that arrived
+/// reply carries `?`, and `?` opens the help overlay, so a reply that arrived
 /// a moment after the timeout would otherwise land on the keyboard.
 const DRAIN_IDLE: Duration = Duration::from_millis(50);
 

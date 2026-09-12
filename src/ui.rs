@@ -1053,7 +1053,11 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &mut App, rows: &[Flat]) {
         app.sixel_out = Some(sixel::at(y, x, &sixel::encode(&img, trend_colour())));
     }
     if app.help {
-        draw_help(f, chunks[2]);
+        // Over the whole frame, not the table pane: on a short terminal the
+        // pane cut the list off after `i`, taking `?` itself and the bar
+        // swatches with it.
+        let full = f.area();
+        draw_help(f, full);
     } else if app.detail {
         draw_detail(f, chunks[2], rows.get(app.cursor));
     }
@@ -1607,10 +1611,33 @@ fn draw_detail(f: &mut ratatui::Frame<'_>, area: Rect, row: Option<&Flat>) {
 }
 
 fn draw_help(f: &mut ratatui::Frame<'_>, area: Rect) {
-    let mut lines = plain(&help_text());
+    popup(f, area, help_lines(area.width), "keys");
+}
+
+/// The key list in two columns where `width` holds them, so the overlay is
+/// half as tall, then the bar swatches. Filled column-major, so reading down
+/// the left column and then the right keeps the table's order.
+fn help_lines(width: u16) -> Vec<Line<'static>> {
+    // The border and padding `popup` adds, and the gutter between columns.
+    const CHROME: usize = 4;
+    const GUTTER: usize = 3;
+    let text = help_text();
+    let keys: Vec<&str> = text.lines().collect();
+    let w = keys.iter().map(|l| l.chars().count()).max().unwrap_or(0);
+    let mut lines = if usize::from(width) >= 2 * w + GUTTER + CHROME {
+        let half = keys.len().div_ceil(2);
+        (0..half)
+            .map(|i| {
+                let right = keys.get(half + i).copied().unwrap_or("");
+                Line::from(format!("{:<w$}{:GUTTER$}{right}", keys[i], ""))
+            })
+            .collect()
+    } else {
+        plain(&text)
+    };
     lines.push(Line::default());
     lines.extend(bar_key());
-    popup(f, area, lines, "keys");
+    lines
 }
 
 fn plain(text: &str) -> Vec<Line<'static>> {
@@ -2011,6 +2038,19 @@ mod tests {
         // Every other column is left alone, including a large one.
         assert!(!alarming("core", &m(Some(99.0))));
         assert!(!alarming("name", &m(Some(99.0))));
+    }
+
+    /// Reported on a 19-row terminal: the overlay ended at `i`, with `?`/`F1`
+    /// and every swatch below the fold. Wide enough, the keys take two columns
+    /// and the whole overlay is barely taller than the table pane it covered.
+    #[test]
+    fn help_fits_a_short_wide_terminal() {
+        let keys = help_text().lines().count();
+        let wide = help_lines(160);
+        assert_eq!(wide.len(), keys.div_ceil(2) + 1 + bar_key().len());
+        let text: String = wide.iter().map(|l| format!("{l}\n")).collect();
+        assert!(text.contains("F1") && text.contains("buf"), "{text}");
+        assert_eq!(help_lines(60).len(), keys + 1 + bar_key().len());
     }
 
     #[test]

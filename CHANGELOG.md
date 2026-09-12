@@ -33,6 +33,9 @@
   columns and wraps. A blank figure there is drawn as `-`.
 - The header rows stop a column short of the terminal's right edge, so the
   last figure is not clipped where a terminal's padding overlaps that cell.
+- The `?` overlay covers the whole screen and lays the keys in two columns
+  where the terminal is wide enough; on a short terminal it was cut off after
+  `i`, hiding `?`/`F1` and the bar swatches.
 - The MEM bar painted all of `Cached` and `Buffers` inside `used`, which
   already excludes reclaimable cache, so it drew anon at about 14 GiB on a
   host with 23.7 GiB of `AnonPages`. It now paints `shm`, the cache that is in

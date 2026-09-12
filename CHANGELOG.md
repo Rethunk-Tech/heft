@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.6.2 - 2026-09-12
+
 ### Added
 
 - `--glyphs legacy`, for a font that draws the header bars but not the

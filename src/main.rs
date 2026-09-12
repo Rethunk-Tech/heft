@@ -51,6 +51,7 @@ fn main() -> ExitCode {
     heft::glyph::init(match cli.glyphs {
         Glyphs::Auto => None,
         Glyphs::Unicode => Some(heft::glyph::Set::Unicode),
+        Glyphs::Legacy => Some(heft::glyph::Set::Legacy),
         Glyphs::Ascii => Some(heft::glyph::Set::Ascii),
     });
     // A typed value below the floor is a usage error, the same split as a bad

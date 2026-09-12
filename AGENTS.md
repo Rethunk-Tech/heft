@@ -213,7 +213,17 @@ surfaces.
 
 `glyph` resolves the character set once in `main` into a `OnceLock` rather
 than threading it through every render site, since it cannot change while heft
-runs. Every ASCII substitute is one column wide: the header lines are built to
+runs. `Set::Legacy` differs from `Set::Unicode` in `spark_ramp` and nowhere
+else: every other glyph heft draws is one a legacy font carries, which is what
+keeps the third set a branch rather than a second table. That holds only
+because `quad_a` / `quad_b` are the half blocks `▀▄` rather than the quadrants
+`▚▙`, and `collapsed` is `►` (U+25BA) rather than `▶` (U+25B6) — U+25B6 is the
+play-button emoji base, so a terminal resolving emoji presentation draws it
+double-width and shifts a row whose every column is exact. `glyph::tests`
+asserts that separation, and caught that U+2584 is both a half block and the
+ramp's midpoint, so the gap a legacy font leaves is six steps, not seven.
+`detect` never returns `Legacy`: a locale says the terminal can encode UTF-8,
+never what the font can draw. Every ASCII substitute is one column wide: the header lines are built to
 land on an exact width and `once::trunc` cuts to an exact column count, so a
 three-character `...` for `…` would overflow both. `Cli::Glyphs` lives in
 `src/cli.rs` because `build.rs` compiles that file standalone.

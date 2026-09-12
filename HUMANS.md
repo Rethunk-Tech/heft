@@ -96,6 +96,7 @@ heft --once --hide vram --hide gtt
 heft --once --order pss --order rss --order core
 heft --json --follow      # one JSON document per line, per interval, forever
 heft --glyphs ascii       # bars and markers without block characters
+heft --glyphs legacy      # block bars, but an ASCII TREND ramp
 heft --proc-root /mnt/tree   # read /proc and /sys under here instead of /
 ```
 
@@ -188,6 +189,16 @@ characters only when one of them names a UTF-8 charmap — a bare console, the C
 locale, or a container with no locale set at all gets one-column ASCII
 substitutes instead of tofu. `unicode` and `ascii` force it either way, for a
 terminal whose environment undersells or oversells what its font has.
+
+`legacy` is for the font in between, and there are many of them: it draws the
+bars, the rules and the tree markers in Unicode, and only TREND in ASCII. A
+font can carry `█▓▒░`, the half blocks `▀▄` and the triangles `▼►` — everything
+the header and the tree are made of — and still not carry `▁▂▃▅▆▇`, which is
+six of the sparkline's eight steps. On such a terminal everything renders
+except one column, and `ascii` would be a heavy answer to that: it would throw
+away a header that was drawing correctly. Nothing heft can read says what a
+font covers, so `auto` never picks this — you ask for it when the trend column
+comes up as boxes and the rest of the screen is fine.
 
 `NO_COLOR` is honoured: set it to anything that is not the empty string and the
 TUI draws without hue. Presence decides, not the value, so `NO_COLOR=0` and
@@ -405,6 +416,10 @@ blank, no figure yet.
 
 Changing the sort column clears it. The buffer would otherwise hold two
 different metrics in two different units and draw them as one picture.
+
+If TREND is the one column that comes up as boxes while the header bars draw
+correctly, the font is missing `▁▂▃▅▆▇`: `--glyphs legacy` swaps the ramp for
+`_.,:-=+#` and leaves everything else alone.
 
 It is TUI only. `--once` and `--json` take two `/proc` walks and have no
 history to draw, so `--order spark` there leaves an empty column rather than a

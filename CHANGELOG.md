@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+### Added
+
+- `--glyphs legacy`, for a font that draws the header bars but not the
+  sparkline. TREND's ramp needs eight rising steps and six of them — every
+  one but `▄` and `█` — are absent from fonts that carry `█▓▒░` perfectly
+  well, so the trend column came up as boxes on a screen that was otherwise
+  correct. The new set keeps every Unicode character and swaps only the ramp
+  for `_.,:-=+#`; `--glyphs ascii` would have answered one column by giving
+  up the whole header. `auto` never picks it, because a locale says what the
+  terminal can encode and nothing says what the font can draw.
+
+### Fixed
+
+- The VRAM and GTT segments of the MEMORY bar were the quadrant characters
+  `▚` and `▙`, and the collapsed-row marker was `▶` (U+25B6). Both sit
+  outside what a font carrying the shade ramp necessarily has, so a reader
+  whose `█▓▒` bars and `▼` markers drew correctly still got tofu for exactly
+  those three. They are now the half blocks `▀` and `▄` and the pointer `►`
+  (U+25BA), which look the same and live in the same repertoire as the ramp.
+  U+25B6 was the worse of the two for a second reason: it is the base of the
+  play-button emoji, so a terminal that resolves emoji presentation drew it
+  double-width in a table whose every column is exact.
+
 ## 0.6.1 - 2026-09-12
 
 ### Fixed

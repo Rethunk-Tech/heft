@@ -9,6 +9,8 @@ pub(crate) enum Glyphs {
     Auto,
     /// Block and box-drawing characters
     Unicode,
+    /// Block bars, but an ASCII TREND ramp: a font without the eighth blocks
+    Legacy,
     /// One-column ASCII substitutes, for a console without the fonts
     Ascii,
 }

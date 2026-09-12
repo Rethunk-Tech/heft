@@ -430,7 +430,7 @@ pub(crate) fn detail(pid: u32) -> Vec<(&'static str, String)> {
 /// so a multi-byte argument cannot be split mid-character.
 fn truncate_chars(s: &str, max: usize) -> String {
     match s.char_indices().nth(max) {
-        Some((i, _)) => format!("{}…", &s[..i]),
+        Some((i, _)) => format!("{}{}", &s[..i], crate::glyph::ellipsis()),
         None => s.to_string(),
     }
 }

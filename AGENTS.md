@@ -34,6 +34,7 @@ src/glyph.rs         unicode vs ascii bar/rule/marker characters; resolved once
 tests/grouping.rs    integration tests over tests/fixtures/
 tests/live_proc.rs   invariants over the real /proc; must hold in a bare container
 tests/fixtures/      GUI grouping snapshot
+packaging/aur/       PKGBUILD + .SRCINFO for heft, heft-bin, heft-git; update.sh
 ```
 
 No `sysinfo` crate. No `nix` unless rustix cannot do it; v1 uses `std` + `libc`.
@@ -388,6 +389,30 @@ that may have lost the pid.
 `sampled_at` is set in `cpu::header_from`, the one `HostTree` constructor, off
 the `now_epoch` the AGE column already reads; a `--json --follow` line carries
 no other clock, so without it two records cannot be placed in time.
+
+## Packaging
+
+`packaging/aur/` holds the three AUR packages and is the source of truth for
+them; the AUR repositories are push targets, never edited in place. `heft`
+builds from the release tarball, `heft-bin` installs the release musl binaries
+(`provides`/`conflicts` heft, and no `depends` at all because they are
+static), and `heft-git` builds from main. All three carry
+`options=('!strip' '!debug')`: `[profile.release]` already strips, so makepkg
+otherwise fails to index a binary with no symbols and ships an empty debug
+package.
+
+`update.sh <version>` sets `pkgver`, refreshes the checksums and regenerates
+every `.SRCINFO`. The binary sums are read from the `.sha256` files the
+release publishes rather than from a re-download, because `makepkg -g` hashes
+only the current architecture's sources — `updpkgsums` on an x86_64 machine
+leaves `sha256sums_aarch64` stale and still looking right. It needs makepkg,
+so it runs inside `archlinux:base-devel`.
+
+The `aur` job in `release.yml` runs it after the release exists, since the
+checksums are of assets that did not exist before, commits the refresh back to
+main, and pushes `heft` and `heft-bin` to the AUR when the `AUR_SSH_KEY`
+secret is set (it skips with a notice when it is not). `heft-git` is pushed by
+hand: a tag changes nothing in a package whose `pkgver()` is `git describe`.
 
 ## Gates
 

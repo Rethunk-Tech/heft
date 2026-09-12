@@ -151,3 +151,79 @@ jobs:
             --verify-tag \
             --generate-notes \
             dist/*
+
+  # The AUR packages can only be finalised after the release exists: their
+  # checksums are of the assets the build job just published. So this refreshes
+  # them from the release, commits the refresh back, and pushes it to the AUR.
+  #
+  # heft-git is not pushed here. Its pkgver comes from `git describe` at build
+  # time, so a tag changes nothing in it.
+  aur:
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      # main rather than the tag: this job commits the refreshed PKGBUILDs, and
+      # a tag is not a branch to commit onto.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+
+      # makepkg --printsrcinfo is Arch-only, and the runner is not Arch. The
+      # image is used rather than a `container:` job because the archlinux
+      # image ships no node, which every JavaScript action needs.
+      - name: Refresh the PKGBUILDs for this tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          docker run --rm -e TAG -v "$PWD":/work -w /work archlinux:base-devel bash -c '
+            set -e
+            pacman -Sy --noconfirm --needed --quiet >/dev/null
+            useradd -m builder
+            chown -R builder /work/packaging
+            su builder -c "packaging/aur/update.sh $TAG"
+          '
+
+      - name: Commit the refresh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          git add packaging/aur
+          # Nothing to say when a tag ships the same assets twice.
+          git diff --cached --quiet && exit 0
+          git -c user.name='github-actions[bot]' \
+              -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+              commit -m "chore(aur): heft ${TAG#v}"
+          git push "https://x-access-token:$GH_TOKEN@github.com/$REPO" HEAD:main
+
+      # Skipped rather than failed without the secret: the refresh above is
+      # still worth having, and the maintainer can push by hand.
+      - name: Push to the AUR
+        env:
+          AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [ -z "$AUR_SSH_KEY" ]; then
+            echo "::notice::no AUR_SSH_KEY secret, skipping the AUR push"
+            exit 0
+          fi
+          mkdir -p ~/.ssh
+          printf '%s\n' "$AUR_SSH_KEY" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
+          export GIT_SSH_COMMAND='ssh -i ~/.ssh/aur -o IdentitiesOnly=yes'
+          for pkg in heft heft-bin; do
+            git clone "ssh://aur@aur.archlinux.org/$pkg.git" "$RUNNER_TEMP/$pkg"
+            cp "packaging/aur/$pkg/PKGBUILD" "packaging/aur/$pkg/.SRCINFO" "$RUNNER_TEMP/$pkg/"
+            git -C "$RUNNER_TEMP/$pkg" add PKGBUILD .SRCINFO
+            git -C "$RUNNER_TEMP/$pkg" diff --cached --quiet && continue
+            git -C "$RUNNER_TEMP/$pkg" \
+              -c user.name='Damon Blais' -c user.email='damon.blais@gmail.com' \
+              commit -m "heft ${TAG#v}"
+            git -C "$RUNNER_TEMP/$pkg" push
+          done

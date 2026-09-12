@@ -35,6 +35,19 @@ statement:
 gh attestation verify heft-x86_64-unknown-linux-musl --repo Rethunk-Tech/heft
 ```
 
+On Arch, three AUR packages carry the same binary three ways:
+
+```sh
+paru -S heft-bin   # the release musl binary, no toolchain
+paru -S heft       # built from the release tarball
+paru -S heft-git   # built from main
+```
+
+All three install the completions and the man page, and all three `provide`
+and `conflict` with `heft`, so only one is ever on a machine. `heft-bin` is
+the one to pick unless you want the compile: it is the same static binary this
+page starts with, so its package has no dependencies at all.
+
 Or build it:
 
 ```sh
@@ -647,6 +660,10 @@ never to `dockerd`.
 Contributor gates live in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Uninstall
+
+From the AUR, `pacman -Rns heft-bin` (or `heft`, or `heft-git`) takes the
+binary, completions and man page with it; `~/.config/heft` is yours and stays.
+Installed by hand:
 
 ```sh
 rm -f ~/.local/bin/heft

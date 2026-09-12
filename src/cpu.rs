@@ -1,3 +1,10 @@
+#![expect(
+    clippy::cast_precision_loss,
+    reason = "every cast here widens a kernel counter -- clock ticks, nanoseconds, \
+bytes -- into the f64 a rate is divided in. A counter big enough to lose precision at \
+2^53 is centuries of uptime, and the quotient is printed to three significant figures."
+)]
+
 use std::fs;
 use std::sync::OnceLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};

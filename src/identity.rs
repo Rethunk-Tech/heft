@@ -164,7 +164,7 @@ fn unit_stem(unit: &str) -> String {
 /// `PF_KTHREAD` is the kernel's own answer, so nothing here re-derives it from
 /// uid/ppid/comm. Those two agreed on all 864 live pids of this machine, but
 /// only the flag survives a kthread reparented away from `kthreadd`.
-pub(crate) fn is_kernel(p: &Process) -> bool {
+pub(crate) const fn is_kernel(p: &Process) -> bool {
     p.kthread
 }
 

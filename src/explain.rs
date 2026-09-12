@@ -192,6 +192,10 @@ mod tests {
         }
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "a test builder is handed a handful of pids, never 4 billion"
+    )]
     fn ident(title: &str, pids: &[u32]) -> IdentNode {
         IdentNode {
             id: title.into(),

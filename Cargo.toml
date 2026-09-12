@@ -65,3 +65,15 @@ needless_pass_by_ref_mut = "deny"
 assigning_clones = "deny"
 redundant_clone = "deny"
 format_push_string = "deny"
+# Pedantic and nursery wholesale is 397 warnings, 174 of them one lint
+# objecting to a deliberate visibility style. These are the subset that found
+# something: the four cast lints are denied so every widening carries an
+# #[expect] naming the bound that makes it safe, rather than a prose claim.
+cast_precision_loss = "deny"
+cast_possible_truncation = "deny"
+cast_possible_wrap = "deny"
+cast_sign_loss = "deny"
+doc_markdown = "deny"
+map_unwrap_or = "deny"
+missing_const_for_fn = "deny"
+use_self = "deny"

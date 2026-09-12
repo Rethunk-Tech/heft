@@ -123,7 +123,7 @@ pub(crate) struct Metrics {
 }
 
 impl Metrics {
-    pub(crate) fn accumulate(&mut self, other: &Metrics) {
+    pub(crate) fn accumulate(&mut self, other: &Self) {
         self.cpu_core_pct += other.cpu_core_pct;
         self.cpu_machine_pct += other.cpu_machine_pct;
         self.rss_bytes = sum_opt(self.rss_bytes, other.rss_bytes);
@@ -264,7 +264,7 @@ pub struct ProcNode {
     #[serde(flatten)]
     pub(crate) metrics: Metrics,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub children: Vec<ProcNode>,
+    pub children: Vec<Self>,
 }
 
 pub(crate) fn folder_nproc(idents: &[IdentNode]) -> u32 {

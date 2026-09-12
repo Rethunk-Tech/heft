@@ -35,7 +35,7 @@ fn fd_target_looks_like_drm(target: &str) -> bool {
     target.contains("dri") || target.contains("drm")
 }
 
-fn needs_full_fdinfo(full_scan: bool, prefilter_empty: bool, filtered: &GpuCounters) -> bool {
+const fn needs_full_fdinfo(full_scan: bool, prefilter_empty: bool, filtered: &GpuCounters) -> bool {
     full_scan
         && !prefilter_empty
         && filtered.vram_bytes.is_none()
@@ -117,8 +117,8 @@ enum Region {
 /// Memory-stat prefixes in preference order. `drm-resident-*` is what the
 /// region is actually holding; `drm-total-*` counts buffers that may be
 /// evicted, so it is a fallback rather than a peer. `drm-memory-*` is
-/// amdgpu's own pre-standard pair (drivers/gpu/drm/amd/amdgpu/amdgpu_fdinfo.c):
-/// it is the only memory key an amdgpu older than the drm_show_memory_stats
+/// amdgpu's own pre-standard pair (`drivers/gpu/drm/amd/amdgpu/amdgpu_fdinfo.c)`:
+/// it is the only memory key an amdgpu older than the `drm_show_memory_stats`
 /// switch prints at all, and such a kernel still prints `drm-engine-gfx`, so
 /// without this tier those hosts showed gfx%/compute% beside a blank VRAM and
 /// GTT. Current kernels print all three.
@@ -128,8 +128,8 @@ const MEM_PREFIXES: [&str; 3] = ["drm-resident-", "drm-total-", "drm-memory-"];
 /// (docs.kernel.org/gpu/drm-usage-stats.html) but name their regions
 /// differently. i915 regions are `<class><instance>` -- "system0" is
 /// GPU-visible system memory, "local0" is discrete VRAM
-/// (i915/intel_memory_region.c intel_memory_type_str); xe uses "gtt" and
-/// "vram0"/"vram1" (xe/xe_bo.c xe_mem_type_to_name). Summing lets a multi-tile
+/// (`i915/intel_memory_region.c` `intel_memory_type_str`); xe uses "gtt" and
+/// "vram0"/"vram1" (`xe/xe_bo.c` `xe_mem_type_to_name`). Summing lets a multi-tile
 /// xe report both VRAM tiles. Every other region amdgpu prints -- cpu, gds,
 /// gws, oa, doorbell, mmioremap -- is neither.
 fn mem_key(k: &str) -> Option<(usize, Region)> {
@@ -279,7 +279,7 @@ mod tests {
     /// Integrated Intel: shmem-backed "system0" only, no discrete "local0".
     const I915_SAMPLE: &str = "drm-driver:\ti915\ndrm-client-id:\t14\ndrm-pdev:\t0000:00:02.0\ndrm-total-system0:\t8192 KiB\ndrm-shared-system0:\t0\ndrm-resident-system0:\t6144 KiB\ndrm-engine-render:\t2000 ns\ndrm-engine-capacity-render:\t1\ndrm-engine-compute:\t500 ns\n";
 
-    /// Shape taken from the example in drivers/gpu/drm/xe/xe_drm_client.c.
+    /// Shape taken from the example in `drivers/gpu/drm/xe/xe_drm_client.c`.
     const XE_SAMPLE: &str = "drm-driver:\txe\ndrm-client-id:\t3\ndrm-pdev:\t0000:03:00.0\ndrm-total-gtt:\t192 KiB\ndrm-resident-gtt:\t192 KiB\ndrm-total-vram0:\t23992 KiB\ndrm-resident-vram0:\t23992 KiB\ndrm-cycles-rcs:\t28257900\ndrm-total-cycles-rcs:\t7655183225\n";
 
     #[test]
@@ -336,7 +336,7 @@ mod tests {
         assert_eq!(g.total_cycles, Some(9_000));
     }
 
-    /// amdgpu before it adopted drm_show_memory_stats: engine counters, and
+    /// amdgpu before it adopted `drm_show_memory_stats`: engine counters, and
     /// `drm-memory-*` as the only memory keys.
     const AMDGPU_LEGACY: &str = "drm-driver:\tamdgpu\ndrm-client-id:\t550\ndrm-memory-vram:\t23048 KiB\ndrm-memory-gtt: \t80128 KiB\ndrm-memory-cpu: \t0 KiB\namd-evicted-vram:\t59648 KiB\namd-requested-vram:\t82696 KiB\ndrm-shared-vram:\t8 KiB\ndrm-shared-gtt:\t5632 KiB\ndrm-engine-gfx:\t301893603834 ns\ndrm-engine-compute:\t31641274970 ns\n";
 
@@ -414,6 +414,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "FDINFO_MAX_BYTES is 64 KiB, so the fixture size fits usize on any host heft runs on"
+    )]
     fn oversized_fdinfo_is_not_slurped() {
         let dir = std::env::temp_dir();
         let tag = std::process::id();

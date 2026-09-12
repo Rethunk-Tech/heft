@@ -117,7 +117,7 @@ pub(crate) enum Transport {
 /// which is exactly what an ssh session does not give it. Neither variable is
 /// set by a local terminal, and both are set by sshd, so their presence is the
 /// question being asked -- not a guess about the terminal's identity.
-pub(crate) fn transport_for_env(ssh_connection: bool, ssh_tty: bool) -> Transport {
+pub(crate) const fn transport_for_env(ssh_connection: bool, ssh_tty: bool) -> Transport {
     if ssh_connection || ssh_tty {
         Transport::Direct
     } else {
@@ -176,6 +176,10 @@ pub(crate) fn cell_px() -> Option<(u32, u32)> {
 /// A row with no history is left transparent rather than painted flat: that
 /// is heft's blank, and the cursor's reverse-video highlight has to show
 /// through it, which is why the image is RGBA and not RGB.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "band is under MAX_BANDS and the column under the table width, so both fit u32 pixel coordinates"
+)]
 pub(crate) fn paint(
     rows: &[Option<&VecDeque<f64>>],
     cols: u32,
@@ -229,6 +233,12 @@ pub(crate) fn paint(
 /// The row of pixels a sample sits on, within a band `cell_h` tall: the bottom
 /// row at zero and the top row at or above `full`. Above full it pins rather
 /// than rescaling, so one row flat out does not flatten every row beside it.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "frac is 0..=1 of a u32 height, so the rounded product is inside that \
+height and never negative"
+)]
 fn sample_y(v: f64, full: f64, cell_h: u32) -> u32 {
     let last = cell_h.saturating_sub(1);
     // Spelled out rather than negating a comparison: these are floats, so
@@ -262,7 +272,7 @@ pub(crate) fn placeholder(band: usize, cols: usize) -> Option<String> {
 }
 
 /// The image id as the RGB the placeholder's foreground must carry.
-pub(crate) fn id_rgb() -> (u8, u8, u8) {
+pub(crate) const fn id_rgb() -> (u8, u8, u8) {
     (
         ((IMAGE_ID >> 16) & 0xff) as u8,
         ((IMAGE_ID >> 8) & 0xff) as u8,
@@ -289,7 +299,7 @@ impl Kgp {
         Self::with_transport(detect_transport())
     }
 
-    pub(crate) fn with_transport(transport: Transport) -> Self {
+    pub(crate) const fn with_transport(transport: Transport) -> Self {
         Self {
             transport,
             last: None,
@@ -434,6 +444,10 @@ fn shm_unlink(name: &str) {
 
 /// Create the object, fill it, and close: the terminal opens it by name,
 /// reads it, then unlinks and closes it itself.
+#[expect(
+    clippy::cast_possible_wrap,
+    reason = "the image is capped at MAX_PIXELS, four bytes each, far below off_t's positive range"
+)]
 fn shm_write(name: &str, bytes: &[u8]) -> io::Result<()> {
     let c = CString::new(name).map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
     let len = bytes.len();
@@ -557,6 +571,10 @@ mod tests {
         );
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "a base64 index is 0..64 and the shifted groups are masked to one byte"
+    )]
     fn b64_decode(s: &str) -> Vec<u8> {
         let idx = |c: u8| B64.iter().position(|b| *b == c).unwrap() as u32;
         let raw: Vec<u8> = s.bytes().filter(|b| *b != b'=').collect();

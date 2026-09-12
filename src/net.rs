@@ -91,7 +91,7 @@ impl Rates {
     /// or Host row that summed these would be presenting one namespace's
     /// traffic as its own while its real total stays unknowable: every
     /// per-process route (libpcap plus an inode-to-pid map, eBPF, taskstats)
-    /// needs CAP_NET_RAW, CAP_BPF or ptrace, socket fdinfo carries no byte
+    /// needs `CAP_NET_RAW`, `CAP_BPF` or ptrace, socket fdinfo carries no byte
     /// counter, and `rchar`/`wchar` miss send/recv entirely. htop and btop
     /// decline the column for the same reason.
     pub(crate) fn apply(&self, tree: &mut HostTree) {
@@ -125,6 +125,10 @@ fn add(map: &mut HashMap<String, (f64, f64)>, key: &str, rx: f64, tx: f64) {
 /// `None` discards the interval instead of publishing a bogus rate. Counters
 /// are cumulative per namespace, and a restarted container keeps its id while
 /// getting a new pid and a fresh namespace, so the delta would run negative.
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "an interface byte counter past f64's exact range is more traffic than a NIC moves in a human lifetime"
+)]
 fn delta(prev: Option<&Sample>, cur: Sample, secs: f64) -> Option<(f64, f64)> {
     let p = prev?;
     if p.pid != cur.pid || cur.rx < p.rx || cur.tx < p.tx {

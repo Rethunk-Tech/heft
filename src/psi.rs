@@ -187,7 +187,7 @@ impl Apply<'_> {
     }
 }
 
-fn write(m: &mut Metrics, s: Option<&Stall>) {
+const fn write(m: &mut Metrics, s: Option<&Stall>) {
     let Some(s) = s else {
         return;
     };
@@ -252,6 +252,10 @@ fn sole_member(path: &str) -> Option<u32> {
 /// `None` discards the interval rather than publishing a bogus figure. The
 /// counters are cumulative, and a cgroup destroyed and recreated under the
 /// same path (a restarted unit, a container that came back) starts from zero.
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "a pressure counter is microseconds of stall, so 2^53 of them is 285 years"
+)]
 fn delta(prev: Option<&Totals>, cur: Totals, secs: f64) -> Option<Stall> {
     let p = prev?;
     if cur.cpu < p.cpu || cur.io < p.io || cur.mem < p.mem || secs <= 0.0 {

@@ -217,6 +217,10 @@ pub(crate) const COLUMNS: &[Column] = &[
 
 /// Byte counts stay exact in f64 out past 9 PB, so one key type covers the
 /// integer and rate columns alike.
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "the f64 is a sort key: two byte counts close enough to collide past 2^53 order equally either way"
+)]
 fn opt_u(v: Option<u64>) -> Option<f64> {
     v.map(|x| x as f64)
 }
@@ -310,7 +314,7 @@ impl Columns {
         )
     }
 
-    pub(crate) fn len(&self) -> usize {
+    pub(crate) const fn len(&self) -> usize {
         self.0.len()
     }
 
@@ -327,11 +331,11 @@ impl Sort {
     /// Only the tests enumerate the sorts; `next` and `from_label` index
     /// `COLUMNS` directly.
     #[cfg(test)]
-    fn all() -> Vec<Sort> {
+    fn all() -> Vec<Self> {
         (0..COLUMNS.len()).map(Sort).collect()
     }
 
-    pub(crate) fn label(self) -> &'static str {
+    pub(crate) const fn label(self) -> &'static str {
         COLUMNS[self.0].label
     }
 
@@ -366,7 +370,7 @@ impl Sort {
         // the documented default.
         Self::exact(s)
             .or_else(|| Self::exact("pss"))
-            .unwrap_or(Sort(0))
+            .unwrap_or(Self(0))
     }
 
     /// The next visible column, wrapping. Cycling onto a hidden one would move
@@ -385,10 +389,10 @@ impl Sort {
         for step in 0..cols.0.len() {
             let i = cols.0[(start + step) % cols.0.len()];
             if i == 0 || COLUMNS[i].key.is_some() {
-                return Sort(i);
+                return Self(i);
             }
         }
-        Sort(cols.0[start % cols.0.len()])
+        Self(cols.0[start % cols.0.len()])
     }
 }
 
@@ -999,6 +1003,10 @@ fn scale_1024(x: f64) -> Option<String> {
     }
 }
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "the result is rounded to three significant figures and a 1024-scale suffix"
+)]
 pub(crate) fn fmt_bytes(n: Option<u64>) -> String {
     let Some(b) = n else {
         return String::new();

@@ -37,7 +37,7 @@ use crate::types::{
 /// CPU and MEMORY. A machine with swap gets a third for it.
 const HEADER_ROWS: u16 = 2;
 
-/// Swap is a device of its own, not a slice of MemTotal, and its readout needs
+/// Swap is a device of its own, not a slice of `MemTotal`, and its readout needs
 /// the same couple of dozen columns whatever the terminal is. Sharing the
 /// MEMORY row with it cost MEM half its width, and the CPU bar is sized to
 /// match MEM's, so both headline bars halved to make room for it. It gets its
@@ -135,7 +135,7 @@ pub enum TrendMode {
 /// a frame, because a line is mostly empty and sixel run-length-encodes the
 /// empty part -- so where the terminal is at the other end of a connection and
 /// offers sixel, sixel wins.
-fn resolve_trend(caps: caps::Caps, remote: bool) -> TrendMode {
+const fn resolve_trend(caps: caps::Caps, remote: bool) -> TrendMode {
     match (caps.kitty, caps.sixel, remote) {
         (true, true, true) | (false, true, _) => TrendMode::Sixel,
         (true, _, _) => TrendMode::Kitty,
@@ -435,6 +435,13 @@ fn trend_scale(sort: Sort, rows: &[Flat], history: &HashMap<String, VecDeque<f64
 /// throughout has a history, and it is flat. A row with no history at all --
 /// one that has just appeared -- gets an empty cell, which is heft's blank:
 /// no figure exists yet.
+#[expect(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "the ramp is eight characters; the step is a non-negative fraction of its \
+last index, and clamped to it besides"
+)]
 fn spark(buf: Option<&VecDeque<f64>>, full: f64) -> String {
     let Some(buf) = buf.filter(|b| !b.is_empty()) else {
         return String::new();
@@ -696,6 +703,10 @@ fn handle_key(
     Ok(false)
 }
 
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "a column index is bounded by the table width, which ratatui already holds as u16"
+)]
 fn refresh_columns(app: &mut App) {
     app.cols = Columns::for_tui(&app.view);
     let max = app.cols.len().saturating_sub(1) as u16;
@@ -798,6 +809,7 @@ fn sort_header<'a>(cols: impl Iterator<Item = &'a Column>, sort: &str) -> Row<'s
 /// that frame rather than leaving the column blank.
 /// The image both image transports draw, or `None` where one cannot be made:
 /// a terminal that reports no pixel size, an absurd cell, an empty table.
+#[expect(clippy::cast_possible_truncation, reason = "TREND is 9")]
 fn trend_image(
     app: &App,
     rows: &[Flat],
@@ -846,6 +858,7 @@ fn marked_corner(buf: &ratatui::buffer::Buffer, area: Rect) -> Option<(u16, u16)
     best
 }
 
+#[expect(clippy::cast_possible_truncation, reason = "TREND is 9")]
 fn send_trend(app: &mut App, rows: &[Flat], start: usize, end: usize, full: f64) -> bool {
     let Some(img) = trend_image(app, rows, start, end, full) else {
         return false;
@@ -1083,6 +1096,12 @@ fn swap_header_line(tree: &HostTree, width: usize, bar_w: usize) -> Option<Line<
     Some(Line::from(spans))
 }
 
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "the percentage is clamped to 0..=100 before the scale, so the product is \
+0..=10000"
+)]
 fn pct_weight(p: f64) -> u64 {
     (p.clamp(0.0, 100.0) * 100.0).round() as u64
 }
@@ -1153,8 +1172,8 @@ fn bar_prefix(label: &str, label_w: usize) -> String {
 }
 
 /// Discrete VRAM is a second device, so it is measured against its own
-/// capacity rather than MemTotal. Unified (APU) VRAM is a carve-out of
-/// MemTotal and stays inside the MEM bar.
+/// capacity rather than `MemTotal`. Unified (APU) VRAM is a carve-out of
+/// `MemTotal` and stays inside the MEM bar.
 fn discrete_vram(tree: &HostTree) -> Option<u64> {
     (!tree.unified_memory)
         .then(|| tree.vram_total_bytes.filter(|v| *v > 0))
@@ -1547,7 +1566,7 @@ fn popup(f: &mut ratatui::Frame<'_>, area: Rect, text: &str, title: &str) {
 
 /// Body rows that fit in the table pane: the terminal minus the header, the
 /// two rules, the column header and the footer.
-fn table_body_rows(term_h: u16, header: u16) -> usize {
+const fn table_body_rows(term_h: u16, header: u16) -> usize {
     term_h.saturating_sub(header + 4) as usize
 }
 
@@ -2259,7 +2278,7 @@ mod tests {
         assert_eq!(closes[1], closes[2]);
     }
 
-    /// Swap is a device, not a slice of MemTotal: painting it inside the MEM
+    /// Swap is a device, not a slice of `MemTotal`: painting it inside the MEM
     /// bar would put pages that are not in RAM into the RAM figure.
     #[test]
     fn swap_is_never_a_segment_of_the_mem_bar() {

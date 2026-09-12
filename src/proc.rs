@@ -34,7 +34,7 @@ use crate::{gpu, io as pio, net, psi};
 /// was refused because spawn cost tens of microseconds; the RSS is why a
 /// pool exists now. New glibc arenas each tick climbed ~15 MiB every 5s PSS
 /// tick to ~488 MiB. `MALLOC_ARENA_MAX=2` plateaued at 39 MiB, so arenas
-/// dominate the HostTree.
+/// dominate the `HostTree`.
 struct WalkPool {
     job_txs: Vec<mpsc::Sender<WalkJob>>,
     result_rx: mpsc::Receiver<WalkChunk>,
@@ -289,7 +289,7 @@ fn parse_stat(stat: &str) -> Option<StatFields> {
 }
 
 /// One `/proc` `Key: value` line as a number. Takes the first whitespace token
-/// only: meminfo and smaps_rollup append a ` kB` unit that parsing the whole
+/// only: meminfo and `smaps_rollup` append a ` kB` unit that parsing the whole
 /// remainder would reject. `None` covers both a missing key and an unparsable
 /// value; each caller decides whether that is a blank cell or a default.
 pub(crate) fn field_u64(line: &str, key: &str) -> Option<u64> {

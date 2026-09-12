@@ -71,6 +71,10 @@ fn done(s: &str) -> bool {
 ///
 /// Returns nothing found on any failure — a terminal that cannot be asked is
 /// one heft draws characters for.
+#[expect(
+    clippy::cast_sign_loss,
+    reason = "the read above returns on n <= 0, so n is a positive byte count"
+)]
 pub(crate) fn probe() -> Caps {
     let mut out = std::io::stdout();
     if out.write_all(QUERY.as_bytes()).is_err() || out.flush().is_err() {

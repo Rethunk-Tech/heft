@@ -149,7 +149,7 @@ fn nproc() -> u64 {
         .count() as u64
 }
 
-/// (MemTotal, used, used) in bytes, where used is `MemTotal - MemAvailable` —
+/// (`MemTotal`, used, used) in bytes, where used is `MemTotal - MemAvailable` —
 /// what `mem::parse_meminfo` publishes as `mem_used_bytes`, and deliberately
 /// not `MemTotal - MemFree`, which would call the page cache used.
 fn meminfo() -> (u64, u64, u64) {
@@ -159,8 +159,7 @@ fn meminfo() -> (u64, u64, u64) {
             .find_map(|l| l.strip_prefix(k))
             .and_then(|v| v.split_whitespace().next())
             .and_then(|v| v.parse::<u64>().ok())
-            .map(|kb| kb * 1024)
-            .unwrap_or_else(|| panic!("{k} in /proc/meminfo"))
+            .map_or_else(|| panic!("{k} in /proc/meminfo"), |kb| kb * 1024)
     };
     let (total, avail) = (field("MemTotal:"), field("MemAvailable:"));
     let used = total - avail;
@@ -205,6 +204,10 @@ fn scan() -> HashMap<u32, Option<u64>> {
 /// promises for a metric heft could not read, which is why the value is an
 /// `Option` and not a zero.
 fn tree_pss(host: &Value) -> HashMap<u32, Option<u64>> {
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "a pid is a u32 in /proc and in the tree; the JSON widened it, this narrows it back"
+    )]
     fn walk(node: &Value, out: &mut HashMap<u32, Option<u64>>) {
         let pid = node["pid"]
             .as_u64()
@@ -276,6 +279,10 @@ fn mem_used_is_memtotal_minus_memavailable_while_heft_ran() {
 }
 
 #[test]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "tick counters over one test interval are millions, not 2^53"
+)]
 fn host_cpu_claims_no_more_busy_ticks_than_the_kernel_counted() {
     let s = sample();
     let pct = s.host["cpu_pct"].as_f64().expect("cpu_pct");

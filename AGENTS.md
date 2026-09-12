@@ -32,11 +32,15 @@ src/explain.rs       --explain PID: resolved placement and the grouping.json key
 src/ui.rs            ratatui header + tree table
 src/tty.rs           panic hook + signal handler; restores the terminal
 src/glyph.rs         unicode vs ascii bar/rule/marker characters; resolved once
+src/keys.rs          the one TUI key list; build.rs includes it for the man page
+src/root.rs          the /proc and /sys prefix behind --proc-root, resolved once
 src/caps.rs          --trend auto: one round trip asking the terminal what it draws
 src/kgp.rs           --trend kitty: TREND as one graphics-protocol image; shm or inline
 src/sixel.rs         --trend sixel: the same image, RLE sixel, positioned from the frame
-tests/grouping.rs    integration tests over tests/fixtures/
+tests/grouping.rs    integration tests over tests/fixtures/; links the library
 tests/live_proc.rs   invariants over the real /proc; must hold in a bare container
+tests/reconcile.rs   heft against /proc read independently, not against itself
+tests/common/mod.rs  heft() and arr() for the two that drive the built binary
 tests/fixtures/      GUI grouping snapshot
 packaging/aur/       PKGBUILD + .SRCINFO for heft, heft-bin, heft-git; update.sh
 ```
@@ -45,17 +49,26 @@ No `sysinfo` crate. No `nix` unless rustix cannot do it; v1 uses `std` + `libc`.
 Never read `/proc/pid/mem`. Never ptrace.
 
 The hand-rolled helpers — the `/proc` and fdinfo field parsers,
-`once::scale_1024`, `once::trunc`, `ui::share_cells`,
-`identity::systemd_unescape`, and the GET-only HTTP client in
-`containers::unix_get` — have no std equivalent at the 1.98 floor. That is
-checked, not assumed, so replacing them is not pending work.
+`once::scale_1024`, `ui::share_cells`, `identity::systemd_unescape`, and the
+GET-only HTTP client in `containers::unix_get` — have no equivalent in std
+*or in a crate already in the tree*. Both halves are checked, not assumed, so
+replacing them is not pending work. The second half is the one that matters:
+`once::trunc` sat in this list on the strength of the first, and was
+re-implementing `unicode-truncate`, which ratatui-core had already compiled.
+`share_cells` survives it — a partial-fill allocator whose result is meant to
+come up short, which no ratatui `Constraint` expresses — and `unix_get`
+survives it because the tree carries no HTTP client at all.
 
-Three further consolidations are measured and refused. The `once` and `ui`
-walkers look duplicated but emit deliberately different row sets, which is
-what makes `--filter` narrower than `/`. The test-module node builders are
-shared by nothing because sharing them needs a production `#[cfg(test)] pub
-mod` to serve four eight-line helpers. `containers::index_ids` keys both the
-full and the 12-hex id while `get` also falls back through `hex12`; the
+Two further consolidations are measured and refused. The `once` and `ui`
+walkers look duplicated — around 40 of 54 lines match — but the row types do
+not: `Flat` carries an `id` and an `expandable` flag that `TableRow` has no
+use for, and that `id` is what keys expand membership, the trend history and
+the cursor's re-anchoring across a resort. Unifying them takes four parameters
+that are each constant on one caller, and makes `--once` and `--follow`
+`format!` an id per row and throw it away. That the row sets differ is the
+consequence — it is why `--filter` is narrower than `/` — not the reason.
+
+`containers::index_ids` keys both the full and the 12-hex id while `get` also falls back through `hex12`; the
 redundancy costs two lines and the alternative silently loses a row if a
 runtime ever reports a truncated id.
 
@@ -553,21 +566,42 @@ legitimately uses on a busy host. It guards the `0a9ee0a` class of regression,
 which was found by a person noticing rather than by a gate. Docker sock is optional in CI;
 grouping tests use `tests/fixtures/` via `tests/grouping.rs`.
 
-Clippy runs at its default level. The wider groups are measured, not assumed:
-`pedantic` + `nursery` + `cargo` report 216 warnings, of which 87 are the one
-nursery lint `redundant_pub_crate` objecting to a visibility style this crate
-keeps deliberately. Most of the rest is `doc_markdown`, `too_many_lines` over
-render functions that are one piece on purpose, and casts in pixel and column
-arithmetic bounded by the code around them. Adopting the group wholesale is a
-mechanical rewrite buying style, and is refused.
+The gate is `cargo clippy --locked --all-targets -- -D warnings` at the
+default level plus the `[lints.clippy]` list in `Cargo.toml`. The wider groups
+are measured, not assumed, and the measurement is against that same
+`--all-targets` gate: `pedantic` + `nursery` + `cargo` reported 397 warnings
+across 29 lints, and 266 across 20 once the list below was adopted. 174 of
+what is left is the one nursery lint `redundant_pub_crate` objecting to a
+visibility style this crate keeps deliberately; the rest is
+`option_if_let_else`, `too_many_lines` over render functions that are one
+piece on purpose, and `multiple_crate_versions` for two `hashbrown` majors
+ratatui pulls. Adopting those wholesale is a mechanical rewrite buying style,
+and is refused. Re-measure before quoting a number here; this paragraph
+carried 216/87 for long enough to be wrong by 181.
 
-Four of them were worth keeping and are denied in `Cargo.toml`'s `[lints]`:
-`needless_pass_by_ref_mut`, `assigning_clones`, `redundant_clone` and
-`format_push_string`. Each found something real — a `&mut self` on
+Nothing in the wider groups is a latent bug, which is what makes the refusal
+safe rather than lucky: every lint that looked like one is a false positive.
+`literal_string_with_formatting_args` fires eight times on the `{up}`/`{down}`
+KEYS placeholders, which are literal on purpose; `match_same_arms` wants
+`gpu.rs`'s explicit `KiB` list folded into its own catch-all; `float_cmp`
+points into rustc's `assert!` expansion; `suboptimal_flops` wants `mul_add` in
+three test assertions.
+
+Twelve lints are denied in `Cargo.toml`'s `[lints]` because each found
+something real. `needless_pass_by_ref_mut`, `assigning_clones`,
+`redundant_clone` and `format_push_string` came first — a `&mut self` on
 `psi::set_row` and `proc::WalkPool::collect` that never mutated, a clone
 assigned over a live `String` once a frame, a temporary formatted once a frame
-in `sixel::encode` — and each is now at zero, which is what makes denying them
-free.
+in `sixel::encode`. `use_self`, `missing_const_for_fn`, `doc_markdown` and
+`map_unwrap_or` followed, all of them machine-applicable. The four cast lints
+— `cast_precision_loss`, `cast_possible_truncation`, `cast_possible_wrap`,
+`cast_sign_loss` — are the ones that earn their place: this file used to claim
+the casts were "bounded by the code around them", and denying the lints turned
+that prose into an `#[expect(..., reason = ...)]` at each site naming the
+bound, which the compiler now checks is still firing. `cpu.rs` takes one
+module-level expect because every cast in it is the same widening of a kernel
+counter into the f64 a rate is divided in. Each lint is at zero, which is what
+makes denying it free.
 
 Release profile: LTO, `codegen-units = 1`, strip, `panic = abort`.
 

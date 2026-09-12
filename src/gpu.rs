@@ -109,11 +109,53 @@ fn push_drm_text(texts: &mut Vec<String>, path: impl AsRef<Path>) {
     }
 }
 
+enum Region {
+    Vram,
+    Gtt,
+}
+
+/// Memory-stat prefixes in preference order. `drm-resident-*` is what the
+/// region is actually holding; `drm-total-*` counts buffers that may be
+/// evicted, so it is a fallback rather than a peer. `drm-memory-*` is
+/// amdgpu's own pre-standard pair (drivers/gpu/drm/amd/amdgpu/amdgpu_fdinfo.c):
+/// it is the only memory key an amdgpu older than the drm_show_memory_stats
+/// switch prints at all, and such a kernel still prints `drm-engine-gfx`, so
+/// without this tier those hosts showed gfx%/compute% beside a blank VRAM and
+/// GTT. Current kernels print all three.
+const MEM_PREFIXES: [&str; 3] = ["drm-resident-", "drm-total-", "drm-memory-"];
+
+/// amdgpu, i915 and xe all implement the same DRM fdinfo interface
+/// (docs.kernel.org/gpu/drm-usage-stats.html) but name their regions
+/// differently. i915 regions are `<class><instance>` -- "system0" is
+/// GPU-visible system memory, "local0" is discrete VRAM
+/// (i915/intel_memory_region.c intel_memory_type_str); xe uses "gtt" and
+/// "vram0"/"vram1" (xe/xe_bo.c xe_mem_type_to_name). Summing lets a multi-tile
+/// xe report both VRAM tiles. Every other region amdgpu prints -- cpu, gds,
+/// gws, oa, doorbell, mmioremap -- is neither.
+fn mem_key(k: &str) -> Option<(usize, Region)> {
+    let (tier, region) = MEM_PREFIXES
+        .iter()
+        .enumerate()
+        .find_map(|(i, p)| k.strip_prefix(p).map(|r| (i, r)))?;
+    match region {
+        "vram" | "vram0" | "vram1" | "local0" => Some((tier, Region::Vram)),
+        "gtt" | "system0" => Some((tier, Region::Gtt)),
+        _ => None,
+    }
+}
+
+/// The first tier the client published, so a present `0` still beats a
+/// less-exact tier's larger figure.
+fn best_tier(tiers: [Option<u64>; MEM_PREFIXES.len()]) -> Option<u64> {
+    tiers.into_iter().flatten().next()
+}
+
 fn parse_fdinfo(text: &str) -> Option<(u64, GpuCounters)> {
     let mut driver_ok = false;
     let mut id = None;
-    let mut vram = None;
-    let mut gtt = None;
+    // One slot per tier of MEM_PREFIXES, highest-preference first.
+    let mut vram = [None; MEM_PREFIXES.len()];
+    let mut gtt = [None; MEM_PREFIXES.len()];
     let mut gfx_ns = None;
     let mut compute_ns = None;
     let mut gfx_cycles = None;
@@ -128,21 +170,10 @@ fn parse_fdinfo(text: &str) -> Option<(u64, GpuCounters)> {
         let Some((k, v)) = split_kv(line) else {
             continue;
         };
-        // amdgpu, i915 and xe all implement the same DRM fdinfo interface
-        // (docs.kernel.org/gpu/drm-usage-stats.html)
-        // but name their regions and engines differently. i915 regions are
-        // `<class><instance>` -- "system0" is GPU-visible system memory, "local0"
-        // is discrete VRAM (i915/intel_memory_region.c intel_memory_type_str);
-        // xe uses "gtt" and "vram0"/"vram1" (xe/xe_bo.c xe_mem_type_to_name).
-        // Summing lets a multi-tile xe report both VRAM tiles.
+        // Regions: `mem_key`. Engines are named per driver too.
         match k {
             "drm-driver" if matches!(v, "amdgpu" | "i915" | "xe") => driver_ok = true,
             "drm-client-id" => id = v.trim().parse().ok(),
-            "drm-resident-vram"
-            | "drm-resident-vram0"
-            | "drm-resident-vram1"
-            | "drm-resident-local0" => vram = sum_opt(vram, parse_size(v)),
-            "drm-resident-gtt" | "drm-resident-system0" => gtt = sum_opt(gtt, parse_size(v)),
             "drm-engine-gfx" | "drm-engine-render" => gfx_ns = parse_count(v),
             "drm-engine-compute" => compute_ns = parse_count(v),
             // xe publishes engine busy only as drm-cycles-<rcs|ccs|...> against
@@ -156,7 +187,11 @@ fn parse_fdinfo(text: &str) -> Option<(u64, GpuCounters)> {
             "drm-total-cycles-rcs" | "drm-total-cycles-ccs" => total_cycles = parse_count(v),
             "drm-engine-capacity-rcs" => gfx_capacity = parse_capacity(v),
             "drm-engine-capacity-ccs" => compute_capacity = parse_capacity(v),
-            _ => {}
+            _ => match mem_key(k) {
+                Some((tier, Region::Vram)) => vram[tier] = sum_opt(vram[tier], parse_size(v)),
+                Some((tier, Region::Gtt)) => gtt[tier] = sum_opt(gtt[tier], parse_size(v)),
+                None => {}
+            },
         }
     }
     if !(driver_ok || (text.contains("drm-client-id") && text.contains("drm-resident"))) {
@@ -165,8 +200,8 @@ fn parse_fdinfo(text: &str) -> Option<(u64, GpuCounters)> {
     Some((
         id?,
         GpuCounters {
-            vram_bytes: vram,
-            gtt_bytes: gtt,
+            vram_bytes: best_tier(vram),
+            gtt_bytes: best_tier(gtt),
             gfx_ns,
             compute_ns,
             // xe sums run_ticks over every engine instance of the class while
@@ -299,6 +334,39 @@ mod tests {
         let g = merge_fdinfo_texts(&[xe_tick(400, 4000, 9_000), two]);
         assert_eq!(g.gfx_cycles, Some(800));
         assert_eq!(g.total_cycles, Some(9_000));
+    }
+
+    /// amdgpu before it adopted drm_show_memory_stats: engine counters, and
+    /// `drm-memory-*` as the only memory keys.
+    const AMDGPU_LEGACY: &str = "drm-driver:\tamdgpu\ndrm-client-id:\t99\ndrm-memory-vram:\t1024 KiB\ndrm-memory-gtt: \t2048 KiB\ndrm-memory-cpu: \t0 KiB\namd-requested-vram:\t4096 KiB\ndrm-engine-gfx:\t7000 ns\n";
+
+    #[test]
+    fn legacy_amdgpu_memory_keys_are_not_blank() {
+        let g = merge_fdinfo_texts(&[AMDGPU_LEGACY.to_string()]);
+        assert_eq!(g.vram_bytes, Some(1024 * 1024));
+        assert_eq!(g.gtt_bytes, Some(2048 * 1024));
+        assert_eq!(g.gfx_ns, Some(7000));
+    }
+
+    #[test]
+    fn resident_beats_total_beats_memory() {
+        // Shape of a current amdgpu client: all three tiers, and a resident
+        // figure far below total because most of it is evicted.
+        let text = "drm-driver:\tamdgpu\ndrm-client-id:\t7\n\
+             drm-total-vram:\t117088 KiB\ndrm-resident-vram:\t180 KiB\n\
+             drm-memory-vram:\t999 KiB\ndrm-total-gtt:\t22572 KiB\n\
+             drm-memory-gtt: \t139480 KiB\ndrm-total-cpu:\t5 KiB\n";
+        let g = merge_fdinfo_texts(&[text.to_string()]);
+        assert_eq!(g.vram_bytes, Some(180 * 1024), "resident wins");
+        assert_eq!(
+            g.gtt_bytes,
+            Some(22572 * 1024),
+            "no resident-gtt, total wins"
+        );
+        // A zero resident figure is a figure, not a reason to fall through.
+        let zero = "drm-driver:\tamdgpu\ndrm-client-id:\t8\n\
+             drm-resident-vram:\t0\ndrm-total-vram:\t4096 KiB\n";
+        assert_eq!(merge_fdinfo_texts(&[zero.to_string()]).vram_bytes, Some(0));
     }
 
     #[test]

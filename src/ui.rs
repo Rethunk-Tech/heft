@@ -1254,15 +1254,17 @@ fn mem_header_line(tree: &HostTree, width: usize) -> (Line<'static>, usize) {
     let discrete = discrete_vram(tree);
     let label_w = label_width(tree);
     // GTT is pinned system RAM on a discrete card too, already counted in
-    // `used`, so it paints inside MEM either way. Both figures sum the drm
-    // clients heft can see, not the device totals: sysfs has only
-    // `mem_info_gtt_total`, a capacity, which as a usage would be a lie.
+    // `used`, so it paints inside MEM either way. The kernel's own
+    // `mem_info_*_used` wins where the driver publishes it (amdgpu): summing
+    // the drm clients heft can see found 19.9 GiB of GTT against the kernel's
+    // 49.6 GiB on a 125 GiB APU, and the missing 30 GiB read as anon. i915 and
+    // xe publish no such counter, so the client sum is the fallback there.
     let vram = if tree.unified_memory {
-        host.vram_bytes.unwrap_or(0)
+        tree.vram_used_bytes.or(host.vram_bytes).unwrap_or(0)
     } else {
         0
     };
-    let gtt = host.gtt_bytes.unwrap_or(0);
+    let gtt = tree.gtt_used_bytes.or(host.gtt_bytes).unwrap_or(0);
     let seg = mem::clip_used(MemParts {
         used: tree.mem_used_bytes,
         total: tree.mem_total_bytes,
@@ -1271,16 +1273,27 @@ fn mem_header_line(tree: &HostTree, width: usize) -> (Line<'static>, usize) {
         zram: tree.zram_used_bytes,
         shmem: tree.mem_shmem_bytes,
         kernel: tree.mem_kernel_bytes,
+        anon: tree.mem_anon_bytes,
         // What `MemAvailable` counts as free: drawn after `used`, not in it.
-        cache: (tree.mem_cached_bytes + tree.mem_buffers_bytes + tree.mem_sreclaimable_bytes)
-            .saturating_sub(tree.mem_shmem_bytes),
+        cache: tree.mem_cached_bytes.saturating_sub(tree.mem_shmem_bytes),
+        slab: tree.mem_sreclaimable_bytes,
+        buffers: tree.mem_buffers_bytes,
     });
     // Swap has its own row: it is a device rather than a slice of MemTotal,
     // and as a tank here it took half the width, which the CPU bar matches.
     let tanks = tank_widths(width, 1 + usize::from(discrete.is_some()));
     let mem_width = tanks[0];
     let sizes = [
-        seg.vram, seg.gtt, seg.zram, seg.shmem, seg.kernel, seg.anon, seg.cache,
+        seg.vram,
+        seg.gtt,
+        seg.zram,
+        seg.shmem,
+        seg.kernel,
+        seg.anon,
+        seg.other,
+        seg.cache,
+        seg.slab,
+        seg.buffers,
     ];
     let parts: Vec<(u64, Color, char)> = sizes
         .iter()
@@ -1393,7 +1406,7 @@ fn cpu_key() -> [(&'static str, Color, char); 3] {
 /// overlay, so a segment cannot be drawn under one name and explained under
 /// another. Every colour is its own and every fill is full height; the fills
 /// alternate so two neighbours still part where there is no colour.
-fn mem_key() -> [(&'static str, Color, char); 7] {
+fn mem_key() -> [(&'static str, Color, char); 10] {
     [
         ("vram", Color::LightRed, glyph::full()),
         ("gtt", Color::LightCyan, glyph::dark()),
@@ -1401,7 +1414,10 @@ fn mem_key() -> [(&'static str, Color, char); 7] {
         ("shm", Color::Green, glyph::full()),
         ("kernel", Color::Magenta, glyph::dark()),
         ("anon", Color::Gray, glyph::full()),
-        ("cache", Color::DarkGray, glyph::medium()),
+        ("other", Color::White, glyph::medium()),
+        ("cache", Color::DarkGray, glyph::dark()),
+        ("slab", Color::Yellow, glyph::medium()),
+        ("buf", Color::LightBlue, glyph::full()),
     ]
 }
 
@@ -1422,8 +1438,9 @@ fn bar_key() -> Vec<Line<'static>> {
     let mem = mem_key();
     vec![
         row("CPU bar", &cpu_key()),
-        row("MEM bar (used)", &mem[..6]),
-        row("MEM bar (after)", &mem[6..]),
+        row("MEM bar (used)", &mem[..4]),
+        row("", &mem[4..7]),
+        row("MEM bar (after)", &mem[7..]),
     ]
 }
 
@@ -2208,6 +2225,7 @@ mod tests {
             mem_total_bytes: mem_total,
             vram_used_bytes: gpu.vram_used,
             vram_total_bytes: gpu.vram_total,
+            gtt_used_bytes: gpu.gtt_used,
             unified_memory: mem::is_unified(mem_total, gpu),
             ..HostTree::default()
         }
@@ -2220,6 +2238,7 @@ mod tests {
             vram_used: Some(6 * g),
             vram_total: Some(12 * g),
             gtt_total: Some(4 * g),
+            gtt_used: None,
         });
         assert!(!tree.unified_memory);
         let text = mem_header_line(&tree, 100).0.to_string();
@@ -2238,6 +2257,7 @@ mod tests {
             vram_used: Some(6 * g),
             vram_total: Some(12 * g),
             gtt_total: Some(4 * g),
+            gtt_used: None,
         });
         tree.system = vec![IdentNode {
             id: "sys".into(),
@@ -2270,6 +2290,7 @@ mod tests {
             vram_used: Some(g / 2),
             vram_total: Some(g),
             gtt_total: Some(30 * g),
+            gtt_used: None,
         });
         assert!(tree.unified_memory);
         let text = mem_header_line(&tree, 100).0.to_string();
@@ -2278,7 +2299,8 @@ mod tests {
         // The bars carry no legend; `?` shows a swatch for every segment.
         let key: String = bar_key().iter().map(|l| format!("{l}\n")).collect();
         for label in [
-            "usr", "sys", "wait", "vram", "gtt", "zram", "shm", "kernel", "anon", "cache",
+            "usr", "sys", "wait", "vram", "gtt", "zram", "shm", "kernel", "anon", "other", "cache",
+            "slab", "buf",
         ] {
             assert!(key.contains(label), "{label} missing from {key}");
         }

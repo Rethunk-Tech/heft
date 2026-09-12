@@ -348,22 +348,23 @@ number gets read as a current one.
   MEMORY row splits in half: MEM against MemTotal, and VRAM against the card's
   own total, and it is the first of those the CPU bar matches. GTT stays in
   the MEM bar either way — it is system RAM pinned for the GPU, not card
-  memory. That GTT slice, and the unified VRAM slice beside it, add up only
-  the drm clients heft can see, the same caveat as the Host row, which sums
-  only visible PIDs and so can sit below the header. How far below is not a
-  rounding error. An unprivileged reader cannot open `/proc/<pid>/fdinfo` for
-  a process it does not own, so every drm client inside a root-owned container
-  is invisible: measured on one desktop with a single such container running,
-  the kernel reported 45.7 GiB of GTT in use while heft's Host row accounted
-  for 18.1 GiB of it. When the question is how much of the card is in use
-  rather than which application is using it, read the kernel's own
-  `/sys/class/drm/card*/device/mem_info_*` totals. The MEM bar's `used` is
-  what the kernel cannot hand back, so page cache is not in it; `shm` is the
-  tmpfs and shared memory that is, on a zram host `zram` is the RAM its
-  compressed swap occupies, `kernel` is unreclaimable slab, page tables and
-  kernel stacks, and `anon` is the rest. Reclaimable `cache` is drawn after
-  `used`, so the figure still reads what cannot be handed back. No process's PSS holds that store, which is why a
-  zram machine's `used` can sit gigabytes above the Host row. Swap, when the machine has
+  memory. Where the driver publishes its own count (`mem_info_gtt_used` and
+  `mem_info_vram_used`: amdgpu does, i915 and xe do not) those two slices are
+  the kernel's figures. Elsewhere they add up only the drm clients heft can
+  see, the same caveat as the Host row, which sums only visible PIDs and so
+  can sit below the header. How far below is not a rounding error. An
+  unprivileged reader cannot open `/proc/<pid>/fdinfo` for a process it does
+  not own, so every drm client inside a root-owned container is invisible:
+  measured on one desktop with a single such container running, the kernel
+  reported 45.7 GiB of GTT in use while heft's Host row accounted for 18.1 GiB
+  of it. The MEM bar's `used` is what the kernel cannot hand back, so page
+  cache is not in it. Inside it: `shm` is tmpfs and shared memory; on a zram
+  host `zram` is the RAM its compressed swap occupies, which no process's PSS
+  holds and is why such a machine's `used` can sit gigabytes above the Host
+  row; `kernel` is unreclaimable slab, page tables and kernel stacks; `anon` is
+  `AnonPages`; and `other` is whatever of `used` none of those name. After
+  `used` come reclaimable `cache`, `slab` and `buf`, so the figure still reads
+  what cannot be handed back. Swap, when the machine has
   any, gets a third row of its own rather than a segment of MEM: swapped pages
   are not in RAM. A row rather than a tank beside MEM, because its figures
   need the same couple of dozen columns however wide the terminal is — sharing

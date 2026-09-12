@@ -188,12 +188,17 @@ pub struct HostTree {
     pub(crate) mem_kernel_bytes: u64,
     /// Reclaimable slab, outside `mem_used_bytes` like reclaimable cache.
     pub(crate) mem_sreclaimable_bytes: u64,
+    /// `AnonPages`, inside `mem_used_bytes`.
+    pub(crate) mem_anon_bytes: u64,
     pub(crate) swap_used_bytes: u64,
     pub(crate) swap_total_bytes: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) vram_used_bytes: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) vram_total_bytes: Option<u64>,
+    /// The kernel's `mem_info_gtt_used`, where the driver publishes one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) gtt_used_bytes: Option<u64>,
     pub(crate) unified_memory: bool,
     /// The kernel's own machine-wide `some avg10`, for the header only. The
     /// table's stall columns are interval deltas instead; the two time bases

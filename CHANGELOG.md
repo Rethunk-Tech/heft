@@ -16,6 +16,12 @@
   blocks. The MEM bar adds `kernel` (unreclaimable slab, page tables, kernel
   stacks) inside `used` and draws reclaimable `cache` after it; the JSON host
   carries `mem_kernel_bytes` and `mem_sreclaimable_bytes`.
+- The MEM bar's `gtt` and unified `vram` read the kernel's `mem_info_*_used`
+  where the driver publishes it, rather than summing the drm clients heft can
+  see: 49.6 GiB of GTT against 19.9 GiB on a 125 GiB APU, where the gap had
+  read as anon. `anon` is now `AnonPages`, `other` is the unitemised rest of
+  `used`, and `cache`, `slab` and `buf` are separate after it. The JSON host
+  carries `gtt_used_bytes` and `mem_anon_bytes`.
 - CPU ST, IO ST and MEM ST are hidden unless `view.json` holds a
   `hide_columns` list without them (`u` then `s` brings them back), and
   `--hide` adds to the saved list rather than replacing it.

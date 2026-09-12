@@ -22,6 +22,8 @@
   read as anon. `anon` is now `AnonPages`, `other` is the unitemised rest of
   `used`, and `cache`, `slab` and `buf` are separate after it. The JSON host
   carries `gtt_used_bytes` and `mem_anon_bytes`.
+- Every header bar segment is re-coloured from the fixed xterm-256 palette
+  rather than the sixteen named colours a terminal theme redefines.
 - CPU ST, IO ST and MEM ST are hidden unless `view.json` holds a
   `hide_columns` list without them (`u` then `s` brings them back), and
   `--hide` adds to the saved list rather than replacing it.

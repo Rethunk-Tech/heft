@@ -1136,7 +1136,7 @@ fn swap_header_line(tree: &HostTree, width: usize, bar_w: usize) -> Option<Line<
     let mut spans = vec![Span::raw(prefix)];
     spans.extend(stacked_bar(
         bar_w,
-        &[(used, Color::Yellow, glyph::full())],
+        &[(used, Color::Indexed(179), glyph::full())], // #d7af5f gold
         total.max(1),
     ));
     spans.push(Span::raw(mid));
@@ -1330,7 +1330,7 @@ fn mem_header_line(tree: &HostTree, width: usize) -> (Line<'static>, usize) {
                 "VRAM",
                 label_w,
                 tanks[1],
-                &[(vram_used, Color::LightRed, glyph::full())],
+                &[(vram_used, mem_key()[0].1, glyph::full())],
                 vram_used,
                 vram_total,
             )
@@ -1398,11 +1398,16 @@ fn fg(color: Color) -> Style {
 }
 
 /// The CPU bar's segments in drawing order: label, colour, fill.
+///
+/// Every bar colour is an xterm-256 index rather than one of the sixteen named
+/// colours. A terminal theme redefines those sixteen, so the same segment drew
+/// brown in one terminal and yellow in the next, and Gray and White came out
+/// as one shade; indices 16-255 are the same fixed cube everywhere.
 fn cpu_key() -> [(&'static str, Color, char); 3] {
     [
-        ("usr", Color::Cyan, glyph::full()),
-        ("sys", Color::Magenta, glyph::dark()),
-        ("wait", Color::Yellow, glyph::medium()),
+        ("usr", Color::Indexed(75), glyph::full()), // #5fafff sky blue
+        ("sys", Color::Indexed(209), glyph::dark()), // #ff875f salmon
+        ("wait", Color::Indexed(221), glyph::medium()), // #ffd75f amber
     ]
 }
 
@@ -1412,16 +1417,19 @@ fn cpu_key() -> [(&'static str, Color, char); 3] {
 /// alternate so two neighbours still part where there is no colour.
 fn mem_key() -> [(&'static str, Color, char); 10] {
     [
-        ("vram", Color::LightRed, glyph::full()),
-        ("gtt", Color::LightCyan, glyph::dark()),
-        ("zram", Color::Blue, glyph::medium()),
-        ("shm", Color::Green, glyph::full()),
-        ("kernel", Color::Magenta, glyph::dark()),
-        ("anon", Color::Gray, glyph::full()),
-        ("other", Color::White, glyph::medium()),
-        ("cache", Color::DarkGray, glyph::dark()),
-        ("slab", Color::Yellow, glyph::medium()),
-        ("buf", Color::LightBlue, glyph::full()),
+        // Inside `used`: warm for the GPU, cool for compressed and shared
+        // memory, green for the process memory that is most of the bar.
+        ("vram", Color::Indexed(204), glyph::full()), // #ff5f87 rose
+        ("gtt", Color::Indexed(208), glyph::dark()),  // #ff8700 orange
+        ("zram", Color::Indexed(69), glyph::medium()), // #5f87ff blue
+        ("shm", Color::Indexed(43), glyph::full()),   // #00d7af teal
+        ("kernel", Color::Indexed(141), glyph::dark()), // #af87ff lavender
+        ("anon", Color::Indexed(113), glyph::full()), // #87d75f green
+        ("other", Color::Indexed(250), glyph::medium()), // #bcbcbc grey
+        // Beyond `used`: muted, because this is room the kernel can hand back.
+        ("cache", Color::Indexed(66), glyph::dark()), // #5f8787 slate
+        ("slab", Color::Indexed(96), glyph::medium()), // #875f87 plum
+        ("buf", Color::Indexed(101), glyph::full()),  // #87875f olive
     ]
 }
 
@@ -1472,7 +1480,7 @@ fn stacked_bar(width: usize, parts: &[(u64, Color, char)], capacity: u64) -> Vec
     if rest > 0 {
         out.push(Span::styled(
             glyph::light().to_string().repeat(rest),
-            fg(Color::DarkGray),
+            fg(Color::Indexed(238)), // #444444, fixed like the segments above it
         ));
     }
     out
@@ -2344,6 +2352,9 @@ mod tests {
         ] {
             assert!(key.contains(label), "{label} missing from {key}");
         }
+        // Every segment is told apart by its colour first.
+        let colours: HashSet<Color> = mem_key().iter().map(|k| k.1).collect();
+        assert_eq!(colours.len(), mem_key().len());
     }
 
     #[test]

@@ -15,6 +15,13 @@
   so `--trend chars` stays the default and the flag says so. Opt-in, never
   detected: `TERM` names a terminal, not what it implements.
 
+- Both config files take `//` and `/* */` comments. `s` now writes `view.json`
+  with a header above it explaining every key and listing the column labels,
+  generated from the binary so it cannot go stale — the file explains itself
+  rather than sending you to the man page. A save still rewrites the file
+  whole, so `grouping.json`, which heft never writes, is the one that keeps
+  comments of your own.
+
 ### Fixed
 
 - Host, the User rows and the folder headers have no TREND. They are sums,

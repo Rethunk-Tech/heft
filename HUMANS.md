@@ -651,14 +651,22 @@ usage error; in the file the extra is warned and ignored.
 
 `s` writes both lists.
 
-```json
+```jsonc
 {
+  // `//` and `/* */` comments are allowed in both config files
   "sort": "pss",
   "desc": true,
   "hide_columns": ["vram", "gtt", "gfx", "compute"],
   "column_order": ["pss", "rss", "core"]
 }
 ```
+
+`s` writes this file with a header above it explaining every key and listing
+the column labels, so you do not have to come back here to edit it by hand.
+The label list is generated from the binary, so it cannot drift from the
+columns heft actually has. A save rewrites the whole file, header included, so
+comments you add elsewhere in it do not survive one — `grouping.json`, which
+heft only ever reads, keeps yours forever.
 
 Labels are `name`, `spark`, `nproc`, `threads`, `age`, `dstate`, `core`,
 `machine`, `pss`, `rss`, `swap`, `vram`, `gtt`, `gfx`, `compute`, `diskr`,
@@ -679,7 +687,9 @@ entirely. Both flags are refused with `--json`.
 
 Optional. Without the file heft groups exactly as it always has. Write
 `grouping.json` yourself — heft only reads it, and a bad one warns on stderr
-and is ignored rather than taking the monitor down.
+and is ignored rather than taking the monitor down. `//` and `/* */` comments
+are allowed, and since heft never writes this file they stay where you put
+them.
 
 Keys are the identities the tree shows you, not pids or comms.
 
@@ -690,8 +700,9 @@ Keys are the identities the tree shows you, not pids or comms.
 | `fold` | identity → the identity it bills to instead |
 | `container_owners` | container name → the uid that owns it |
 
-```json
+```jsonc
 {
+  // the daemon is a service, not an app
   "user_services": ["mydaemon"],
   "fold": { "mydaemon-worker": "mydaemon" },
   "container_owners": { "scratch-runner": 1000 }

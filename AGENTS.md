@@ -26,7 +26,7 @@ src/classify.rs      launcher / worker / shell / terminal / compositor tables
 src/identity.rs      cgroup parse, merge key + display name
 src/containers.rs    GET-only docker/podman; project vs per-container
 src/group.rs         Host → User → Applications | User Services | Containers, System
-src/config.rs        XDG view.json (sort, filter, hide_columns, column_order; write on save) and grouping.json (read-only)
+src/config.rs        XDG view.json (sort, filter, hide_columns, column_order; write on save) and grouping.json (read-only); both accept // and /* */
 src/once.rs          columns, tree ordering, table and JSON
 src/ui.rs            ratatui header + tree table
 src/tty.rs           panic hook + signal handler; restores the terminal
@@ -335,6 +335,16 @@ invariants in `tests/live_proc.rs` and `tests/reconcile.rs` are untouched.
 column preference, and the JSON shape is a contract.
 
 ## Grouping overrides
+
+`config::strip_comments` blanks `//` and `/* */` out of both config files
+before serde sees them, hand-rolled rather than a JSON5 crate for the reason
+the base64 encoder and the `/proc` parsers are. Comment bytes become spaces
+and a block comment keeps its newlines, so a serde error still names the line
+and column of the file the user is editing, and a `//` inside a string is left
+alone — a saved filter is a regex, and `https?://` is a pattern. `save_view`
+writes `view_header()` above the object, whose label list comes from
+`once::column_labels()` so it cannot drift; a save rewrites the file whole, so
+only `grouping.json`, which heft never writes, keeps a user's own comments.
 
 `$XDG_CONFIG_HOME/heft/grouping.json` moves local names out of the compiled
 tables. Heft never writes it and never creates the directory for it; absent

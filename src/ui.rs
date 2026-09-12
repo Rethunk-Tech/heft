@@ -1631,13 +1631,17 @@ fn help_lines(width: u16) -> Vec<Line<'static>> {
     const GUTTER: usize = 3;
     let text = help_text();
     let keys: Vec<&str> = text.lines().collect();
-    let w = keys.iter().map(|l| l.chars().count()).max().unwrap_or(0);
-    let mut lines = if usize::from(width) >= 2 * w + GUTTER + CHROME {
-        let half = keys.len().div_ceil(2);
+    // Each column as wide as its own longest line: sized to the longest line
+    // of either, `p`'s 66 columns set both halves and a 137-column terminal
+    // fell back to the single column that runs off its bottom.
+    let half = keys.len().div_ceil(2);
+    let col = |ls: &[&str]| ls.iter().map(|l| l.chars().count()).max().unwrap_or(0);
+    let (lw, rw) = (col(&keys[..half]), col(&keys[half..]));
+    let mut lines = if usize::from(width) >= lw + GUTTER + rw + CHROME {
         (0..half)
             .map(|i| {
                 let right = keys.get(half + i).copied().unwrap_or("");
-                Line::from(format!("{:<w$}{:GUTTER$}{right}", keys[i], ""))
+                Line::from(format!("{:<lw$}{:GUTTER$}{right}", keys[i], ""))
             })
             .collect()
     } else {
@@ -2054,7 +2058,8 @@ mod tests {
     #[test]
     fn help_fits_a_short_wide_terminal() {
         let keys = help_text().lines().count();
-        let wide = help_lines(160);
+        // 137 is the terminal the per-column sizing was reported from.
+        let wide = help_lines(137);
         assert_eq!(wide.len(), keys.div_ceil(2) + 1 + bar_key().len());
         let text: String = wide.iter().map(|l| format!("{l}\n")).collect();
         assert!(text.contains("F1") && text.contains("buf"), "{text}");

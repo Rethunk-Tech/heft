@@ -10,6 +10,10 @@
 //! the answer cannot change while heft runs, and `ui` already passes `Columns`
 //! down for the thing that can.
 //!
+//! `Set::Legacy` sits between the two: a font that draws `█▓▒░`, `▀▄` and `▼►`
+//! but not `▁▂▃▅▆▇`, which is common enough that asking such a
+//! reader to drop to ASCII would cost them a header that was rendering fine.
+//!
 //! Every ASCII substitute is one column wide, like the character it replaces.
 //! That is the constraint, not the aesthetics: the header lines are built to
 //! land on an exact width and the table truncates to an exact column count, so
@@ -20,6 +24,15 @@ use std::sync::OnceLock;
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Set {
     Unicode,
+    /// Every Unicode character heft draws except the sparkline's eighth
+    /// blocks. A font can carry the shade ramp, the half blocks and the
+    /// CP437 triangles and still lack six of the ramp's eight steps -- every
+    /// one but U+2584 and U+2588, which are half and full blocks too -- so
+    /// TREND is the one tofu column on a machine whose bars and tree draw
+    /// correctly.
+    /// Never detected -- nothing heft can read says what the font covers --
+    /// so it is only ever asked for.
+    Legacy,
     Ascii,
 }
 
@@ -86,19 +99,27 @@ pub(crate) fn light() -> char {
 }
 
 /// Two segments that need to differ from the ramp rather than continue it.
+/// Half blocks rather than the quadrants (`▚`, `▙`) they used to be: a font
+/// carrying the shade ramp and the full block does not necessarily carry
+/// U+2596-U+259F, and a reader whose bar drew `█▓▒` correctly still got tofu
+/// where VRAM and GTT went. U+2580 and U+2584 sit in the same legacy
+/// repertoire as the ramp itself, so a font that can draw one can draw these.
 pub(crate) fn quad_a() -> char {
-    if ascii() { '%' } else { '▚' }
+    if ascii() { '%' } else { '▀' }
 }
 
 pub(crate) fn quad_b() -> char {
-    if ascii() { '*' } else { '▙' }
+    if ascii() { '*' } else { '▄' }
 }
 
 /// Eight rising steps for a sparkline, lowest first. Every one is a single
 /// column in both sets, the same rule the bars and `ellipsis` keep, so a cell
 /// of eight of them is eight columns wide whatever the terminal resolved.
 pub(crate) fn spark_ramp() -> &'static [char; 8] {
-    if ascii() {
+    // The one place `Set::Legacy` parts company with `Set::Unicode`: the
+    // eighth blocks are the only characters heft draws that a legacy font
+    // reliably lacks while still carrying the bars.
+    if set() != Set::Unicode {
         &['_', '.', ',', ':', '-', '=', '+', '#']
     } else {
         &[
@@ -131,13 +152,43 @@ pub(crate) fn expanded() -> &'static str {
     if ascii() { "v " } else { "▼ " }
 }
 
+/// U+25BA rather than U+25B6, which looks identical in a font that has both.
+/// U+25B6 is the base of the play-button emoji, so a terminal that resolves
+/// emoji presentation can draw it double-width -- in a table whose every
+/// column is exact, that shifts the row -- and a font without it falls through
+/// to tofu beside the U+25BC that `expanded` draws fine. U+25BA carries no
+/// emoji property and pairs with U+25BC in the same legacy repertoire.
 pub(crate) fn collapsed() -> &'static str {
-    if ascii() { "> " } else { "▶ " }
+    if ascii() { "> " } else { "► " }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{Set, charmap_set};
+
+    #[test]
+    fn legacy_keeps_the_bars_and_drops_only_the_spark_ramp() {
+        use super::{Set, full, quad_a, set, spark_ramp};
+        // `set()` is process-wide and the suite runs in parallel threads, so
+        // this asserts over the table rather than by initialising it.
+        assert_eq!(set(), Set::Unicode, "the default the render tests rely on");
+        assert_eq!(full(), '█');
+        assert_eq!(quad_a(), '▀', "a half block, not a quadrant");
+        assert_eq!(spark_ramp()[0], '▁');
+        // Every glyph heft draws outside the sparkline is one a legacy font
+        // carries, which is what makes Legacy one branch rather than a table.
+        // U+2584 is not in that gap: it is the ramp's midpoint and a half
+        // block, so `quad_b` may and does use it.
+        let missing = ['▁', '▂', '▃', '▅', '▆', '▇'];
+        for c in [full(), quad_a(), super::quad_b(), super::rule()] {
+            assert!(!missing.contains(&c), "{c} is a step a legacy font lacks");
+        }
+        assert_eq!(
+            spark_ramp().iter().filter(|c| missing.contains(c)).count(),
+            6,
+            "six of the eight steps are what Legacy exists for"
+        );
+    }
 
     #[test]
     fn only_a_utf8_charmap_earns_the_block_characters() {

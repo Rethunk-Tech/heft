@@ -1695,12 +1695,12 @@ mod tests {
         let text = line.to_string();
         // The bug this guards: GTT dropped entirely once VRAM moved to its own
         // tank, even though it is system RAM sitting inside the MEM bar's used.
-        assert!(text.contains("▙gtt/▓cache/▒buf"), "{text}");
+        assert!(text.contains("▄gtt/▓cache/▒buf"), "{text}");
         assert!(
             !text.contains("vram/"),
             "discrete vram is not a MEM segment"
         );
-        assert!(line.spans.iter().any(|s| s.content.contains('▙')), "{text}");
+        assert!(line.spans.iter().any(|s| s.content.contains('▄')), "{text}");
         assert_eq!(text.chars().count(), 100);
     }
 
@@ -1715,7 +1715,7 @@ mod tests {
         assert!(tree.unified_memory);
         let text = mem_header_line(&tree, 100).0.to_string();
         assert!(!text.contains("VRAM ["), "{text}");
-        assert!(text.contains("▚vram/▙gtt/▓cache/▒buf"), "{text}");
+        assert!(text.contains("▀vram/▄gtt/▓cache/▒buf"), "{text}");
         assert_eq!(text.chars().count(), 100);
     }
 

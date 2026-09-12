@@ -291,7 +291,15 @@ fn direct_place(p: &Process, ctx: &Ctx<'_>) -> Option<Place> {
     {
         return Some(system_place(p));
     }
-    session_plumbing_place(p).or_else(|| crash_helper_place(p))
+    session_plumbing_place(p)
+        .or_else(|| crash_helper_place(p))
+        .or_else(|| {
+            let app = classify::bundled_helper_app(p)?;
+            Some(Place {
+                key: app.to_string(),
+                ..user_place(p)
+            })
+        })
 }
 
 fn raw_place(p: &Process, ctx: &Ctx<'_>) -> Place {

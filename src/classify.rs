@@ -355,6 +355,28 @@ fn is_gcr_ssh_agent(names: &[String], p: &Process) -> bool {
     names_match(names, |n| n == "ssh-agent") && p.cgroup.contains("gcr-ssh-agent")
 }
 
+/// An app's own helper binary that is not a `--type=` worker, so it would
+/// otherwise split into a row of its own. Editor install and extension trees
+/// decide by `exe` path rather than a PPID walk: `claude` started from the
+/// integrated terminal is a real app and keeps its row, while `codex`,
+/// `language_server_linux_x64` or `vscode-tailscale` shipped by an extension
+/// are that editor whoever spawned them.
+pub(crate) fn bundled_helper_app(p: &Process) -> Option<&'static str> {
+    const TREES: &[(&str, &str)] = &[
+        ("/.vscode/extensions/", "code"),
+        ("/usr/share/code/", "code"),
+        ("/.vscode-insiders/extensions/", "code-insiders"),
+        ("/usr/share/code-insiders/", "code-insiders"),
+        ("/.cursor/extensions/", "cursor"),
+    ];
+    if let Some(exe) = p.exe.as_deref()
+        && let Some((_, app)) = TREES.iter().find(|(dir, _)| exe.contains(dir))
+    {
+        return Some(app);
+    }
+    names_match(&names_of(p), |n| n == "deskflow-core").then_some("deskflow")
+}
+
 /// Firefox/Chromium crash helper whose parent is often user systemd.
 pub(crate) fn crash_helper_app(p: &Process) -> Option<String> {
     if !names_match(&names_of(p), is_crash_helper_name) {
@@ -848,6 +870,38 @@ mod tests {
             Some("abrt-applet")
         );
         assert!(session_helper_ident(&p("gnome-abrt", &["gnome-abrt"])).is_none());
+        let exe = |path: &str| Process {
+            comm: basename(path),
+            exe: Some(path.into()),
+            ..Process::default()
+        };
+        for helper in [
+            "/home/u/.vscode/extensions/openai.chatgpt-26.5.0-linux-x64/bin/linux-x86_64/codex",
+            "/home/u/.vscode/extensions/tailscale.vscode-tailscale-1.0.0/bin/vscode-tailscale",
+            "/usr/share/code/bin/code-tunnel",
+        ] {
+            assert_eq!(bundled_helper_app(&exe(helper)), Some("code"), "{helper}");
+        }
+        assert_eq!(
+            bundled_helper_app(&exe(
+                "/home/u/.cursor/extensions/x/bin/language_server_linux_x64"
+            )),
+            Some("cursor")
+        );
+        assert_eq!(
+            bundled_helper_app(&exe("/usr/share/code-insiders/bin/code-tunnel-insiders")),
+            Some("code-insiders"),
+            "Insiders is its own row, not a prefix match on /usr/share/code"
+        );
+        assert_eq!(
+            bundled_helper_app(&exe("/home/u/.local/bin/claude")),
+            None,
+            "a CLI installed outside the editor keeps its own row"
+        );
+        assert_eq!(
+            bundled_helper_app(&exe("/usr/bin/deskflow-core")),
+            Some("deskflow")
+        );
         assert!(is_worker(&Process {
             comm: "crashhelper".into(),
             exe: Some("/usr/lib64/firefox/crashhelper".into()),

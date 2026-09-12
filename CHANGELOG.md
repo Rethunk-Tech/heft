@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.8.0 - 2026-09-12
+
 ### Added
 
 - The version carries the commit, `0.7.0~1a2b3c4`, on `--version`, the man

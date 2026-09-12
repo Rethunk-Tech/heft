@@ -9,6 +9,8 @@ pkgbase = heft
 	makedepends = cargo
 	depends = gcc-libs
 	depends = glibc
+	options = !strip
+	options = !debug
 	source = heft-0.6.0.tar.gz::https://github.com/Rethunk-Tech/heft/archive/refs/tags/v0.6.0.tar.gz
 	sha256sums = dae9bd059d539b20d5aa0dd0b95b5f38cd8211291fe482ae59cea07afb9e3715
 

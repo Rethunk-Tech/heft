@@ -401,6 +401,17 @@ static), and `heft-git` builds from main. All three carry
 otherwise fails to index a binary with no symbols and ships an empty debug
 package.
 
+`packaging/aur/LICENSE` is 0BSD and covers the packaging sources only, not
+heft itself: the AUR submission guidelines require a package source licence in
+each AUR repository, and one that is not 0BSD makes the package ineligible for
+promotion to the official repositories. The push copies it in beside PKGBUILD
+and .SRCINFO.
+
+Editing a PKGBUILD means re-running `update.sh`: a `.SRCINFO` is generated
+metadata, and a stale one publishes the wrong dependencies and version to
+every AUR consumer while the PKGBUILD beside it looks right. The AUR accepts
+pushes to `master` only.
+
 `update.sh <version>` sets `pkgver`, refreshes the checksums and regenerates
 every `.SRCINFO`. The binary sums are read from the `.sha256` files the
 release publishes rather than from a re-download, because `makepkg -g` hashes

@@ -8,6 +8,8 @@ pkgbase = heft-bin
 	license = Apache-2.0
 	provides = heft=0.6.0
 	conflicts = heft
+	options = !strip
+	options = !debug
 	source = heft-completions-man-0.6.0.tar.gz::https://github.com/Rethunk-Tech/heft/releases/download/v0.6.0/heft-completions-man.tar.gz
 	sha256sums = c8569c54579de3564234c716787d0f15e4dfcac6221769e5064bb5b876fbb86f
 	source_x86_64 = heft-0.6.0-x86_64::https://github.com/Rethunk-Tech/heft/releases/download/v0.6.0/heft-x86_64-unknown-linux-musl

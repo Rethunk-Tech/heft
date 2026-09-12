@@ -219,8 +219,8 @@ jobs:
           export GIT_SSH_COMMAND='ssh -i ~/.ssh/aur -o IdentitiesOnly=yes'
           for pkg in heft heft-bin; do
             git clone "ssh://aur@aur.archlinux.org/$pkg.git" "$RUNNER_TEMP/$pkg"
-            cp "packaging/aur/$pkg/PKGBUILD" "packaging/aur/$pkg/.SRCINFO" "$RUNNER_TEMP/$pkg/"
-            git -C "$RUNNER_TEMP/$pkg" add PKGBUILD .SRCINFO
+            cp packaging/aur/LICENSE "packaging/aur/$pkg/PKGBUILD" "packaging/aur/$pkg/.SRCINFO" "$RUNNER_TEMP/$pkg/"
+            git -C "$RUNNER_TEMP/$pkg" add PKGBUILD .SRCINFO LICENSE
             git -C "$RUNNER_TEMP/$pkg" diff --cached --quiet && continue
             git -C "$RUNNER_TEMP/$pkg" \
               -c user.name='Damon Blais' -c user.email='damon.blais@gmail.com' \

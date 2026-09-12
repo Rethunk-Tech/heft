@@ -10,8 +10,10 @@ pkgbase = heft-git
 	makedepends = git
 	depends = gcc-libs
 	depends = glibc
-	provides = heft
+	provides = heft=0.6.0.r0.g6f21906
 	conflicts = heft
+	options = !strip
+	options = !debug
 	source = heft-git::git+https://github.com/Rethunk-Tech/heft.git
 	sha256sums = SKIP
 

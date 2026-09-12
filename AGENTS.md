@@ -554,7 +554,12 @@ so it runs inside `archlinux:base-devel`.
 The `aur` job in `release.yml` runs it after the release exists, since the
 checksums are of assets that did not exist before, commits the refresh back to
 main, and pushes `heft` and `heft-bin` to the AUR when the `AUR_SSH_KEY`
-secret is set (it skips with a notice when it is not). `heft-git` is pushed by
+secret is set (it skips with a notice when it is not). The secret is
+deliberately not set, so that step always skips and exits green: once the
+release and the job's refresh commit exist, pull main and push both by hand —
+clone `ssh://aur@aur.archlinux.org/<pkg>.git`, copy `PKGBUILD`, `.SRCINFO` and
+`packaging/aur/LICENSE` in, commit `heft <version>`, push `master`. Check the
+result with a fresh clone, not the RPC or cgit, which lag by minutes. `heft-git` is pushed by
 hand: a tag changes nothing in a package whose `pkgver()` is `git describe`.
 
 ## Gates

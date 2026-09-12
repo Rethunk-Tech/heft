@@ -62,7 +62,7 @@ pub(crate) struct Cli {
     /// Say where this pid landed in the tree and the grouping.json key that moves it
     #[arg(long, value_name = "PID", conflicts_with_all = ["once", "json", "follow"])]
     pub explain: Option<u32>,
-    /// How TREND is drawn. `kitty` needs a terminal with the graphics protocol
+    /// How TREND is drawn. `auto` asks the terminal and draws an image if it can
     #[arg(long, value_enum, default_value_t = Trend::Auto, value_name = "MODE", conflicts_with_all = ["once", "json"])]
     pub trend: Trend,
     /// Keep sampling: one table or one JSON line per interval. Needs --once or --json

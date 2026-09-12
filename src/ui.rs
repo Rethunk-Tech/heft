@@ -1065,7 +1065,7 @@ fn draw_header(f: &mut ratatui::Frame<'_>, area: Rect, app: &App) {
 fn swap_header_line(tree: &HostTree, width: usize, bar_w: usize) -> Option<Line<'static>> {
     let total = (tree.swap_total_bytes > 0).then_some(tree.swap_total_bytes)?;
     let used = tree.swap_used_bytes.min(total);
-    let prefix = " SWAP [";
+    let prefix = bar_prefix("SWAP");
     let mid = format!("] {}/{}  ", fmt_bytes(Some(used)), fmt_bytes(Some(total)));
     // Drawn to MEM's bar width and padded on the right, the same way the CPU
     // row is, so all three brackets stack in one column. Its own suffix is
@@ -1097,7 +1097,7 @@ fn pct_weight(p: f64) -> u64 {
 /// the same place on the screen, and the pad simply runs under the tanks
 /// beside it.
 fn cpu_header_line(tree: &HostTree, width: usize, bar_w: usize) -> Line<'static> {
-    let prefix = " CPU [";
+    let prefix = bar_prefix("CPU");
     let mid = format!("] {:>5}%  ", fmt_pct(tree.cpu_pct));
     let (tail, legend_len) = legend(&[
         ("usr", Color::Cyan, glyph::full()),
@@ -1137,6 +1137,17 @@ fn cpu_header_line(tree: &HostTree, width: usize, bar_w: usize) -> Line<'static>
 /// absorbs the slack), so two of these can share one header row. Returns the
 /// width the bar settled on as well as the spans, because the CPU row above is
 /// drawn to the same scale.
+/// Every bar's label, right-aligned to the longest of them, so `[` lands in
+/// one column on every header row. `SWAP` is the long one; `CPU` and `MEM`
+/// carry the extra space.
+///
+/// One helper rather than a literal per row: `cpu_header_line` and
+/// `swap_header_line` build their own prefixes and `bar_group` builds the
+/// rest, so three copies of this would drift the first time a label changed.
+fn bar_prefix(label: &str) -> String {
+    format!(" {label:>4} [")
+}
+
 fn bar_group(
     label: &str,
     width: usize,
@@ -1146,7 +1157,7 @@ fn bar_group(
     total: u64,
     labels: &[(&str, Color, char)],
 ) -> (Vec<Span<'static>>, usize) {
-    let prefix = format!(" {label} [");
+    let prefix = bar_prefix(label);
     let mid = format!("] {}/{}  ", fmt_bytes(Some(used)), fmt_bytes(Some(total)));
     let (tail, legend_len) = legend(labels);
     let bar_w = width.saturating_sub(prefix.len() + mid.len() + legend_len);
@@ -2163,8 +2174,34 @@ mod tests {
         assert_eq!(tree.swap_total_bytes, 0);
         let text = mem_header_line(&tree, 100).0.to_string();
         assert!(!text.contains("SWAP"), "{text}");
-        assert!(text.starts_with(" MEM ["), "{text}");
+        assert!(text.starts_with("  MEM ["), "{text}");
         assert_eq!(text.chars().count(), 100);
+    }
+
+    /// Labels are right-aligned to the longest, so the opening bracket lands
+    /// in one column on every row: a bar that starts a column further along
+    /// than the one above it reads as a different scale.
+    #[test]
+    fn every_header_bar_opens_in_the_same_column() {
+        let g = 1024 * 1024 * 1024;
+        let mut tree = tree_with_gpu(&mem::GpuPool::default());
+        tree.swap_total_bytes = 8 * g;
+        tree.swap_used_bytes = 2 * g;
+        let (mem, bar_w) = mem_header_line(&tree, 120);
+        let rows = [
+            cpu_header_line(&tree, 120, bar_w).to_string(),
+            mem.to_string(),
+            swap_header_line(&tree, 120, bar_w)
+                .expect("a row")
+                .to_string(),
+        ];
+        let opens: Vec<usize> = rows.iter().map(|r| r.find('[').expect("a bar")).collect();
+        assert_eq!(opens, vec![6, 6, 6], "{rows:#?}");
+        // And the closing brackets already stacked, which is what the shared
+        // bar width is for; both ends line up now.
+        let closes: Vec<usize> = rows.iter().map(|r| r.find(']').expect("a bar")).collect();
+        assert_eq!(closes[0], closes[1]);
+        assert_eq!(closes[1], closes[2]);
     }
 
     /// Swap is a device, not a slice of MemTotal: painting it inside the MEM

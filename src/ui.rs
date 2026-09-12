@@ -1545,7 +1545,9 @@ const GUTTER: usize = 2;
 fn metric_grid(row: &Flat, avail: usize) -> Vec<String> {
     let cells: Vec<String> = COLUMNS
         .iter()
-        .filter(|c| c.label != "name")
+        // `spark` is drawn from history the pane does not have, so its `fmt` is
+        // always empty and the cell would only ever say `-`.
+        .filter(|c| c.label != "name" && c.label != "spark")
         .map(|c| {
             let v = (c.fmt)(&row.name, row.nproc, &row.metrics);
             // The label shows even when the value is blank: a blank cell is a
@@ -1770,9 +1772,13 @@ mod tests {
     fn detail_lists_every_column_and_only_reads_proc_for_a_pid() {
         let mut row = flat(3, "firefox");
         let text = detail_text(&row, 80);
-        for c in COLUMNS.iter().filter(|c| c.label != "name") {
+        for c in COLUMNS
+            .iter()
+            .filter(|c| c.label != "name" && c.label != "spark")
+        {
             assert!(text.contains(c.header), "{} missing from {text}", c.header);
         }
+        assert!(!text.contains("TREND"), "no history to draw here: {text}");
         assert!(!text.contains("CGROUP"), "an aggregate row has no one pid");
         assert!(
             text.contains("MEM ST    -"),

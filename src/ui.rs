@@ -34,7 +34,18 @@ use crate::types::{
     tree_host_nproc, user_metrics, user_nproc,
 };
 
+/// CPU and MEMORY. A machine with swap gets a third for it.
 const HEADER_ROWS: u16 = 2;
+
+/// Swap is a device of its own, not a slice of MemTotal, and its readout needs
+/// the same couple of dozen columns whatever the terminal is. Sharing the
+/// MEMORY row with it cost MEM half its width, and the CPU bar is sized to
+/// match MEM's, so both headline bars halved to make room for it. It gets its
+/// own row instead, and a swapless host -- `SwapTotal: 0` -- still draws the
+/// two rows it always did.
+fn header_rows(tree: &HostTree) -> u16 {
+    HEADER_ROWS + u16::from(tree.swap_total_bytes > 0)
+}
 
 struct App {
     tree: HostTree,
@@ -227,7 +238,7 @@ fn run_loop(
             record_history(&mut app, &rows);
         }
         app.cursor = remap_cursor(&rows, &cursor_id);
-        app.row_vis = table_body_rows(terminal.size()?.height);
+        app.row_vis = table_body_rows(terminal.size()?.height, header_rows(&app.tree));
         app.row_off = follow_viewport(app.cursor, app.row_off, app.row_vis, rows.len());
         terminal.draw(|f| draw(f, &mut app, &rows))?;
         // Last, deliberately: ratatui rewrites only the cells that changed,
@@ -851,7 +862,7 @@ fn send_trend(app: &mut App, rows: &[Flat], start: usize, end: usize, full: f64)
 
 fn draw(f: &mut ratatui::Frame<'_>, app: &mut App, rows: &[Flat]) {
     let chunks = Layout::vertical([
-        Constraint::Length(HEADER_ROWS),
+        Constraint::Length(header_rows(&app.tree)),
         Constraint::Length(1),
         Constraint::Min(4),
         Constraint::Length(1),
@@ -1039,10 +1050,37 @@ fn render_rule(f: &mut ratatui::Frame<'_>, area: Rect) {
 fn draw_header(f: &mut ratatui::Frame<'_>, area: Rect, app: &App) {
     let width = area.width as usize;
     let (mem, mem_bar_w) = mem_header_line(&app.tree, width);
-    f.render_widget(
-        Paragraph::new(vec![cpu_header_line(&app.tree, width, mem_bar_w), mem]),
-        area,
-    );
+    // Every row's bar is drawn to MEM's, so the brackets stack in one column
+    // however many rows there are.
+    let mut lines = vec![cpu_header_line(&app.tree, width, mem_bar_w), mem];
+    if let Some(swap) = swap_header_line(&app.tree, width, mem_bar_w) {
+        lines.push(swap);
+    }
+    f.render_widget(Paragraph::new(lines), area);
+}
+
+/// The SWAP row, or `None` on a host with no swap configured -- where there is
+/// no swap for a page to be in, so there is no figure and no row, the same
+/// blank contract the `SWAP` column keeps.
+fn swap_header_line(tree: &HostTree, width: usize, bar_w: usize) -> Option<Line<'static>> {
+    let total = (tree.swap_total_bytes > 0).then_some(tree.swap_total_bytes)?;
+    let used = tree.swap_used_bytes.min(total);
+    let prefix = " SWAP [";
+    let mid = format!("] {}/{}  ", fmt_bytes(Some(used)), fmt_bytes(Some(total)));
+    // Drawn to MEM's bar width and padded on the right, the same way the CPU
+    // row is, so all three brackets stack in one column. Its own suffix is
+    // shorter than MEM's, so there is always slack to give back.
+    let fits = width.saturating_sub(prefix.len() + mid.len());
+    let bar_w = bar_w.min(fits);
+    let mut spans = vec![Span::raw(prefix)];
+    spans.extend(stacked_bar(
+        bar_w,
+        &[(used, Color::Yellow, glyph::full())],
+        total.max(1),
+    ));
+    spans.push(Span::raw(mid));
+    spans.push(Span::raw(" ".repeat(fits - bar_w)));
+    Some(Line::from(spans))
 }
 
 fn pct_weight(p: f64) -> u64 {
@@ -1146,17 +1184,9 @@ fn mem_header_line(tree: &HostTree, width: usize) -> (Line<'static>, usize) {
         cache: tree.mem_cached_bytes,
         buffers: tree.mem_buffers_bytes,
     });
-    // Swap is a device, not a slice of MemTotal, so painting it inside the MEM
-    // bar would be the same lie discrete VRAM was moved out for. A swapless
-    // host (`SwapTotal: 0`, the common case) gets no tank and no empty segment:
-    // the MEM bar keeps the whole row exactly as it did before swap existed.
-    let swap = (tree.swap_total_bytes > 0).then_some(tree.swap_total_bytes);
-    // Rejected a third header row: AGENTS.md fixes the header at two unbordered
-    // rows with rules above and below, so extra tanks split this row.
-    let tanks = tank_widths(
-        width,
-        1 + usize::from(discrete.is_some()) + usize::from(swap.is_some()),
-    );
+    // Swap has its own row: it is a device rather than a slice of MemTotal,
+    // and as a tank here it took half the width, which the CPU bar matches.
+    let tanks = tank_widths(width, 1 + usize::from(discrete.is_some()));
     let mem_width = tanks[0];
     // `anon` is the unlabelled bulk of the bar, so it keeps the full block and
     // the carve-outs take the distinguishable glyphs. The two quadrant glyphs
@@ -1184,33 +1214,16 @@ fn mem_header_line(tree: &HostTree, width: usize) -> (Line<'static>, usize) {
         tree.mem_total_bytes,
         &labels,
     );
-    let mut next = 1;
     if let Some(vram_total) = discrete {
         let vram_used = tree.vram_used_bytes.unwrap_or(0).min(vram_total);
         spans.extend(
             bar_group(
                 "VRAM",
-                tanks[next],
+                tanks[1],
                 &[(vram_used, Color::LightRed, glyph::full())],
                 vram_total,
                 vram_used,
                 vram_total,
-                &[],
-            )
-            .0,
-        );
-        next += 1;
-    }
-    if let Some(swap_total) = swap {
-        let swap_used = tree.swap_used_bytes.min(swap_total);
-        spans.extend(
-            bar_group(
-                "SWAP",
-                tanks[next],
-                &[(swap_used, Color::Yellow, glyph::full())],
-                swap_total,
-                swap_used,
-                swap_total,
                 &[],
             )
             .0,
@@ -1498,8 +1511,8 @@ fn popup(f: &mut ratatui::Frame<'_>, area: Rect, text: &str, title: &str) {
 
 /// Body rows that fit in the table pane: the terminal minus the header, the
 /// two rules, the column header and the footer.
-fn table_body_rows(term_h: u16) -> usize {
-    term_h.saturating_sub(HEADER_ROWS + 4) as usize
+fn table_body_rows(term_h: u16, header: u16) -> usize {
+    term_h.saturating_sub(header + 4) as usize
 }
 
 /// Index of `id` after the flattened list was rebuilt. A raw cursor followed
@@ -1850,9 +1863,38 @@ mod tests {
 
     #[test]
     fn table_body_rows_two_header_no_box() {
-        assert_eq!(table_body_rows(24), 18);
-        assert_eq!(table_body_rows(6), 0);
-        assert_eq!(table_body_rows(7), 1);
+        assert_eq!(table_body_rows(24, HEADER_ROWS), 18);
+        assert_eq!(table_body_rows(6, HEADER_ROWS), 0);
+        assert_eq!(table_body_rows(7, HEADER_ROWS), 1);
+        // A machine with swap spends one more row on the header, so the table
+        // gets one fewer -- and the arithmetic has to know, or the last row
+        // would be drawn under the footer.
+        assert_eq!(table_body_rows(24, HEADER_ROWS + 1), 17);
+        assert_eq!(table_body_rows(7, HEADER_ROWS + 1), 0);
+    }
+
+    /// Swap earns a row of its own; a machine without it draws the two rows
+    /// heft always drew, so nothing is spent on a tank that says nothing.
+    #[test]
+    fn the_header_grows_a_row_only_for_swap() {
+        let g = 1024 * 1024 * 1024;
+        let mut tree = tree_with_gpu(&mem::GpuPool::default());
+        assert_eq!(header_rows(&tree), 2);
+        assert!(swap_header_line(&tree, 100, 40).is_none());
+        tree.swap_total_bytes = 8 * g;
+        tree.swap_used_bytes = 2 * g;
+        assert_eq!(header_rows(&tree), 3);
+        let swap = swap_header_line(&tree, 100, 40).expect("a row").to_string();
+        assert!(swap.starts_with(" SWAP ["), "{swap}");
+        assert!(swap.contains("2.0G/8.0G"), "{swap}");
+        assert_eq!(swap.chars().count(), 100);
+        // Discrete VRAM still shares the MEMORY row: it is a second memory,
+        // and its readout belongs beside the one it is being compared with.
+        tree.vram_total_bytes = Some(12 * g);
+        tree.vram_used_bytes = Some(6 * g);
+        let mem = mem_header_line(&tree, 120).0.to_string();
+        assert!(mem.contains("VRAM ["), "{mem}");
+        assert!(!mem.contains("SWAP"), "swap left this row: {mem}");
     }
 
     #[test]
@@ -2125,33 +2167,30 @@ mod tests {
         assert_eq!(text.chars().count(), 100);
     }
 
+    /// Swap is a device, not a slice of MemTotal: painting it inside the MEM
+    /// bar would put pages that are not in RAM into the RAM figure.
     #[test]
-    fn swap_gets_its_own_tank_beside_mem() {
+    fn swap_is_never_a_segment_of_the_mem_bar() {
         let g = 1024 * 1024 * 1024;
         let mut tree = tree_with_gpu(&mem::GpuPool::default());
         tree.swap_total_bytes = 8 * g;
         tree.swap_used_bytes = 2 * g;
-        let text = mem_header_line(&tree, 100).0.to_string();
-        // The bug this guards: swap painted as a segment of MemTotal, which
-        // would put pages that are not in RAM inside the RAM bar.
-        assert!(text.contains("SWAP ["), "{text}");
-        assert!(text.contains("2.0G/8.0G"), "{text}");
-        assert!(text.contains("8.0G/32.0G"), "{text}");
-        assert_eq!(text.chars().count(), 100);
-
-        // Discrete VRAM and swap together still fit the same two-row header.
-        tree.vram_total_bytes = Some(12 * g);
-        tree.vram_used_bytes = Some(6 * g);
-        let text = mem_header_line(&tree, 120).0.to_string();
-        assert!(text.contains("VRAM [") && text.contains("SWAP ["), "{text}");
-        assert_eq!(text.chars().count(), 120);
+        let mem = mem_header_line(&tree, 100).0.to_string();
+        assert!(mem.contains("8.0G/32.0G"), "RAM only: {mem}");
+        assert!(!mem.contains("SWAP"), "{mem}");
+        assert_eq!(mem.chars().count(), 100);
+        let swap = swap_header_line(&tree, 100, 40).expect("a row").to_string();
+        assert!(swap.contains("2.0G/8.0G"), "{swap}");
+        assert_eq!(swap.chars().count(), 100);
     }
 
-    /// The reported defect: swap took half the row, and since the CPU bar is
-    /// matched to MEM's, both headline bars were halved to make room for a
-    /// readout whose fixed text is the same 24 columns at any terminal size.
+    /// The reported defect: swap shared the MEMORY row, so it took half the
+    /// width, and because the CPU bar is sized to match MEM's, both headline
+    /// bars halved to make room for a readout that needs the same couple of
+    /// dozen columns at any terminal size. It has its own row now, and the
+    /// two bars above it are the width they would be on a swapless machine.
     #[test]
-    fn swap_does_not_halve_the_mem_and_cpu_bars() {
+    fn swap_costs_the_mem_and_cpu_bars_nothing() {
         let g = 1024 * 1024 * 1024;
         let tree = tree_with_gpu(&mem::GpuPool::default());
         let plain = mem_header_line(&tree, 120).1;
@@ -2159,29 +2198,24 @@ mod tests {
         swapped.swap_total_bytes = 8 * g;
         swapped.swap_used_bytes = 2 * g;
         let with_swap = mem_header_line(&swapped, 120).1;
-        // The invariant, and the whole fix: MEM gives up the side tank's
-        // fixed budget and not a share of the row. On a 120-column header
-        // that is 84 columns of bar becoming 52; the even split made it 24.
-        assert_eq!(
-            plain - with_swap,
-            SIDE_TANK,
-            "MEM bar fell from {plain} to {with_swap}"
-        );
-        // And the CPU bar, which is sized to match it, comes with it.
+        assert_eq!(with_swap, plain, "the MEM bar is untouched by swap");
+        // All three brackets stack in one column.
         let cpu = cpu_header_line(&swapped, 120, with_swap).to_string();
-        let bar = cpu.split_once('[').unwrap().1.split_once(']').unwrap().0;
-        assert_eq!(bar.chars().count(), with_swap, "the two bars stack");
+        let swap = swap_header_line(&swapped, 120, with_swap).expect("a row");
+        let bar_of = |s: &str| {
+            s.split_once('[')
+                .unwrap()
+                .1
+                .split_once(']')
+                .unwrap()
+                .0
+                .chars()
+                .count()
+        };
+        assert_eq!(bar_of(&cpu), with_swap);
+        assert_eq!(bar_of(&swap.to_string()), with_swap);
         assert_eq!(cpu.chars().count(), 120);
-        // The swap tank still has a bar in it rather than only its figures.
-        let text = mem_header_line(&swapped, 120).0.to_string();
-        let swap_bar = text
-            .split_once("SWAP [")
-            .unwrap()
-            .1
-            .split_once(']')
-            .unwrap()
-            .0;
-        assert!(swap_bar.chars().count() >= 6, "swap bar {swap_bar:?}");
+        assert_eq!(swap.to_string().chars().count(), 120);
     }
 
     fn flat(depth: u16, name: &str) -> Flat {

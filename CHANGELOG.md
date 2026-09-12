@@ -54,14 +54,20 @@
 ### Fixed
 
 - On a machine with swap, the MEM and CPU bars were half the width they
-  should be. The header row was split equally between its tanks, so SWAP took
-  half of it, and because the CPU bar is sized to match MEM's it was halved
-  along with it — on a 120-column terminal, 84 columns of bar became 24. A
-  VRAM or SWAP tank needs about 24 columns for its label and figures whatever
-  the terminal is, so it now takes that fixed budget and MEM keeps the rest,
-  growing with the window while the side tanks stay put. On a terminal too
-  narrow for that the split falls back to even rather than leaving MEM with a
-  bar and no room for it.
+  should be. Swap shared the MEMORY row, and that row was split equally
+  between its tanks, so SWAP took half of it; because the CPU bar is sized to
+  match MEM's, it was halved along with it. On a 120-column terminal, 84
+  columns of bar became 24. Swap now has a header row of its own — its
+  figures need the same couple of dozen columns however wide the terminal is,
+  so there was nothing for it to give back — and the MEM and CPU bars are the
+  width they would be on a machine with no swap at all. A swapless host draws
+  the same two-row header it always did.
+
+- Discrete VRAM, which does still share the MEMORY row because it is the
+  memory MEM is being compared against, now takes a fixed slice of it rather
+  than half, so MEM grows with the window while the VRAM tank stays put. On a
+  terminal too narrow for that the split falls back to even rather than
+  leaving MEM with a bar and no room for it.
 
 - Host, the User rows and the folder headers have no TREND. They are sums,
   and the scale the trend is drawn against is built from the entries, so a

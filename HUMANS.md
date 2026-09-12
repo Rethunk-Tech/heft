@@ -358,12 +358,13 @@ number gets read as a current one.
   for 18.1 GiB of it. When the question is how much of the card is in use
   rather than which application is using it, read the kernel's own
   `/sys/class/drm/card*/device/mem_info_*` totals. Swap, when the machine has
-  any, is a third tank on that same row rather than a segment of MEM: swapped
-  pages are not in RAM. It takes a fixed slice of the row rather than an equal
-  share of it — its figures need the same couple of dozen columns however wide
-  the terminal is, so MEM keeps the rest and grows with the window while SWAP
-  stays put. A machine with `SwapTotal: 0` gets no swap tank and no
-  `SWAP` figures at all.
+  any, gets a third row of its own rather than a segment of MEM: swapped pages
+  are not in RAM. A row rather than a tank beside MEM, because its figures
+  need the same couple of dozen columns however wide the terminal is — sharing
+  the MEMORY row, it took half of that row, and since the CPU bar is drawn to
+  match MEM's, both headline bars halved to make room for it. All three bars
+  are still drawn to one width, so the brackets stack in a single column. A machine with `SwapTotal: 0` gets no swap row and no
+  `SWAP` figures at all, and draws the two-row header it always did.
 
 - **User** is a unix uid, shown by login name. Terminals and the compositor
   live under that user — not as Host. An idle interactive shell folds into

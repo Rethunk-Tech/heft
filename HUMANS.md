@@ -564,33 +564,6 @@ with 40 processes holding 1400 threads looked the same as one holding 40.
 them — when the thing on that row first appeared — never a sum. Both come from
 the `/proc/<pid>/stat` heft already reads for CPU, so neither costs a read.
 
-## D
-
-`D` counts the processes on a row in uninterruptible sleep: inside a kernel
-call that cannot be interrupted, which in practice means waiting on storage or
-a network filesystem. Such a process cannot be killed and gets no work done,
-but `%CORE` reads it as idle, so a machine grinding to a halt on a stuck NFS
-mount looks in every other column exactly like one that is quiet. The column
-sits left of `%CORE` for that reason.
-
-It is field 3 of `/proc/<pid>/stat`, the line heft already reads for CPU and
-`THR`, so it costs no extra read.
-
-Unlike `CPU ST` / `IO ST` / `MEM ST` it is a count rather than a percentage of
-an interval, so it adds up the tree: a folder, User or Host row carries the
-total of everything beneath it, and those are precisely the rows the stall
-columns have to leave blank. `0` is a figure here and not a blank — every
-process heft can see at all has a state, so there is nothing it can fail to
-read.
-
-A steady `0` is the ordinary reading on a healthy machine. A row that holds
-above zero is waiting on something the kernel will not let it stop waiting for,
-and that cell is drawn in red — reverse video where there is no colour, so it
-survives `NO_COLOR`, a pipe and a monochrome terminal. The stall columns are
-marked the same way once they pass 20% of an interval, which is where a cgroup
-is contending for a resource rather than merely using it. Nothing else in the
-table is marked: a large `%CORE` is a machine doing work, which is not trouble.
-
 ## CPU ST / IO ST / MEM ST
 
 The stall columns say whether a row was *waiting* rather than working. `%CORE`
@@ -635,6 +608,12 @@ leaves them out — that row exists to draw a bar to scale, and a text tail on
 it made the CPU bar shorter than the MEMORY bar beside it. A machine whose
 kernel was built without `CONFIG_PSI`, or booted `psi=0`, gets no host figures
 and no columns at all.
+
+A figure at or over 20% of an interval is drawn in red — reverse video where
+there is no colour, so it survives `NO_COLOR`, a pipe and a monochrome
+terminal — since that is where a cgroup is contending for a resource rather
+than merely using it. Nothing else in the table is marked: a large `%CORE` is a
+machine doing work, which is not trouble.
 
 ## NETNS RX / NETNS TX
 
@@ -723,7 +702,7 @@ columns heft actually has. A save rewrites the whole file, header included, so
 comments you add elsewhere in it do not survive one — `grouping.json`, which
 heft only ever reads, keeps yours forever.
 
-Labels are `name`, `spark`, `nproc`, `threads`, `age`, `dstate`, `core`,
+Labels are `name`, `spark`, `nproc`, `threads`, `age`, `core`,
 `machine`, `pss`, `rss`, `swap`, `vram`, `gtt`, `gfx`, `compute`, `diskr`,
 `diskw`, `cpustall`, `iostall`, `memstall`, `netns_rx`, `netns_tx`. `--sort`
 and `Shift-←` `Shift-→` take all of them except `spark`, which draws a trend rather than a

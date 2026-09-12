@@ -25,6 +25,10 @@
   MEM bar rather than unlabelled remainder: it is RAM that no process's PSS
   holds. The JSON host carries `mem_shmem_bytes` and `zram_used_bytes`.
 
+### Removed
+
+- The `D` column, its `dstate` label and the JSON `d_state_procs` field.
+
 ### Added
 
 - The version carries the commit, `0.7.0~1a2b3c4`, on `--version`, the man

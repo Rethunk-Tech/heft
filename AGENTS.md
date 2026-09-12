@@ -432,7 +432,6 @@ are.
 | PSS | `/proc/pid/smaps_rollup` — cadence in [HUMANS.md](HUMANS.md) |
 | SWAP | `SwapPss:` from that same rollup read, so it costs no extra file and shares the PSS cadence. `SwapPss`, never `Swap`: a shared swapped page must be apportioned or a summed tree reports it once per mapper. Blank on a `SwapTotal: 0` host |
 | Host swap | `SwapTotal` − `SwapFree` from `/proc/meminfo` (`SwapCached` is neither, so it is not subtracted) |
-| `D` | processes whose `/proc/pid/stat` state (field 3) is `D`, off the line already parsed for utime/stime. A count, so it sums up the tree the way `THR` does, and `0` is a figure rather than the blank a percentage would need |
 | THR | `num_threads`, field 20 of the `/proc/pid/stat` already parsed for utime/stime. Sums up the tree the way `nproc` does |
 | AGE | `now - (btime + starttime / CLK_TCK)`; `starttime` is field 22 of that same `stat`, `btime` is read from `/proc/stat` once per run and pinned. Aggregates take the OLDEST, never a sum: a duration summed is meaningless, and a max cannot be read as a total |
 | Disk R/W | Δ `read_bytes` / `write_bytes` from `/proc/pid/io` |
@@ -459,7 +458,6 @@ prefixes while `bar_group` builds MEM's and VRAM's, so three copies would
 drift the first time a label changed. Every row draws its bar to one width so
 the closing brackets stack: `mem_header_line` returns its first tank's width and `cpu_header_line` and `swap_header_line` take it, clamped to their own slack and padded on the right. `mem_header_line` caps its own bar to the CPU row's slack (`ui::cpu_parts`) as well, because which suffix is longer depends on the legend: `gtt/shm` is shorter than `usr/sys/wait` |
 | Disk R/W | table columns only (formatted rates change width every tick); after compute, before the stall trio |
-| `D` | left of `%CORE`, which reads D-state as idle; a count, so folder, User and Host rows carry a figure the stall columns must leave blank |
 | THR / AGE | beside `N`, before the metric columns: all three say what the row *is* rather than what it is currently costing |
 | CPU/IO/MEM ST | a row carries a figure only when every process under it is in one non-root cgroup; a process row only when it is alone in its cgroup. Folder, User, Host and multi-cgroup rows are blank — a percentage of an interval cannot be summed, and `user-<uid>.slice` is not the User row (a rootful container is billed to its owner from `system.slice`) nor `system.slice` the System row (kernel threads are in the root cgroup). Root-cgroup rows are blank because that pressure is the machine's, the same rule as a `--network=host` container |
 | NETNS RX/TX | last two columns, named for the namespace and not the resource: a blank cell means the row owns no namespace, not that it moved no bytes |
@@ -487,8 +485,7 @@ literal path would find the real machine through it and fill the tree. The
 container socket and `/etc/passwd` are deliberately not prefixed — one is live
 IPC rather than a file in the tree, the other is the host's.
 
-`ui::alarming` marks the cells that say a row is in trouble — `D` above zero,
-a stall column at or over `STALL_ALARM` (20%) — with `ui::alarm_style`: red
+`ui::alarming` marks the cells that say a row is in trouble — a stall column at or over `STALL_ALARM` (20%) — with `ui::alarm_style`: red
 where there is colour, `REVERSED` where there is not, which is the fallback
 `sort_header` already uses. Reverse rather than a marker character because
 `CPU ST` is six columns wide and `100.0` is five, so a marker would overflow

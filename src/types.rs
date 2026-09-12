@@ -19,10 +19,6 @@ pub struct Process {
     /// the file already parsed for utime/stime, so neither costs a read.
     pub threads: Option<u64>,
     pub starttime_ticks: Option<u64>,
-    /// State `D` from field 3 of that same `stat` line: in the kernel and not
-    /// signallable. It costs no read and is the one stall signal that is a
-    /// count rather than a percentage.
-    pub d_state: bool,
     pub rss_pages: Option<u64>,
     pub pss_kb: Option<u64>,
     /// `SwapPss:` from the same `smaps_rollup` read as `pss_kb`, so it costs no
@@ -104,11 +100,6 @@ pub(crate) struct Metrics {
     pub(crate) net_rx_bps: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) net_tx_bps: Option<f64>,
-    /// Processes in uninterruptible sleep. A count, so unlike the three
-    /// percentages below it sums, and a folder, User or Host row carries one
-    /// where PSI has to leave a blank. Never an `Option`: every process heft
-    /// can see at all has a state, so `0` here is an answer, not a blank.
-    pub(crate) d_state_procs: u32,
     /// Percent of the interval this row's cgroup had at least one task stalled
     /// on the resource. Like the netns pair, `accumulate` leaves these out: a
     /// percentage of an interval is not a quantity, so summing two cgroups'
@@ -137,7 +128,6 @@ impl Metrics {
         self.gtt_bytes = sum_opt(self.gtt_bytes, other.gtt_bytes);
         self.gfx_pct = sum_opt_f(self.gfx_pct, other.gfx_pct);
         self.compute_pct = sum_opt_f(self.compute_pct, other.compute_pct);
-        self.d_state_procs += other.d_state_procs;
         // net_rx_bps / net_tx_bps and the three *_stall_pct are not summed;
         // see their field comments.
     }
@@ -332,7 +322,6 @@ mod tests {
     fn a_rate_that_belongs_to_one_namespace_or_cgroup_is_never_summed() {
         let with = |v: f64| Metrics {
             pss_bytes: Some(4),
-            d_state_procs: 1,
             net_rx_bps: Some(v),
             net_tx_bps: Some(v),
             cpu_stall_pct: Some(v),
@@ -344,10 +333,6 @@ mod tests {
         folder.accumulate(&with(20.0));
 
         assert_eq!(folder.pss_bytes, Some(8), "quantities still add up");
-        // The contrast that makes the rule legible: D is a count of processes,
-        // so it rolls up the way PSS does even though it answers the same
-        // question as the three percentages that cannot.
-        assert_eq!(folder.d_state_procs, 2, "a count still adds up");
         for (name, got) in [
             ("net_rx_bps", folder.net_rx_bps),
             ("net_tx_bps", folder.net_tx_bps),

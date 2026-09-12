@@ -75,18 +75,6 @@ pub(crate) const COLUMNS: &[Column] = &[
         fmt: |_, _, m| fmt_age(m.age_secs),
         key: Some(|_, m| opt_u(m.age_secs)),
     },
-    // `/proc/<pid>/stat` field 3, off the line already read for utime/stime.
-    // Left of `%CORE` because that column reads D-state as idle. A count sums,
-    // so a folder, User or Host row carries one where a percentage of an
-    // interval has no meaning. `0` is a figure here, not a blank: a process
-    // heft can see has a state, so there is nothing it can fail to know.
-    Column {
-        label: "dstate",
-        header: "D",
-        width: 4,
-        fmt: |_, _, m| m.d_state_procs.to_string(),
-        key: Some(|_, m| Some(f64::from(m.d_state_procs))),
-    },
     Column {
         label: "core",
         header: "%CORE",
@@ -1331,8 +1319,8 @@ mod tests {
         assert_eq!(
             labels(&hiding(&["gtt", "vram", "netns_rx", "netns_tx"])),
             [
-                "name", "nproc", "threads", "age", "dstate", "core", "machine", "pss", "rss",
-                "swap", "gfx", "compute", "diskr", "diskw", "cpustall", "iostall", "memstall"
+                "name", "nproc", "threads", "age", "core", "machine", "pss", "rss", "swap", "gfx",
+                "compute", "diskr", "diskw", "cpustall", "iostall", "memstall"
             ]
         );
         assert_eq!(labels(&hiding(&["name"])), all_labels());
@@ -1407,8 +1395,8 @@ mod tests {
     fn hiding_a_column_only_removes_its_cells() {
         let mut out = Vec::new();
         let cols = hiding(&[
-            "nproc", "threads", "age", "diskr", "diskw", "gfx", "compute", "dstate", "cpustall",
-            "iostall", "memstall", "netns_rx", "netns_tx",
+            "nproc", "threads", "age", "diskr", "diskw", "gfx", "compute", "cpustall", "iostall",
+            "memstall", "netns_rx", "netns_tx",
         ]);
         write_header(&mut out, &cols).unwrap();
         write_rows(&mut out, &cols, &folder_rows(1536.0)).unwrap();
@@ -1444,7 +1432,6 @@ mod tests {
                 swap_bytes: None,
                 threads: Some(19),
                 age_secs: Some(3 * 3600 + 12),
-                d_state_procs: 2,
                 disk_r_bps: Some(disk_r_bps),
                 disk_w_bps: None,
                 vram_bytes: Some(1024 * 1024),
@@ -1666,14 +1653,14 @@ mod tests {
         write_rows(&mut out, &cols, &folder_rows(1536.0)).unwrap();
         assert_eq!(
             String::from_utf8(out).unwrap(),
-            "NAME                            N   THR   AGE    D   %CORE   %MACH      PSS      RSS   SWAP     VRAM      GTT   GFX   CMP   DISK R   DISK W CPU ST  IO ST MEM ST NETNS RX NETNS TX\n  Applications (1)              7    19    3h    2    12.2     1.5     1.5K     2.0K            1.0M            3.0         1.5K/s                                                \n    an-identity-name-long-e\u{2026}    7    19    3h    2    12.2     1.5     1.5K     2.0K            1.0M            3.0         1.5K/s             0.5   12.0                         \n"
+            "NAME                            N   THR   AGE   %CORE   %MACH      PSS      RSS   SWAP     VRAM      GTT   GFX   CMP   DISK R   DISK W CPU ST  IO ST MEM ST NETNS RX NETNS TX\n  Applications (1)              7    19    3h    12.2     1.5     1.5K     2.0K            1.0M            3.0         1.5K/s                                                \n    an-identity-name-long-e\u{2026}    7    19    3h    12.2     1.5     1.5K     2.0K            1.0M            3.0         1.5K/s             0.5   12.0                         \n"
         );
 
         let mut out = Vec::new();
         write_rows(&mut out, &cols, &folder_rows(1_030_963.0)).unwrap();
         assert_eq!(
             String::from_utf8(out).unwrap(),
-            "  Applications (1)              7    19    3h    2    12.2     1.5     1.5K     2.0K            1.0M            3.0       1006.8K/s                                                \n    an-identity-name-long-e\u{2026}    7    19    3h    2    12.2     1.5     1.5K     2.0K            1.0M            3.0       1006.8K/s             0.5   12.0                         \n"
+            "  Applications (1)              7    19    3h    12.2     1.5     1.5K     2.0K            1.0M            3.0       1006.8K/s                                                \n    an-identity-name-long-e\u{2026}    7    19    3h    12.2     1.5     1.5K     2.0K            1.0M            3.0       1006.8K/s             0.5   12.0                         \n"
         );
     }
 

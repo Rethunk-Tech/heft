@@ -763,14 +763,11 @@ const STALL_ALARM: f64 = 20.0;
 
 /// Whether this column's figure, on this row, says the row is in trouble.
 ///
-/// `D` is why that column exists: a process in uninterruptible sleep gets no
-/// work done and cannot be killed, and `%CORE` reads it as idle, so nothing
-/// else on the row distinguishes a machine stuck on a dead NFS mount from a
-/// quiet one. The stall columns are the same argument for a cgroup.
+/// `%CORE` reads a stalled cgroup as quiet, so nothing else on the row
+/// distinguishes a cgroup stuck waiting on the disk from an idle one.
 fn alarming(label: &str, m: &Metrics) -> bool {
     let over = |v: Option<f64>| v.is_some_and(|v| v >= STALL_ALARM);
     match label {
-        "dstate" => m.d_state_procs > 0,
         "cpustall" => over(m.cpu_stall_pct),
         "iostall" => over(m.io_stall_pct),
         "memstall" => over(m.mem_stall_pct),
@@ -1973,26 +1970,23 @@ mod tests {
         assert_eq!(shown.len(), all - 3);
     }
 
-    /// `%CORE` reads a D-state process as idle and a stalled cgroup as quiet,
-    /// which is why those columns exist -- and why a figure in them has to
-    /// look different from the zeros beside it.
+    /// `%CORE` reads a stalled cgroup as quiet, which is why the stall columns
+    /// exist -- and why a figure in them has to look different from the zeros
+    /// beside it.
     #[test]
     fn only_a_figure_in_trouble_is_marked() {
-        let m = |d: u32, cpu: Option<f64>| Metrics {
-            d_state_procs: d,
+        let m = |cpu: Option<f64>| Metrics {
             cpu_stall_pct: cpu,
             ..Metrics::default()
         };
-        assert!(alarming("dstate", &m(1, None)));
-        assert!(!alarming("dstate", &m(0, None)));
         // At the threshold, not merely past it.
-        assert!(alarming("cpustall", &m(0, Some(STALL_ALARM))));
-        assert!(!alarming("cpustall", &m(0, Some(STALL_ALARM - 0.1))));
+        assert!(alarming("cpustall", &m(Some(STALL_ALARM))));
+        assert!(!alarming("cpustall", &m(Some(STALL_ALARM - 0.1))));
         // A blank stall is no figure at all, so there is nothing to mark.
-        assert!(!alarming("cpustall", &m(0, None)));
+        assert!(!alarming("cpustall", &m(None)));
         // Every other column is left alone, including a large one.
-        assert!(!alarming("core", &m(9, Some(99.0))));
-        assert!(!alarming("name", &m(9, Some(99.0))));
+        assert!(!alarming("core", &m(Some(99.0))));
+        assert!(!alarming("name", &m(Some(99.0))));
     }
 
     #[test]

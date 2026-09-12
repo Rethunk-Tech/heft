@@ -191,7 +191,6 @@ fn read_pid(pid: u32, want_pss: bool, want_swap: bool, prev: Option<&Process>) -
         stime: parsed.stime,
         threads: parsed.threads,
         starttime_ticks: parsed.starttime_ticks,
-        d_state: parsed.d_state,
         rss_pages,
         pss_kb,
         swap_pss_kb,
@@ -250,7 +249,6 @@ struct StatFields {
     threads: Option<u64>,
     starttime_ticks: Option<u64>,
     kthread: bool,
-    d_state: bool,
 }
 
 fn parse_stat(stat: &str) -> Option<StatFields> {
@@ -281,10 +279,6 @@ fn parse_stat(stat: &str) -> Option<StatFields> {
         threads: fields.get(17).and_then(|s| s.parse().ok()),
         starttime_ticks: fields.get(19).and_then(|s| s.parse().ok()),
         kthread: flags & 0x0020_0000 != 0,
-        // `D` is uninterruptible sleep. A missing field is not `D`: the state
-        // is one character the kernel always writes, so absence means a
-        // truncated line, and guessing `D` there would invent a stall.
-        d_state: fields.first().is_some_and(|s| *s == "D"),
     })
 }
 
@@ -634,29 +628,6 @@ mod tests {
         let p = parse_stat(&tail).unwrap();
         assert!(p.kthread);
         assert_eq!(p.ppid, 2);
-    }
-
-    /// State is the field before ppid, so reading the wrong offset would
-    /// still parse and quietly call every process stalled or none of them.
-    #[test]
-    fn d_state_comes_from_the_state_field_not_a_neighbour() {
-        let stat = |state: &str| {
-            let mut t = format!("7 (some proc) {state} 1 0 0 0 0 0 0 0 0 0 1 2");
-            for _ in 0..20 {
-                t.push_str(" 0");
-            }
-            t
-        };
-        assert!(parse_stat(&stat("D")).unwrap().d_state);
-        for other in ["R", "S", "Z", "I", "T"] {
-            assert!(!parse_stat(&stat(other)).unwrap().d_state, "{other}");
-        }
-        // A comm containing the letter must not be mistaken for the state.
-        assert!(
-            !parse_stat("7 (D) S 1 0 0 0 0 0 0 0 0 0 1 2")
-                .unwrap()
-                .d_state
-        );
     }
 
     #[test]

@@ -195,7 +195,6 @@ pub(crate) fn process_metrics(
         gtt_bytes: cur.gpu.gtt_bytes,
         gfx_pct,
         compute_pct,
-        d_state_procs: u32::from(cur.d_state),
         // No per-process network counter exists to fill these. `/proc/<pid>/net/dev`
         // is the namespace total, socket fdinfo has no byte counter, `/proc/net/tcp`
         // queues are depths rather than totals, and `rchar`/`wchar` miss send/recv.

@@ -1631,9 +1631,8 @@ fn help_lines(width: u16) -> Vec<Line<'static>> {
     const GUTTER: usize = 3;
     let text = help_text();
     let keys: Vec<&str> = text.lines().collect();
-    // Each column as wide as its own longest line: sized to the longest line
-    // of either, `p`'s 66 columns set both halves and a 137-column terminal
-    // fell back to the single column that runs off its bottom.
+    // Each column as wide as its own longest line, so one long description
+    // widens only its own half.
     let half = keys.len().div_ceil(2);
     let col = |ls: &[&str]| ls.iter().map(|l| l.chars().count()).max().unwrap_or(0);
     let (lw, rw) = (col(&keys[..half]), col(&keys[half..]));
@@ -2064,6 +2063,8 @@ mod tests {
         let text: String = wide.iter().map(|l| format!("{l}\n")).collect();
         assert!(text.contains("F1") && text.contains("buf"), "{text}");
         assert_eq!(help_lines(60).len(), keys + 1 + bar_key().len());
+        // Short descriptions are what let an ordinary 90-column terminal pair them.
+        assert_eq!(help_lines(90).len(), wide.len());
     }
 
     #[test]

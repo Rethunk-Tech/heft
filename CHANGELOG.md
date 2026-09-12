@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Added
+
+- `--fixture` prints the exe, cgroup, parent and command line of every
+  process as the fixture the grouping tests load, for attaching to a report of
+  a row in the wrong place.
+
+### Changed
+
+- Binaries shipped in a VS Code, VS Code Insiders or Cursor install or
+  extension tree (`codex`, `language_server_linux_x64`, `vscode-tailscale`,
+  `code-tunnel`) bill to that editor instead of taking their own rows.
+- `deskflow-core` bills to `deskflow`.
+
 ## 0.8.1 - 2026-09-12
 
 ### Changed

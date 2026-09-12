@@ -424,6 +424,12 @@ System row because `override_place` cannot move one. It is exempt from
 `main`'s stdout-is-a-terminal check for the same reason `--once` and `--json`
 are.
 
+`--fixture` (`proc::print_fixture`) is the other half: a grouping report from
+a desktop heft has never run on arrives as the `tests/grouping.rs` fixture
+shape, so the fix lands with that machine as its test.
+`a_fixture_dump_loads_as_a_fixture` holds the output to that loader. Add a
+field there when grouping starts reading one, or reports stop reproducing.
+
 ## Sampler
 
 | metric | formula / source |

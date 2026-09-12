@@ -64,6 +64,9 @@ pub(crate) struct Cli {
     /// Say where this pid landed in the tree and the grouping.json key that moves it
     #[arg(long, value_name = "PID", conflicts_with_all = ["once", "json", "follow"])]
     pub explain: Option<u32>,
+    /// Print what grouping reads about every process, as a test fixture to attach to a grouping bug report
+    #[arg(long, conflicts_with_all = ["once", "json", "follow", "explain"])]
+    pub fixture: bool,
     /// How TREND is drawn. `auto` asks the terminal and draws an image if it can
     #[arg(long, value_enum, default_value_t = Trend::Auto, value_name = "MODE", conflicts_with_all = ["once", "json"])]
     pub trend: Trend,

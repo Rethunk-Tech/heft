@@ -117,6 +117,29 @@ fn proc_names(n: &heft::IdentNode) -> Vec<String> {
     v
 }
 
+/// A `--fixture` dump attached to a report has to load here unedited, or the
+/// report cannot become a test.
+#[test]
+fn a_fixture_dump_loads_as_a_fixture() {
+    let path = std::env::temp_dir().join(format!("heft-fixture-{}.json", std::process::id()));
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_heft"))
+        .arg("--fixture")
+        .output()
+        .expect("run heft --fixture");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    std::fs::write(&path, &out.stdout).unwrap();
+    let tree = tree_of(path.to_str().unwrap(), &Overrides::default());
+    std::fs::remove_file(&path).unwrap();
+    assert!(
+        !tree.users.is_empty(),
+        "this test's own process is a user process, so a loaded dump has a User"
+    );
+}
+
 #[test]
 fn gui_and_docker_fixture() {
     let tree = tree_of(GUI, &Overrides::default());

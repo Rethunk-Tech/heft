@@ -25,9 +25,14 @@ fn main() -> ExitCode {
     // got, and surfacing that at the end of a `/proc` walk would burn a whole
     // `--interval` first. Non-zero, and no quiet fall back to `--once`, which
     // would surprise anyone piping heft expecting a TUI.
-    // `--explain` is plain text on stdout like the other two, so it is exempt
-    // for the same reason they are: it is not the TUI.
-    if !cli.once && !cli.json && cli.explain.is_none() && !std::io::stdout().is_terminal() {
+    // `--explain` and `--fixture` write to stdout like the other two, so they
+    // are exempt for the same reason: they are not the TUI.
+    if !cli.once
+        && !cli.json
+        && !cli.fixture
+        && cli.explain.is_none()
+        && !std::io::stdout().is_terminal()
+    {
         eprintln!(
             "heft: the TUI needs a terminal on stdout. Use --once for one table, or --json for one JSON document."
         );
@@ -121,6 +126,8 @@ fn main() -> ExitCode {
     view.users = cli.user.iter().map(|who| check_user(who)).collect();
     let result = if let Some(pid) = cli.explain {
         heft::explain::run(pid, interval)
+    } else if cli.fixture {
+        heft::proc::print_fixture()
     } else {
         match (cli.json, cli.once, cli.follow) {
             (true, _, false) => heft::once::print_json(interval, &view),

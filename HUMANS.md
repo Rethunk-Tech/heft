@@ -102,6 +102,7 @@ heft --trend kitty        # draw TREND as an image (kitty, ghostty)
 heft --trend sixel        # the same picture as sixel (xterm, foot, wezterm, …)
 heft --proc-root /mnt/tree   # read /proc and /sys under here instead of /
 heft --explain 1234       # where this pid landed, and the key that moves it
+heft --fixture > heft-fixture.json  # what grouping reads, for a bug report
 ```
 
 The TUI needs a terminal. `heft > file`, or heft in a script, says so and
@@ -774,6 +775,13 @@ it says so instead: no override can move those rows.
 
 An override always beats the built-in tables, but never moves a container or a
 kernel thread: those rows ignore it.
+
+If the built-in grouping is what is wrong, attach `heft --fixture >
+heft-fixture.json` to a bug report. It is every process's exe, cgroup, parent
+and command line, in the exact shape heft's grouping tests load, so your
+machine becomes the test that proves the fix. Nothing is sent anywhere. Your
+home directory is written as `~`, but command lines are kept whole, so read the
+file before you post it.
 
 ## Verify
 

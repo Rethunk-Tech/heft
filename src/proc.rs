@@ -557,6 +557,58 @@ pub(crate) fn sample_world(interval: Duration) -> HostTree {
     sampler.tick(true)
 }
 
+/// `--fixture`: the fields grouping reads, in the shape `tests/grouping.rs`
+/// loads, so a wrong row reported from a desktop heft has never run on becomes
+/// a regression test verbatim. A screenshot or `--json` carries none of exe,
+/// cgroup or ppid. One walk and no metrics, since grouping uses none. Kernel
+/// threads are left out because `PF_KTHREAD` alone places them, and `$HOME/`
+/// becomes `~/` so every path does not carry the login name.
+///
+/// # Errors
+///
+/// Returns an error if stdout cannot be written.
+pub fn print_fixture() -> Result<(), crate::types::Error> {
+    use std::io::Write;
+    let consts = cpu::host_consts();
+    let procs = WalkPool::new().collect(false, false, None);
+    let home = std::env::var("HOME")
+        .ok()
+        .filter(|h| h.len() > 1)
+        .map(|h| format!("{}/", h.trim_end_matches('/')));
+    let tilde = |s: &str| {
+        home.as_deref()
+            .map_or_else(|| s.to_string(), |h| s.replace(h, "~/"))
+    };
+    let mut rows: Vec<&Process> = procs.values().filter(|p| !p.kthread).collect();
+    rows.sort_by_key(|p| p.pid);
+    let processes: Vec<serde_json::Value> = rows
+        .iter()
+        .map(|p| {
+            serde_json::json!({
+                "pid": p.pid,
+                "ppid": p.ppid,
+                "pgrp": p.pgrp,
+                "uid": p.uid,
+                "comm": p.comm,
+                "exe": p.exe.as_deref().map(tilde),
+                "cmdline": p.cmdline.iter().map(|a| tilde(a)).collect::<Vec<_>>(),
+                "cgroup": p.cgroup,
+            })
+        })
+        .collect();
+    let doc = serde_json::json!({
+        "nproc": consts.nproc,
+        "clk_tck": consts.clk_tck,
+        "page_size": consts.page_size,
+        "processes": processes,
+    });
+    writeln!(io::stdout(), "{}", serde_json::to_string_pretty(&doc)?)?;
+    eprintln!(
+        "heft: command lines are included and can hold tokens or paths you would not publish; read this before attaching it."
+    );
+    Ok(())
+}
+
 /// Latest complete tree. The UI takes; the sampler only publishes.
 ///
 /// # Errors

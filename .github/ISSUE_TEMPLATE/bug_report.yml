@@ -27,10 +27,12 @@ body:
     validations:
       required: true
   - type: textarea
-    id: json
+    id: fixture
     attributes:
-      label: heft --json output
+      label: heft --fixture output
       description: |
-        Optional but decisive for grouping bugs. Redact anything you do not
-        want public — process names and paths can identify your machine.
-      render: json
+        For a row in the wrong place: `heft --fixture > heft-fixture.json`,
+        then drag the file here. It holds the exe, cgroup, parent and command
+        line of each process, which is what grouping reads and what a
+        screenshot or `--json` leaves out. Read it first: command lines can
+        carry tokens, and paths can identify your machine.

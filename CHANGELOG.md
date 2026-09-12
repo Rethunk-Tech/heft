@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Added
+
+- The version carries the commit, `0.7.0~1a2b3c4`, on `--version`, the man
+  page, and bottom-right of the TUI footer when the footer leaves room for it.
+  Tag tarballs carry it too, through `.git-sha`.
+
 ### Changed
 
 - TUI keys: Enter and Space alone expand and collapse; `←` `→` (and `h` `l`)
@@ -11,19 +17,17 @@
   stops once the last column is on screen.
 - Spare table width widens NAME until the longest name fits, then TREND, one
   more sample per cell; NAME used to absorb all of it.
-- The header bars have no legend; `?` shows a coloured swatch per segment.
-  Segments use unique colours and full-height fills rather than `▀▄` half
-  blocks. The MEM bar adds `kernel` (unreclaimable slab, page tables, kernel
-  stacks) inside `used` and draws reclaimable `cache` after it; the JSON host
-  carries `mem_kernel_bytes` and `mem_sreclaimable_bytes`.
-- The MEM bar's `gtt` and unified `vram` read the kernel's `mem_info_*_used`
-  where the driver publishes it, rather than summing the drm clients heft can
-  see: 49.6 GiB of GTT against 19.9 GiB on a 125 GiB APU, where the gap had
-  read as anon. `anon` is now `AnonPages`, `other` is the unitemised rest of
-  `used`, and `cache`, `slab` and `buf` are separate after it. The JSON host
-  carries `gtt_used_bytes` and `mem_anon_bytes`.
-- Every header bar segment is re-coloured from the fixed xterm-256 palette
-  rather than the sixteen named colours a terminal theme redefines.
+- The header bars have no legend; `?` shows a coloured swatch for every
+  segment. Segments use fixed xterm-256 colours, which a terminal theme cannot
+  redefine, and full-height fills rather than `▀▄` half blocks.
+- The MEM bar itemises `used` as vram, gtt, zram, shm, kernel (unreclaimable
+  slab, page tables, kernel stacks), anon (`AnonPages`) and other (the
+  unitemised rest), then draws reclaimable cache, slab and buffers after it.
+  `gtt` and unified `vram` read the kernel's `mem_info_*_used` where the
+  driver publishes it rather than summing the drm clients heft can see: 49.6
+  GiB of GTT against 19.9 GiB on a 125 GiB APU, where the gap had read as
+  anon. The JSON host carries `gtt_used_bytes`, `mem_anon_bytes`,
+  `mem_kernel_bytes` and `mem_sreclaimable_bytes`.
 - CPU ST, IO ST and MEM ST are hidden unless `view.json` holds a
   `hide_columns` list without them (`u` then `s` brings them back), and
   `--hide` adds to the saved list rather than replacing it.
@@ -32,12 +36,14 @@
 
 - The `i` detail pane no longer ends a column at its labels when that
   column's figures are blank, and its grid no longer overruns the pane by two
-  columns and wraps. A blank figure there is drawn as `-`.
+  columns and wraps. A blank figure there is drawn as `-`, and TREND, which
+  has no history to draw there, is no longer listed.
 - The header rows stop a column short of the terminal's right edge, so the
   last figure is not clipped where a terminal's padding overlaps that cell.
 - The `?` overlay covers the whole screen and lays the keys in two columns
   where the terminal is wide enough; on a short terminal it was cut off after
-  `i`, hiding `?`/`F1` and the bar swatches.
+  `i`, hiding `?`/`F1` and the bar swatches. Its longest key descriptions are
+  shorter, in the man page's KEYS section too.
 - The MEM bar painted all of `Cached` and `Buffers` inside `used`, which
   already excludes reclaimable cache, so it drew anon at about 14 GiB on a
   host with 23.7 GiB of `AnonPages`. It now paints `shm`, the cache that is in
@@ -49,12 +55,6 @@
 ### Removed
 
 - The `D` column, its `dstate` label and the JSON `d_state_procs` field.
-
-### Added
-
-- The version carries the commit, `0.7.0~1a2b3c4`, on `--version`, the man
-  page, and bottom-right of the TUI footer when the footer leaves room for it.
-  Tag tarballs carry it too, through `.git-sha`.
 
 ## 0.7.0 - 2026-09-12
 

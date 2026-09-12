@@ -98,6 +98,7 @@ heft --json --follow      # one JSON document per line, per interval, forever
 heft --glyphs ascii       # bars and markers without block characters
 heft --glyphs legacy      # block bars, but an ASCII TREND ramp
 heft --trend kitty        # draw TREND as an image (kitty, ghostty)
+heft --trend sixel        # the same picture as sixel (xterm, foot, wezterm, …)
 heft --proc-root /mnt/tree   # read /proc and /sys under here instead of /
 heft --explain 1234       # where this pid landed, and the key that moves it
 ```
@@ -460,6 +461,26 @@ Over ssh they have to go inline, base64, and that is not free: measured on a
 megabit a second. It is sent once per sample rather than once per frame, so
 holding a key down does not multiply it — but on a slow link, `--trend chars`
 is the flag you want.
+
+`--trend sixel` draws the same picture for the terminals the kitty protocol
+does not reach: xterm (sixel is on by default there since patch #359), foot,
+wezterm, konsole 22.04 and later, iTerm2, and Windows Terminal 1.22 and later.
+kitty, ghostty and alacritty have no sixel — the first two have their own
+protocol, alacritty's maintainers declined it — and GNOME Terminal has a
+setting for it that does nothing, because VTE strips sixel out of every stable
+release.
+
+It is the cheaper of the two over a network, which is the opposite of what you
+might expect from the older format. A trend is a line on an empty background,
+sixel run-length-encodes the empty part, and measured on an 18-row column the
+whole image came to **559 bytes** — against about 146 KB a sample for the
+kitty protocol's inline transport, which sends every pixel. So over ssh,
+`--trend sixel` is the one to reach for if your terminal has it.
+
+The reason it is not simply the default anywhere is that sixel has no way to
+tie an image to the cell grid: it paints wherever the cursor is, and a cell
+redrawn over it erases the pixels. heft repaints it every frame for that
+reason, which is affordable only because of the size above.
 
 If the terminal does not report its cell size in pixels, an image cannot be
 sized for it and TREND quietly stays characters. Nothing is lost: it is the

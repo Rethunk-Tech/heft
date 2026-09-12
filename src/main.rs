@@ -126,7 +126,16 @@ fn main() -> ExitCode {
             (true, _, true) => heft::once::follow_json(interval, pss_interval, &view),
             (_, true, false) => heft::once::print_table(interval, &view),
             (_, true, true) => heft::once::follow_table(interval, pss_interval, &view),
-            _ => heft::ui::run(interval, pss_interval, view, cli.trend == Trend::Kitty),
+            _ => heft::ui::run(
+                interval,
+                pss_interval,
+                view,
+                match cli.trend {
+                    Trend::Chars => heft::ui::TrendMode::Chars,
+                    Trend::Kitty => heft::ui::TrendMode::Kitty,
+                    Trend::Sixel => heft::ui::TrendMode::Sixel,
+                },
+            ),
         }
     };
     match result {

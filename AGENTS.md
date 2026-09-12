@@ -33,6 +33,7 @@ src/ui.rs            ratatui header + tree table
 src/tty.rs           panic hook + signal handler; restores the terminal
 src/glyph.rs         unicode vs ascii bar/rule/marker characters; resolved once
 src/kgp.rs           --trend kitty: TREND as one graphics-protocol image; shm or inline
+src/sixel.rs         --trend sixel: the same image, RLE sixel, positioned from the frame
 tests/grouping.rs    integration tests over tests/fixtures/
 tests/live_proc.rs   invariants over the real /proc; must hold in a bare container
 tests/fixtures/      GUI grouping snapshot
@@ -263,6 +264,21 @@ alternative is the handshake heft has deliberately never done. It is also
 not drawing to a terminal. A terminal that reports no `ws_xpixel` cannot have
 an image sized for it, so `cell_px` returns `None` and the frame falls back to
 the ramp rather than blanking the column.
+
+`--trend sixel` (`src/sixel.rs`) sends the same `kgp::paint` image to the
+terminals the kitty protocol misses. Two things differ. Sixel has no
+placeholder mechanism, so the image must be positioned: the TREND cells are
+rendered as spaces carrying `SIXEL_MARK` and `ui::marked_corner` reads the
+rectangle back out of the frame buffer after `render_widget` — computing it
+would mean re-deriving ratatui's layout solver, since the name column is a
+`Constraint::Min`. And it is written after `terminal.draw` returns rather than
+inside the closure, because sixel paints over cells instead of into them, so a
+cell ratatui rewrites erases the pixels; it is repainted every frame rather
+than hashed. That is affordable where the kitty inline transport was not:
+measured on an 18-row column, 559 bytes a frame against roughly 146 KB a
+sample for `f=32` inline, because a line is mostly empty and sixel
+run-length-encodes the empty part. `P2=1` in the introducer is what keeps the
+zero pixels transparent so the cursor highlight still shows.
 
 `src/keys.rs` is the one TUI key list. `build.rs` includes it the way it
 includes `src/cli.rs`, so the man page's KEYS section and the `?` overlay are

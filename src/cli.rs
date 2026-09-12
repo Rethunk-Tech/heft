@@ -22,6 +22,8 @@ pub(crate) enum Trend {
     Chars,
     /// A kitty-graphics-protocol image: needs kitty or ghostty
     Kitty,
+    /// A sixel image: needs xterm, foot, wezterm, konsole, iTerm2 or Windows Terminal
+    Sixel,
 }
 
 #[derive(Parser)]

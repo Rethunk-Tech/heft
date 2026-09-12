@@ -15,6 +15,16 @@
   so `--trend chars` stays the default and the flag says so. Opt-in, never
   detected: `TERM` names a terminal, not what it implements.
 
+- `--trend sixel` draws the trend image for the terminals the kitty protocol
+  does not reach: xterm, foot, wezterm, konsole 22.04+, iTerm2 and Windows
+  Terminal 1.22+. It is also the cheaper of the two over a network — a line is
+  mostly empty background and sixel run-length-encodes it, so an 18-row column
+  measured 559 bytes a frame against about 146 KB a sample for the kitty
+  protocol's inline transport. It is repainted each frame because sixel paints
+  over cells rather than into them, and positioned by reading the column's
+  rectangle back out of the rendered frame rather than by re-deriving the
+  layout.
+
 - `--explain <PID>` says where a process landed in the tree, what identity it
   resolved to, and the `grouping.json` snippet that moves it. The override
   file is keyed on identities, and nothing showed you one: the `i` pane has a

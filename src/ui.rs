@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::ffi::OsStr;
-use std::io::{self, stdout};
+use std::io::{self, Write, stdout};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -27,6 +27,7 @@ use crate::once::{
     ident_haystack, keep_matches, keep_top, keep_users, sort_tree, unhide_last,
 };
 use crate::proc;
+use crate::sixel;
 use crate::types::{
     Error, HostTree, IdentNode, Metrics, ProcNode, folder_nproc, host_metrics, sum_idents,
     tree_host_nproc, user_metrics, user_nproc,
@@ -80,10 +81,22 @@ struct App {
     /// Present only under `--trend kitty`: the image in flight, and what it
     /// costs to keep it in step. `None` is the ordinary character ramp.
     kgp: Option<kgp::Kgp>,
+    /// Which of the three TREND renderings is in play.
+    trend: TrendMode,
+    /// A sixel image and the escape that places it, built during `draw` and
+    /// written after ratatui has flushed -- sixel paints over cells rather
+    /// than into them, so it has to go last.
+    sixel_out: Option<String>,
     /// The sort label `history` was collected under, so a change to it can
     /// clear the buffers rather than mixing units.
     sorted_by: String,
 }
+
+/// Foreground colour the TREND cells carry under `--trend sixel`, so the
+/// rectangle they occupy can be read back out of the rendered frame. The cells
+/// themselves are spaces, so it is never seen; the layout puts the name column
+/// on a `Constraint::Min` and only ratatui's solver knows what that absorbed.
+const SIXEL_MARK: Color = Color::Rgb(0, 0, 1);
 
 /// How many samples the trend keeps: the `spark` column's width, since a cell
 /// can draw no more than that.
@@ -93,11 +106,20 @@ const TREND: usize = 9;
 ///
 /// Returns an error if the terminal cannot enter or leave raw mode, the sampler
 /// thread cannot be spawned, a frame cannot be drawn, or a view save fails.
+/// How the TREND column is drawn. Resolved in `main` from `--trend`, never
+/// detected: `TERM` names a terminal, not what it implements.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum TrendMode {
+    Chars,
+    Kitty,
+    Sixel,
+}
+
 pub fn run(
     interval: Duration,
     pss_interval: Duration,
     view: View,
-    trend_kitty: bool,
+    trend: TrendMode,
 ) -> Result<(), Error> {
     // Resolve columns before the alternate screen: a warning about a stale
     // hide entry printed after it would be wiped on the first frame.
@@ -110,14 +132,7 @@ pub fn run(
     execute!(out, EnterAlternateScreen, Hide)?;
     let backend = CrosstermBackend::new(out);
     let mut terminal = Terminal::new(backend)?;
-    let result = run_loop(
-        &mut terminal,
-        interval,
-        pss_interval,
-        view,
-        cols,
-        trend_kitty,
-    );
+    let result = run_loop(&mut terminal, interval, pss_interval, view, cols, trend);
     disable_raw_mode()?;
     execute!(io::stdout(), LeaveAlternateScreen, Show)?;
     // Disarm only once the terminal is genuinely back, or a signal arriving
@@ -132,7 +147,7 @@ fn run_loop(
     pss_interval: Duration,
     view: View,
     cols: Columns,
-    trend_kitty: bool,
+    trend: TrendMode,
 ) -> Result<(), Error> {
     let slot = Arc::new(Mutex::new(None));
     let _sampler = proc::spawn_sampler(interval, pss_interval, slot.clone())?;
@@ -156,7 +171,9 @@ fn run_loop(
         detail: false,
         paused: None,
         history: HashMap::new(),
-        kgp: trend_kitty.then(kgp::Kgp::new),
+        kgp: (trend == TrendMode::Kitty).then(kgp::Kgp::new),
+        trend,
+        sixel_out: None,
         sorted_by: String::new(),
     };
     // The highlight is this id, not `cursor`'s slot: PSS desc (the default)
@@ -182,6 +199,16 @@ fn run_loop(
         app.row_vis = table_body_rows(terminal.size()?.height);
         app.row_off = follow_viewport(app.cursor, app.row_off, app.row_vis, rows.len());
         terminal.draw(|f| draw(f, &mut app, &rows))?;
+        // Last, deliberately: ratatui rewrites only the cells that changed,
+        // and a rewritten cell erases the pixels over it, so the image is
+        // repainted every frame rather than hashed the way the kitty one is.
+        // A sparkline is mostly empty and sixel run-length-encodes the empty
+        // part, so a frame is a couple of kilobytes.
+        if let Some(px) = app.sixel_out.take() {
+            let mut out = io::stdout();
+            out.write_all(px.as_bytes())?;
+            out.flush()?;
+        }
         if event::poll(Duration::from_millis(50))?
             && let Event::Key(k) = event::read()?
             && k.kind == KeyEventKind::Press
@@ -727,37 +754,65 @@ fn sort_header<'a>(cols: impl Iterator<Item = &'a Column>, sort: &str) -> Row<'s
 /// Any reason it cannot be done -- a terminal that reports no pixel size, an
 /// absurd cell, a write that failed -- falls back to the character ramp for
 /// that frame rather than leaving the column blank.
-fn send_trend(app: &mut App, rows: &[Flat], start: usize, end: usize, full: f64) -> bool {
-    let Some(cell) = kgp::cell_px() else {
-        return false;
-    };
-    // Disjoint fields: the image is built from `history` while `kgp` carries
-    // what was last sent.
-    let history = &app.history;
-    let Some(k) = app.kgp.as_mut() else {
-        return false;
-    };
+/// The image both image transports draw, or `None` where one cannot be made:
+/// a terminal that reports no pixel size, an absurd cell, an empty table.
+fn trend_image(
+    app: &App,
+    rows: &[Flat],
+    start: usize,
+    end: usize,
+    full: f64,
+) -> Option<kgp::Image> {
+    let cell = kgp::cell_px()?;
     let bands: Vec<Option<&VecDeque<f64>>> = rows[start..end]
         .iter()
-        .map(|r| r.trimmable.then(|| history.get(&r.id)).flatten())
+        .map(|r| r.trimmable.then(|| app.history.get(&r.id)).flatten())
         .collect();
-    if bands.len() > kgp::MAX_BANDS {
-        return false;
+    if bands.is_empty() || bands.len() > kgp::MAX_BANDS {
+        return None;
     }
-    // The cyan the CPU bar's `usr` segment already uses, and a neutral grey
-    // under `NO_COLOR` -- an image is the one thing in heft that cannot fall
-    // back to a fill character, so it answers the variable directly.
-    let colour = if colored() {
+    kgp::paint(&bands, TREND as u32, cell, trend_colour(), full)
+}
+
+/// The cyan the CPU bar's `usr` segment already uses, and a neutral grey under
+/// `NO_COLOR` -- an image is the one thing in heft that cannot fall back to a
+/// fill character, so it answers the variable directly.
+fn trend_colour() -> [u8; 3] {
+    if colored() {
         [0x00, 0xaf, 0xd7]
     } else {
         [0xbc, 0xbc, 0xbc]
-    };
-    let Some(img) = kgp::paint(&bands, TREND as u32, cell, colour, full) else {
+    }
+}
+
+/// The top-left cell of the marked TREND column, read back out of the frame
+/// ratatui just filled. Computing it instead would mean re-deriving the layout
+/// solver: the name column is a `Constraint::Min` and only the solver knows
+/// what it absorbed.
+fn marked_corner(buf: &ratatui::buffer::Buffer, area: Rect) -> Option<(u16, u16)> {
+    let mut best: Option<(u16, u16)> = None;
+    for y in area.top()..area.bottom() {
+        for x in area.left()..area.right() {
+            if buf.cell((x, y)).is_some_and(|c| c.fg == SIXEL_MARK) {
+                best = Some(match best {
+                    Some((bx, by)) => (bx.min(x), by.min(y)),
+                    None => (x, y),
+                });
+            }
+        }
+    }
+    best
+}
+
+fn send_trend(app: &mut App, rows: &[Flat], start: usize, end: usize, full: f64) -> bool {
+    let Some(img) = trend_image(app, rows, start, end, full) else {
         return false;
     };
-    let rows_tall = match u32::try_from(bands.len()) {
-        Ok(n) if n > 0 => n,
-        _ => return false,
+    let Ok(rows_tall) = u32::try_from(end - start) else {
+        return false;
+    };
+    let Some(k) = app.kgp.as_mut() else {
+        return false;
     };
     k.send(&mut io::stdout(), &img, TREND as u32, rows_tall)
         .is_ok()
@@ -792,7 +847,19 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &mut App, rows: &[Flat]) {
     // One scale for every row of the frame, so the column is comparable down
     // the table and not just within a row.
     let full = trend_scale(Sort::from_label(&app.view.sort), rows, &app.history);
-    let trend_img = spark_shown && end > start && send_trend(app, rows, start, end, full);
+    let (trend_img, trend_pixels) = match app.trend {
+        TrendMode::Chars => (false, None),
+        TrendMode::Kitty => (
+            spark_shown && end > start && send_trend(app, rows, start, end, full),
+            None,
+        ),
+        TrendMode::Sixel => {
+            let img = (spark_shown && end > start)
+                .then(|| trend_image(app, rows, start, end, full))
+                .flatten();
+            (img.is_some(), img)
+        }
+    };
     let mut table_rows = Vec::new();
     for (i, r) in rows[start..end].iter().enumerate() {
         let mark = if r.expandable {
@@ -812,13 +879,22 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &mut App, rows: &[Flat]) {
                 // The one column whose value is not a function of this
                 // sample, so `Column::fmt` (which sees only this sample)
                 // cannot produce it.
-                let placed = if c.label == "spark" && trend_img && r.trimmable {
+                let sixel_cell = c.label == "spark" && trend_img && app.trend == TrendMode::Sixel;
+                let placed = if c.label == "spark"
+                    && trend_img
+                    && r.trimmable
+                    && app.trend == TrendMode::Kitty
+                {
                     kgp::placeholder(i, TREND)
                 } else {
                     None
                 };
                 let text = match (&placed, c.label) {
                     (Some(p), _) => p.clone(),
+                    // Spaces the image is painted over. The cells still have
+                    // to be written, or ratatui would leave whatever was in
+                    // them showing through a transparent sparkline.
+                    (None, "spark") if sixel_cell => " ".repeat(TREND),
                     // Blank on a row that is not an entry. The scale is built
                     // from entries, so a sum has no figure on it -- Host would
                     // sit pinned to the ceiling saying only that it is the
@@ -828,7 +904,9 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &mut App, rows: &[Flat]) {
                     _ => (c.fmt)(&name, r.nproc, &r.metrics),
                 };
                 let cell = Cell::from(text);
-                if placed.is_some() {
+                if sixel_cell {
+                    cell.style(Style::default().fg(SIXEL_MARK))
+                } else if placed.is_some() {
                     // The image id rides in the foreground colour, and it has
                     // to be a ratatui style: a cell's symbol is written
                     // literally, so an escape smuggled into the text would go
@@ -873,6 +951,17 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &mut App, rows: &[Flat]) {
         &app.view.sort,
     ));
     f.render_widget(table, chunks[2]);
+    // After the widget, because the marks only exist once it has filled the
+    // buffer; written to the terminal only after ratatui flushes, since sixel
+    // paints over cells rather than into them.
+    app.sixel_out = None;
+    if app.trend == TrendMode::Sixel
+        && trend_img
+        && let Some(img) = trend_pixels
+        && let Some((x, y)) = marked_corner(f.buffer_mut(), chunks[2])
+    {
+        app.sixel_out = Some(sixel::at(y, x, &sixel::encode(&img, trend_colour())));
+    }
     if app.help {
         draw_help(f, chunks[2]);
     } else if app.detail {
@@ -2007,6 +2096,8 @@ mod tests {
             paused: None,
             history: HashMap::new(),
             kgp: None,
+            trend: TrendMode::Chars,
+            sixel_out: None,
             sorted_by: String::new(),
         }
     }

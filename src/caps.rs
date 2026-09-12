@@ -95,7 +95,6 @@ pub(crate) fn probe() -> Caps {
         if n <= 0 {
             break;
         }
-        #[allow(clippy::cast_sign_loss)]
         buf.push_str(&String::from_utf8_lossy(&chunk[..n as usize]));
         if done(&buf) {
             break;

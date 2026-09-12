@@ -212,19 +212,7 @@ fn check_hide(label: &str) -> &str {
             )
             .exit()
     }
-    let labels = heft::once::hideable_labels();
-    if labels.contains(&label) {
-        return label;
-    }
-    Cli::command()
-        .error(
-            ErrorKind::InvalidValue,
-            format!(
-                "invalid value '{label}' for '--hide <COLUMN>'\n  [possible values: {}]",
-                labels.join(", ")
-            ),
-        )
-        .exit()
+    check_column("hide", label, heft::once::hideable_labels())
 }
 
 /// A pattern that does not compile is reported the way a bad `--sort` is: a

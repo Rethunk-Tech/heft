@@ -96,7 +96,6 @@ fn strip_comments(text: &str) -> String {
                 }
             }
             (b'/', Some(b'*')) => {
-                let mut depth_done = false;
                 out.push(b' ');
                 out.push(b' ');
                 i += 2;
@@ -105,7 +104,6 @@ fn strip_comments(text: &str) -> String {
                         out.push(b' ');
                         out.push(b' ');
                         i += 2;
-                        depth_done = true;
                         break;
                     }
                     // Newlines survive, so the line numbers a parse error
@@ -115,7 +113,6 @@ fn strip_comments(text: &str) -> String {
                 }
                 // An unterminated block comment runs to the end of the file,
                 // which is what every other reader does with one.
-                let _ = depth_done;
             }
             _ => {
                 out.push(b[i]);
@@ -159,12 +156,6 @@ fn config_dir() -> PathBuf {
             .join(".config"),
     };
     base.join("heft")
-}
-
-/// The directory both config files live in, for messages that tell a user
-/// where to write one.
-pub(crate) fn view_dir() -> String {
-    config_dir().join("grouping.json").display().to_string()
 }
 
 pub(crate) fn view_path() -> PathBuf {
@@ -268,7 +259,7 @@ impl Overrides {
         self.container_owners.get(name).copied()
     }
 }
-fn overrides_path() -> PathBuf {
+pub(crate) fn overrides_path() -> PathBuf {
     config_dir().join("grouping.json")
 }
 

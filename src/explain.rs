@@ -157,7 +157,10 @@ pub fn run(pid: u32, interval: Duration) -> Result<(), Error> {
         Some(list) => {
             println!("  \"{}\" is the grouping.json key for this row.", f.ident);
             println!();
-            println!("  To pin it to a folder, in {}:", crate::config::view_dir());
+            println!(
+                "  To pin it to a folder, in {}:",
+                crate::config::overrides_path().display()
+            );
             println!("    {{ \"{list}\": [\"{}\"] }}", f.ident);
             println!();
             println!("  To bill it to another row instead:");

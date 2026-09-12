@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.9.0 - 2026-09-12
+
 ### Added
 
 - `--fixture` prints the exe, cgroup, parent and command line of every

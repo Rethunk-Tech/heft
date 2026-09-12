@@ -9,8 +9,14 @@
   sort column back and forward, replacing `c`.
 - NAME stays on screen while `←` `→` scroll the other columns, and scrolling
   stops once the last column is on screen.
-- TREND takes the table's spare width, one more sample per cell, where NAME
-  used to absorb it.
+- Spare table width widens NAME until the longest name fits, then TREND, one
+  more sample per cell; NAME used to absorb all of it.
+
+### Fixed
+
+- The `i` detail pane no longer ends a column at its labels when that
+  column's figures are blank, and its grid no longer overruns the pane by two
+  columns and wraps.
 
 ### Added
 

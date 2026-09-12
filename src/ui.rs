@@ -16,6 +16,7 @@ use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Cell, Clear, Padding, Paragraph, Row, Table, Wrap};
+use unicode_width::UnicodeWidthStr;
 
 use crate::caps;
 use crate::config::{self, View};
@@ -908,13 +909,29 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &mut App, rows: &[Flat]) {
     let mut shown = scrolled(&app.cols, usize::from(app.col_off));
     let (fit, used) = columns_that_fit(&shown, chunks[2].width);
     shown.truncate(fit);
-    // A name past its compiled width is only more of a label, while every
-    // extra TREND cell is one more sample, so the table's slack widens TREND
-    // whenever it is on screen and falls to the name only when it is not.
+    // NAME first grows to the longest row title in the tree, so a deep or long
+    // name is not cut to feed TREND; what slack is left widens TREND, one more
+    // sample per cell. Every row rather than the visible ones, so the split
+    // moves when the tree does and not on every scroll.
+    let slack = chunks[2].width.saturating_sub(used);
+    let name_need = rows
+        .iter()
+        .map(|r| 2 * usize::from(r.depth) + 2 + r.name.width())
+        .max()
+        .unwrap_or(0);
+    let name_extra = shown
+        .iter()
+        .find(|c| c.label == "name")
+        .map_or(0, |c| {
+            u16::try_from(name_need)
+                .unwrap_or(u16::MAX)
+                .saturating_sub(c.width)
+        })
+        .min(slack);
     let trend_cells = shown
         .iter()
         .find(|c| c.label == "spark")
-        .map(|c| c.width + chunks[2].width.saturating_sub(used));
+        .map(|c| c.width + slack - name_extra);
     if let Some(w) = trend_cells.map(usize::from) {
         if w < app.trend_w {
             for b in app.history.values_mut() {
@@ -1020,6 +1037,7 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &mut App, rows: &[Flat]) {
         .map(|c| match (c.label, trend_cells) {
             ("spark", Some(w)) => Constraint::Length(w),
             ("name", None) => Constraint::Min(c.width),
+            ("name", Some(_)) => Constraint::Length(c.width + name_extra),
             _ => Constraint::Length(c.width),
         })
         .collect();
@@ -1520,9 +1538,10 @@ fn metric_grid(row: &Flat, avail: usize) -> Vec<String> {
                 .filter_map(|c| cells.get(c * depth + r))
                 .map(String::as_str)
                 .collect::<Vec<_>>()
+                // Not trimmed: a blank value keeps its width, so a column
+                // whose figures are all blank does not end at its labels and
+                // read as a pane cut off at the frame.
                 .join(&" ".repeat(GUTTER))
-                .trim_end()
-                .to_string()
         })
         .collect()
 }
@@ -1535,8 +1554,9 @@ fn row_pid(id: &str) -> Option<u32> {
 
 fn draw_detail(f: &mut ratatui::Frame<'_>, area: Rect, row: Option<&Flat>) {
     let Some(row) = row else { return };
-    // Two for the popup border, two for the breathing room `popup` leaves.
-    let avail = usize::from(area.width.saturating_sub(4));
+    // `popup` keeps a column clear of the pane each side, then spends four on
+    // its border and padding; a grid built wider than that wraps mid-cell.
+    let avail = usize::from(area.width.saturating_sub(6));
     let text = detail_text(row, avail);
     popup(f, area, &text, "detail  (i or Esc to close)");
 }
@@ -1548,8 +1568,7 @@ fn draw_help(f: &mut ratatui::Frame<'_>, area: Rect) {
 /// Centred, sized to its text, never wider or taller than the pane it covers.
 /// One definition for both overlays so they cannot drift apart.
 fn popup(f: &mut ratatui::Frame<'_>, area: Rect, text: &str, title: &str) {
-    // A border each side and a space of padding inside it: a blank metric cell
-    // ends at its label, and without the padding it butts against the frame.
+    // A border each side and a space of padding inside it.
     const CHROME: u16 = 4;
     let cols = u16::try_from(text.lines().map(|l| l.chars().count()).max().unwrap_or(0))
         .unwrap_or(u16::MAX);
@@ -1752,6 +1771,10 @@ mod tests {
         for line in detail_text(&row, 150).lines() {
             assert!(line.chars().count() <= 150, "grid overflowed: {line:?}");
         }
+        // The last column's figures are blank on this row. Trimmed, the widest
+        // line ended at `MEM ST` and the pane sized itself to the labels.
+        let grid = metric_grid(&row, 150);
+        assert_eq!(grid[0].chars().count(), 4 * CELL + 3 * GUTTER);
     }
 
     /// The trend is drawn against a scale the whole frame shares, not against

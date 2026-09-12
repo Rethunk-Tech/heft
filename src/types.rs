@@ -184,6 +184,10 @@ pub struct HostTree {
     /// RAM held by zram's compressed store, summed over devices: inside
     /// `mem_used_bytes` and in no process's PSS.
     pub(crate) zram_used_bytes: u64,
+    /// `SUnreclaim` + `PageTables` + `KernelStack`, inside `mem_used_bytes`.
+    pub(crate) mem_kernel_bytes: u64,
+    /// Reclaimable slab, outside `mem_used_bytes` like reclaimable cache.
+    pub(crate) mem_sreclaimable_bytes: u64,
     pub(crate) swap_used_bytes: u64,
     pub(crate) swap_total_bytes: u64,
     #[serde(skip_serializing_if = "Option::is_none")]

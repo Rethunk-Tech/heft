@@ -1103,7 +1103,7 @@ fn render_rule(f: &mut ratatui::Frame<'_>, area: Rect) {
 
 fn draw_header(f: &mut ratatui::Frame<'_>, area: Rect, app: &App) {
     // One column short of the pane: the MEM row is built to land exactly on
-    // its width, and a legend in the last cell reads as cut off wherever the
+    // its width, and a figure in the last cell reads as cut off wherever the
     // terminal's padding or scrollbar overlaps that cell.
     let width = (area.width as usize).saturating_sub(1);
     let (mem, mem_bar_w) = mem_header_line(&app.tree, width);
@@ -1150,59 +1150,44 @@ fn pct_weight(p: f64) -> u64 {
     (p.clamp(0.0, 100.0) * 100.0).round() as u64
 }
 
-/// `bar_w` is the MEMORY row's first tank, not this row's own slack. Which
-/// row's suffix is longer depends on its legend — `] 78.2G/125.1G  ` and
-/// `gtt/shm` against `] 10.3%  ` and `usr/sys/wait` — so `mem_header_line`
-/// caps its bar to this row's slack too, and both are drawn to the narrower
-/// fit and padded on the right, which is what makes the two brackets stack. Where the MEMORY row splits into tanks (a discrete card, a host with
+/// `bar_w` is the MEMORY row's first tank, not this row's own slack. MEM's
+/// `] 78.2G/125.1G  ` is normally the longer suffix, but `mem_header_line`
+/// caps its bar to this row's slack too, so both are drawn to the narrower fit
+/// and padded on the right, which is what makes the two brackets stack. Where the MEMORY row splits into tanks (a discrete card, a host with
 /// swap) it is the first tank that is matched: those are the two brackets in
 /// the same place on the screen, and the pad simply runs under the tanks
 /// beside it.
 fn cpu_header_line(tree: &HostTree, width: usize, bar_w: usize) -> Line<'static> {
-    let (prefix, mid, tail, fits) = cpu_parts(tree, width);
+    let (prefix, mid, fits) = cpu_parts(tree, width);
     let bar_w = bar_w.min(fits);
-    let parts = [
-        (pct_weight(tree.cpu_user_pct), Color::Cyan, glyph::full()),
-        (
-            pct_weight(tree.cpu_system_pct),
-            Color::Magenta,
-            glyph::dark(),
-        ),
-        (
-            pct_weight(tree.cpu_wait_pct),
-            Color::Yellow,
-            glyph::medium(),
-        ),
-    ];
+    let pcts = [tree.cpu_user_pct, tree.cpu_system_pct, tree.cpu_wait_pct];
+    let parts: Vec<(u64, Color, char)> = pcts
+        .iter()
+        .zip(cpu_key())
+        .map(|(&p, (_, color, fill))| (pct_weight(p), color, fill))
+        .collect();
     let mut spans = vec![Span::raw(prefix)];
     spans.extend(stacked_bar(bar_w, &parts, 10_000));
     spans.push(Span::raw(mid));
-    spans.extend(tail);
     spans.push(Span::raw(" ".repeat(fits - bar_w)));
     Line::from(spans)
 }
 
-/// The CPU row's prefix, suffix and legend, and the bar width left between
-/// them.
-fn cpu_parts(tree: &HostTree, width: usize) -> (String, String, Vec<Span<'static>>, usize) {
+/// The CPU row's prefix and suffix, and the bar width left between them.
+fn cpu_parts(tree: &HostTree, width: usize) -> (String, String, usize) {
     let prefix = bar_prefix("CPU", label_width(tree));
     let mid = format!("] {:>5}%  ", fmt_pct(tree.cpu_pct));
-    let (tail, legend_len) = legend(&[
-        ("usr", Color::Cyan, glyph::full()),
-        ("sys", Color::Magenta, glyph::dark()),
-        ("wait", Color::Yellow, glyph::medium()),
-    ]);
     // No host `psi` tail here: it is text on the row whose point is a bar.
     // `--once` and `--json` still carry the figures, where nothing is drawn to
     // scale. Nor is a tail here a way to line the two bars up: measured, one
     // cancels most of the suffix difference above by accident, and with no
     // tail the bars sit fourteen columns apart rather than four. `bar_w` is
     // what closes them.
-    let fits = width.saturating_sub(prefix.len() + mid.len() + legend_len);
-    (prefix, mid, tail, fits)
+    let fits = width.saturating_sub(prefix.len() + mid.len());
+    (prefix, mid, fits)
 }
 
-/// `LABEL [bar] used/total  legend` sized to exactly `width` columns (the bar
+/// `LABEL [bar] used/total` sized to exactly `width` columns (the bar
 /// absorbs the slack), so two of these can share one header row. Returns the
 /// width the bar settled on as well as the spans, because the CPU row above is
 /// drawn to the same scale.
@@ -1250,16 +1235,13 @@ fn bar_group(
     // drawn against; they were separate until every caller passed one value
     // twice.
     total: u64,
-    labels: &[(&str, Color, char)],
 ) -> (Vec<Span<'static>>, usize) {
     let prefix = bar_prefix(label, label_w);
     let mid = format!("] {}/{}  ", fmt_bytes(Some(used)), fmt_bytes(Some(total)));
-    let (tail, legend_len) = legend(labels);
-    let bar_w = width.saturating_sub(prefix.len() + mid.len() + legend_len);
+    let bar_w = width.saturating_sub(prefix.len() + mid.len());
     let mut spans = vec![Span::raw(prefix)];
     spans.extend(stacked_bar(bar_w, parts, total.max(1)));
     spans.push(Span::raw(mid));
-    spans.extend(tail);
     (spans, bar_w)
 }
 
@@ -1288,33 +1270,23 @@ fn mem_header_line(tree: &HostTree, width: usize) -> (Line<'static>, usize) {
         gtt,
         zram: tree.zram_used_bytes,
         shmem: tree.mem_shmem_bytes,
+        kernel: tree.mem_kernel_bytes,
+        // What `MemAvailable` counts as free: drawn after `used`, not in it.
+        cache: (tree.mem_cached_bytes + tree.mem_buffers_bytes + tree.mem_sreclaimable_bytes)
+            .saturating_sub(tree.mem_shmem_bytes),
     });
     // Swap has its own row: it is a device rather than a slice of MemTotal,
     // and as a tank here it took half the width, which the CPU bar matches.
     let tanks = tank_widths(width, 1 + usize::from(discrete.is_some()));
     let mem_width = tanks[0];
-    // `anon` is the unlabelled bulk of the bar, so it keeps the full block and
-    // the carve-outs take the distinguishable glyphs. The two quadrant glyphs
-    // are East Asian *narrow*, unlike the shade ramp, so they cannot double up
-    // in a terminal that widens ambiguous characters.
-    let mut labels: Vec<(&str, Color, char)> = Vec::new();
-    if tree.unified_memory {
-        labels.push(("vram", Color::LightRed, glyph::quad_a()));
-    }
-    labels.push(("gtt", Color::LightCyan, glyph::quad_b()));
-    // Labelled only where zram holds something, the way a swapless host gets
-    // no SWAP row.
-    if tree.zram_used_bytes > 0 {
-        labels.push(("zram", Color::Blue, glyph::dark()));
-    }
-    labels.push(("shm", Color::Green, glyph::medium()));
-    let parts = [
-        (seg.vram, Color::LightRed, glyph::quad_a()),
-        (seg.gtt, Color::LightCyan, glyph::quad_b()),
-        (seg.zram, Color::Blue, glyph::dark()),
-        (seg.shmem, Color::Green, glyph::medium()),
-        (seg.anon, Color::Gray, glyph::full()),
+    let sizes = [
+        seg.vram, seg.gtt, seg.zram, seg.shmem, seg.kernel, seg.anon, seg.cache,
     ];
+    let parts: Vec<(u64, Color, char)> = sizes
+        .iter()
+        .zip(mem_key())
+        .map(|(&n, (_, color, fill))| (n, color, fill))
+        .collect();
     let group = |w| {
         bar_group(
             "MEM",
@@ -1323,14 +1295,12 @@ fn mem_header_line(tree: &HostTree, width: usize) -> (Line<'static>, usize) {
             &parts,
             tree.mem_used_bytes,
             tree.mem_total_bytes,
-            &labels,
         )
     };
     let (mut spans, mut mem_bar_w) = group(mem_width);
-    // Capped to the CPU row's slack as well: which suffix is longer depends on
-    // the legend, and a MEM bar the CPU row cannot match leaves the two
-    // closing brackets in different columns.
-    let cap = cpu_parts(tree, width).3;
+    // Capped to the CPU row's slack as well: a MEM bar the CPU row cannot
+    // match leaves the two closing brackets in different columns.
+    let cap = cpu_parts(tree, width).2;
     if mem_bar_w > cap {
         let pad = mem_bar_w - cap;
         (spans, mem_bar_w) = group(mem_width - pad);
@@ -1346,7 +1316,6 @@ fn mem_header_line(tree: &HostTree, width: usize) -> (Line<'static>, usize) {
                 &[(vram_used, Color::LightRed, glyph::full())],
                 vram_used,
                 vram_total,
-                &[],
             )
             .0,
         );
@@ -1386,23 +1355,6 @@ fn tank_widths(width: usize, tanks: usize) -> Vec<usize> {
     out
 }
 
-/// Slash-joined coloured labels plus the columns they occupy. The bar width
-/// subtracts that count, so deriving it here is what keeps a renamed label
-/// from overflowing the line.
-fn legend(labels: &[(&str, Color, char)]) -> (Vec<Span<'static>>, usize) {
-    let mut spans = Vec::new();
-    let mut cols = 0;
-    for (i, (text, color, glyph)) in labels.iter().enumerate() {
-        if i > 0 {
-            spans.push(Span::raw("/"));
-            cols += 1;
-        }
-        spans.push(Span::styled(format!("{glyph}{text}"), fg(*color)));
-        cols += text.chars().count() + 1;
-    }
-    (spans, cols)
-}
-
 /// `NO_COLOR` (no-color.org): set to anything that is not the empty string
 /// disables hue, whatever the value -- `0` and `false` disable it too. Kept
 /// separate from the read so the rule can be checked without touching the
@@ -1428,8 +1380,55 @@ fn fg(color: Color) -> Style {
     }
 }
 
-/// Each segment carries its own fill glyph as well as its own colour, and the
-/// legend prints that glyph beside the label. Hue alone cannot carry the
+/// The CPU bar's segments in drawing order: label, colour, fill.
+fn cpu_key() -> [(&'static str, Color, char); 3] {
+    [
+        ("usr", Color::Cyan, glyph::full()),
+        ("sys", Color::Magenta, glyph::dark()),
+        ("wait", Color::Yellow, glyph::medium()),
+    ]
+}
+
+/// The MEM bar's segments in drawing order. One table for the bar and the `?`
+/// overlay, so a segment cannot be drawn under one name and explained under
+/// another. Every colour is its own and every fill is full height; the fills
+/// alternate so two neighbours still part where there is no colour.
+fn mem_key() -> [(&'static str, Color, char); 7] {
+    [
+        ("vram", Color::LightRed, glyph::full()),
+        ("gtt", Color::LightCyan, glyph::dark()),
+        ("zram", Color::Blue, glyph::medium()),
+        ("shm", Color::Green, glyph::full()),
+        ("kernel", Color::Magenta, glyph::dark()),
+        ("anon", Color::Gray, glyph::full()),
+        ("cache", Color::DarkGray, glyph::medium()),
+    ]
+}
+
+/// The swatches the `?` overlay draws in place of a legend on each bar: the
+/// columns a legend took were columns of bar.
+fn bar_key() -> Vec<Line<'static>> {
+    let row = |name: &str, key: &[(&'static str, Color, char)]| {
+        let mut spans = vec![Span::raw(format!("{name:<20} "))];
+        for (i, (label, color, fill)) in key.iter().enumerate() {
+            if i > 0 {
+                spans.push(Span::raw("  "));
+            }
+            spans.push(Span::styled(fill.to_string().repeat(2), fg(*color)));
+            spans.push(Span::raw(format!(" {label}")));
+        }
+        Line::from(spans)
+    };
+    let mem = mem_key();
+    vec![
+        row("CPU bar", &cpu_key()),
+        row("MEM bar (used)", &mem[..6]),
+        row("MEM bar (after)", &mem[6..]),
+    ]
+}
+
+/// Each segment carries its own colour and a fill that differs from its
+/// neighbours', and `?` shows a swatch of each. Hue alone cannot carry the
 /// distinction: cyan against magenta is the pair deuteranopia collapses, and a
 /// piped or recorded frame keeps the characters and loses the styling. Drawing
 /// the glyphs unconditionally keeps one render path rather than a colour one
@@ -1587,20 +1586,26 @@ fn draw_detail(f: &mut ratatui::Frame<'_>, area: Rect, row: Option<&Flat>) {
     // its border and padding; a grid built wider than that wraps mid-cell.
     let avail = usize::from(area.width.saturating_sub(6));
     let text = detail_text(row, avail);
-    popup(f, area, &text, "detail  (i or Esc to close)");
+    popup(f, area, plain(&text), "detail  (i or Esc to close)");
 }
 
 fn draw_help(f: &mut ratatui::Frame<'_>, area: Rect) {
-    popup(f, area, &help_text(), "keys");
+    let mut lines = plain(&help_text());
+    lines.push(Line::default());
+    lines.extend(bar_key());
+    popup(f, area, lines, "keys");
+}
+
+fn plain(text: &str) -> Vec<Line<'static>> {
+    text.lines().map(|l| Line::from(l.to_string())).collect()
 }
 
 /// Centred, sized to its text, never wider or taller than the pane it covers.
 /// One definition for both overlays so they cannot drift apart.
-fn popup(f: &mut ratatui::Frame<'_>, area: Rect, text: &str, title: &str) {
+fn popup(f: &mut ratatui::Frame<'_>, area: Rect, lines: Vec<Line<'static>>, title: &str) {
     // A border each side and a space of padding inside it.
     const CHROME: u16 = 4;
-    let cols = u16::try_from(text.lines().map(|l| l.chars().count()).max().unwrap_or(0))
-        .unwrap_or(u16::MAX);
+    let cols = u16::try_from(lines.iter().map(Line::width).max().unwrap_or(0)).unwrap_or(u16::MAX);
     let width = cols
         .saturating_add(CHROME)
         .min(area.width.saturating_sub(2))
@@ -1609,8 +1614,9 @@ fn popup(f: &mut ratatui::Frame<'_>, area: Rect, text: &str, title: &str) {
     // has to count the rows wrapping will actually produce.
     let inner = usize::from(width.saturating_sub(CHROME)).max(1);
     let rows = u16::try_from(
-        text.lines()
-            .map(|l| l.chars().count().max(1).div_ceil(inner))
+        lines
+            .iter()
+            .map(|l| l.width().max(1).div_ceil(inner))
             .sum::<usize>(),
     )
     .unwrap_or(u16::MAX);
@@ -1626,14 +1632,12 @@ fn popup(f: &mut ratatui::Frame<'_>, area: Rect, text: &str, title: &str) {
     };
     f.render_widget(Clear, rect);
     f.render_widget(
-        Paragraph::new(text.to_string())
-            .wrap(Wrap { trim: false })
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .padding(Padding::horizontal(1))
-                    .title(title.to_string()),
-            ),
+        Paragraph::new(lines).wrap(Wrap { trim: false }).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .padding(Padding::horizontal(1))
+                .title(title.to_string()),
+        ),
         rect,
     );
 }
@@ -2159,15 +2163,14 @@ mod tests {
         let bracket = |line: &str| line.chars().position(|c| c == ']');
 
         let (text, mem) = rows(&tree, width);
-        assert!(text.contains("usr"));
-        assert!(text.contains("wait"));
+        assert!(!text.contains("usr"), "the key is in the ? overlay: {text}");
         assert!(!text.contains("/s R"));
         assert!(!text.contains("/s W"));
-        // The only check that catches a legend whose labels disagree with the
+        // The only check that catches a suffix that disagrees with the
         // width the bar subtracts: the rendered line must land on `width`.
         assert_eq!(text.chars().count(), width);
         assert_eq!(mem.chars().count(), width);
-        // Each row's own slack differs with its legend; both bars are drawn to
+        // Each row's own slack differs with its figure; both bars are drawn to
         // the narrower one.
         assert_eq!(bracket(&text), bracket(&mem), "{text}\n{mem}");
 
@@ -2251,12 +2254,12 @@ mod tests {
         let text = line.to_string();
         // The bug this guards: GTT dropped entirely once VRAM moved to its own
         // tank, even though it is system RAM sitting inside the MEM bar's used.
-        assert!(text.contains("▄gtt/▒shm"), "{text}");
+        assert!(!text.contains("gtt"), "no legend on the bar: {text}");
         assert!(
             !text.contains("vram/"),
             "discrete vram is not a MEM segment"
         );
-        assert!(line.spans.iter().any(|s| s.content.contains('▄')), "{text}");
+        assert!(line.spans.iter().any(|s| s.content.contains('▓')), "{text}");
         assert_eq!(text.chars().count(), 100);
     }
 
@@ -2271,14 +2274,14 @@ mod tests {
         assert!(tree.unified_memory);
         let text = mem_header_line(&tree, 100).0.to_string();
         assert!(!text.contains("VRAM ["), "{text}");
-        assert!(text.contains("▀vram/▄gtt/▒shm"), "{text}");
         assert_eq!(text.chars().count(), 100);
-        // zram's store is labelled only where zram holds something.
-        let mut zram = tree;
-        zram.zram_used_bytes = g;
-        let text = mem_header_line(&zram, 100).0.to_string();
-        assert!(text.contains("▀vram/▄gtt/▓zram/▒shm"), "{text}");
-        assert_eq!(text.chars().count(), 100);
+        // The bars carry no legend; `?` shows a swatch for every segment.
+        let key: String = bar_key().iter().map(|l| format!("{l}\n")).collect();
+        for label in [
+            "usr", "sys", "wait", "vram", "gtt", "zram", "shm", "kernel", "anon", "cache",
+        ] {
+            assert!(key.contains(label), "{label} missing from {key}");
+        }
     }
 
     #[test]

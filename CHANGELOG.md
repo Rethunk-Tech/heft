@@ -11,6 +11,11 @@
   stops once the last column is on screen.
 - Spare table width widens NAME until the longest name fits, then TREND, one
   more sample per cell; NAME used to absorb all of it.
+- The header bars have no legend; `?` shows a coloured swatch per segment.
+  Segments use unique colours and full-height fills rather than `▀▄` half
+  blocks. The MEM bar adds `kernel` (unreclaimable slab, page tables, kernel
+  stacks) inside `used` and draws reclaimable `cache` after it; the JSON host
+  carries `mem_kernel_bytes` and `mem_sreclaimable_bytes`.
 - CPU ST, IO ST and MEM ST are hidden unless `view.json` holds a
   `hide_columns` list without them (`u` then `s` brings them back), and
   `--hide` adds to the saved list rather than replacing it.
@@ -21,7 +26,7 @@
   column's figures are blank, and its grid no longer overruns the pane by two
   columns and wraps. A blank figure there is drawn as `-`.
 - The header rows stop a column short of the terminal's right edge, so the
-  MEM legend is not clipped where a terminal's padding overlaps the last cell.
+  last figure is not clipped where a terminal's padding overlaps that cell.
 - The MEM bar painted all of `Cached` and `Buffers` inside `used`, which
   already excludes reclaimable cache, so it drew anon at about 14 GiB on a
   host with 23.7 GiB of `AnonPages`. It now paints `shm`, the cache that is in

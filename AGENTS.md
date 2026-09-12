@@ -18,7 +18,7 @@ demo.tape            vhs script for README.md's demo.gif; regenerate with `vhs d
 src/types.rs         Process, Metrics, HostTree, JSON shape
 src/proc.rs          every visible PID; blank metrics on EACCES
 src/cpu.rs           /proc/stat split (usr/sys/wait) + per-pid utime/stime rates
-src/mem.rs           meminfo used/Shmem/Swap, zram mm_stat, unified APU clip, host VRAM
+src/mem.rs           meminfo used/Shmem/kernel/cache/Swap, zram mm_stat, unified APU clip, host VRAM
 src/io.rs            /proc/pid/io rates and smaps_rollup PSS + SwapPss
 src/net.rs           per-netns rx/tx from /proc/pid/net/dev; container rows only
 src/psi.rs           cgroup cpu/io/memory.pressure; single-cgroup rows only
@@ -234,8 +234,7 @@ than threading it through every render site, since it cannot change while heft
 runs. `Set::Legacy` differs from `Set::Unicode` in `spark_ramp` and nowhere
 else: every other glyph heft draws is one a legacy font carries, which is what
 keeps the third set a branch rather than a second table. That holds only
-because `quad_a` / `quad_b` are the half blocks `▀▄` rather than the quadrants
-`▚▙`, and `collapsed` is `►` (U+25BA) rather than `▶` (U+25B6) — U+25B6 is the
+because the bar fills are the shade ramp `█▓▒` and `collapsed` is `►` (U+25BA) rather than `▶` (U+25B6) — U+25B6 is the
 play-button emoji base, so a terminal resolving emoji presentation draws it
 double-width and shifts a row whose every column is exact. `glyph::tests`
 asserts that separation, and caught that U+2584 is both a half block and the
@@ -447,8 +446,8 @@ are.
 | surface | rule |
 | --- | --- |
 | CPU bar | `/proc/stat` Δ user+nice / system+irq+softirq / iowait; idle+steal unfilled |
-| MEM bar | one MemTotal width when APU VRAM is unified; VRAM (unified only) / GTT resident, then zram `mem_used_total`, then Shmem, then the rest; never Cached/Buffers, which `used` already excludes (`mem::clip_used` has the measurement); clip so the stack never exceeds `used.min(MemTotal)` (`mem::clip_used`) |
-| Discrete VRAM | own tank against `mem_info_vram_total`, sharing the MEMORY row with the MEM bar; only `vram` drops from that legend — GTT is pinned system RAM and stays in MEM |
+| MEM bar | one MemTotal width when APU VRAM is unified; `ui::mem_key` order inside `used`: VRAM (unified only), GTT resident, zram `mem_used_total`, Shmem, kernel (`SUnreclaim` + `PageTables` + `KernelStack`), anon as the rest; then reclaimable cache (`Cached` + `Buffers` + `SReclaimable` − `Shmem`) beyond `used`, never inside it (`mem::clip_used` has the measurement); unique colour per segment, full-height fills alternating `█▓▒`, no legend on the row — `ui::bar_key` draws the swatches in `?`; clip so the stack never exceeds `used.min(MemTotal)` (`mem::clip_used`) |
+| Discrete VRAM | own tank against `mem_info_vram_total`, sharing the MEMORY row with the MEM bar; only `vram` drops out of the MEM segments — GTT is pinned system RAM and stays in MEM |
 | Swap | own tank against `SwapTotal`, never a MEM segment: swapped pages are not in RAM. Absent entirely when `SwapTotal` is 0, so a swapless host renders as it did before swap existed |
 | Layout | CPU and MEMORY, unbordered, plus a SWAP row on a machine that has swap (`ui::header_rows`). Swap shared the MEMORY row once and cost MEM half its width, which the CPU bar matches, so both headline bars halved for a readout needing ~24 columns at any terminal size: 84 columns of bar became 24. A swapless host still draws the two rows it always did. Discrete VRAM does still share the MEMORY row, since it is the memory MEM is being compared against, and `ui::tank_widths` gives it a fixed `SIDE_TANK` rather than an equal share, capped at half the row so a narrow terminal degrades to the even split instead of starving MEM; persistent rules: header↔tree and tree↔footer. `ui::bar_prefix` right-aligns every label to the longest one `ui::label_width`
 says is on screen -- 4 where swap or a discrete card brings `SWAP` or `VRAM`,
@@ -459,7 +458,7 @@ than the one above it reads as a different scale. One helper rather than a
 literal per row: `cpu_header_line` and `swap_header_line` build their own
 prefixes while `bar_group` builds MEM's and VRAM's, so three copies would
 drift the first time a label changed. Every row draws its bar to one width so
-the closing brackets stack: `mem_header_line` returns its first tank's width and `cpu_header_line` and `swap_header_line` take it, clamped to their own slack and padded on the right. `mem_header_line` caps its own bar to the CPU row's slack (`ui::cpu_parts`) as well, because which suffix is longer depends on the legend: `gtt/shm` is shorter than `usr/sys/wait` |
+the closing brackets stack: `mem_header_line` returns its first tank's width and `cpu_header_line` and `swap_header_line` take it, clamped to their own slack and padded on the right. `mem_header_line` caps its own bar to the CPU row's slack (`ui::cpu_parts`) as well, so the brackets stack whichever suffix is longer |
 | Disk R/W | table columns only (formatted rates change width every tick); after compute, before the stall trio |
 | THR / AGE | beside `N`, before the metric columns: all three say what the row *is* rather than what it is currently costing |
 | CPU/IO/MEM ST | a row carries a figure only when every process under it is in one non-root cgroup; a process row only when it is alone in its cgroup. Folder, User, Host and multi-cgroup rows are blank — a percentage of an interval cannot be summed, and `user-<uid>.slice` is not the User row (a rootful container is billed to its owner from `system.slice`) nor `system.slice` the System row (kernel threads are in the root cgroup). Root-cgroup rows are blank because that pressure is the machine's, the same rule as a `--network=host` container |

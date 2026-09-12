@@ -12,6 +12,12 @@ pub(crate) struct RamInfo {
     /// tmpfs and shared memory: the part of `Cached` that `MemAvailable` cannot
     /// reclaim, and so the only cache that is inside `used`.
     pub shmem_bytes: u64,
+    /// `SUnreclaim` + `PageTables` + `KernelStack`: the kernel's own memory
+    /// that `MemAvailable` cannot count as free, so it is inside `used`.
+    pub kernel_bytes: u64,
+    /// Reclaimable slab, which `MemAvailable` counts as free the way it counts
+    /// page cache; drawn with the cache, beyond `used`.
+    pub sreclaimable_bytes: u64,
     /// RAM held by every zram device's compressed store (`mm_stat`
     /// `mem_used_total`). Kernel memory that no process's PSS carries and no
     /// `/proc/meminfo` line names, so on a zram host it is most of the gap
@@ -36,6 +42,9 @@ pub(crate) struct MemParts {
     pub gtt: u64,
     pub zram: u64,
     pub shmem: u64,
+    pub kernel: u64,
+    /// Reclaimable page cache, buffers and slab, which sit outside `used`.
+    pub cache: u64,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -44,7 +53,9 @@ pub(crate) struct MemSegments {
     pub gtt: u64,
     pub zram: u64,
     pub shmem: u64,
+    pub kernel: u64,
     pub anon: u64,
+    pub cache: u64,
 }
 
 pub(crate) fn read_ram() -> RamInfo {
@@ -84,6 +95,8 @@ pub(crate) fn parse_meminfo(text: &str) -> RamInfo {
     let mut buffers = 0u64;
     let mut cached = 0u64;
     let mut shmem = 0u64;
+    let mut sreclaimable = 0u64;
+    let mut kernel = 0u64;
     let mut swap_total = 0u64;
     let mut swap_free = 0u64;
     for line in text.lines() {
@@ -97,6 +110,13 @@ pub(crate) fn parse_meminfo(text: &str) -> RamInfo {
             cached = v.saturating_mul(1024);
         } else if let Some(v) = field_u64(line, "Shmem:") {
             shmem = v.saturating_mul(1024);
+        } else if let Some(v) = field_u64(line, "SReclaimable:") {
+            sreclaimable = v.saturating_mul(1024);
+        } else if let Some(v) = ["SUnreclaim:", "PageTables:", "KernelStack:"]
+            .iter()
+            .find_map(|k| field_u64(line, k))
+        {
+            kernel = kernel.saturating_add(v.saturating_mul(1024));
         } else if let Some(v) = field_u64(line, "SwapTotal:") {
             swap_total = v.saturating_mul(1024);
         } else if let Some(v) = field_u64(line, "SwapFree:") {
@@ -109,6 +129,8 @@ pub(crate) fn parse_meminfo(text: &str) -> RamInfo {
         buffers_bytes: buffers,
         cached_bytes: cached,
         shmem_bytes: shmem,
+        kernel_bytes: kernel,
+        sreclaimable_bytes: sreclaimable,
         zram_bytes: 0,
         // `SwapCached:` is swapped-out pages that also still sit in RAM, so it
         // is neither free swap nor a separate tank: total - free is what is
@@ -173,13 +195,13 @@ pub(crate) fn is_unified(mem_total: u64, gpu: &GpuPool) -> bool {
     vram.saturating_mul(8) < mem_total
 }
 
-/// Paint VRAM, GTT, zram, shmem, then the rest inside `used`. Clip GPU first
-/// when vram+gtt exceed used; clip zram/shmem afterward. Sum never exceeds
-/// `used.min(total)`.
+/// Paint VRAM, GTT, zram, shmem and kernel inside `used`, `anon` as the rest
+/// of it, then reclaimable `cache` beyond `used`. Each is clipped to the room
+/// the ones before it left, so the sum never exceeds `total`.
 ///
-/// `Cached` and `Buffers` are not segments. `used` is `MemTotal -
+/// Reclaimable cache is never inside `used`. `used` is `MemTotal -
 /// MemAvailable`, and `MemAvailable` already counts reclaimable page cache as
-/// free, so painting them inside `used` claimed room that was process memory:
+/// free, so painting it inside `used` claimed room that was process memory:
 /// measured on a 125 GiB host, 18.4 GiB of `Cached` drawn inside 52.7 GiB used
 /// left anon at about 14 GiB against `AnonPages` 23.7 GiB. Shmem is the cache
 /// `MemAvailable` cannot reclaim, so it is the slice that is actually there.
@@ -188,18 +210,25 @@ pub(crate) fn clip_used(p: MemParts) -> MemSegments {
         return MemSegments::default();
     }
     let used = p.used.min(p.total);
-    let vram = p.vram.min(used);
-    let gtt = p.gtt.min(used.saturating_sub(vram));
-    let after_gpu = used.saturating_sub(vram).saturating_sub(gtt);
-    let zram = p.zram.min(after_gpu);
-    let shmem = p.shmem.min(after_gpu.saturating_sub(zram));
-    let anon = after_gpu.saturating_sub(zram).saturating_sub(shmem);
+    let mut left = used;
+    let mut take = |n: u64| {
+        let t = n.min(left);
+        left -= t;
+        t
+    };
+    let vram = take(p.vram);
+    let gtt = take(p.gtt);
+    let zram = take(p.zram);
+    let shmem = take(p.shmem);
+    let kernel = take(p.kernel);
     MemSegments {
         vram,
         gtt,
         zram,
         shmem,
-        anon,
+        kernel,
+        anon: left,
+        cache: p.cache.min(p.total - used),
     }
 }
 
@@ -210,13 +239,16 @@ mod tests {
     #[test]
     fn meminfo_used() {
         let ram = parse_meminfo(
-            "MemTotal: 1000 kB\nMemAvailable: 400 kB\nBuffers: 10 kB\nCached: 50 kB\nSwapCached: 7 kB\nShmem: 20 kB\nShmemHugePages: 9 kB\nSwapTotal: 800 kB\nSwapFree: 300 kB\n",
+            "MemTotal: 1000 kB\nMemAvailable: 400 kB\nBuffers: 10 kB\nCached: 50 kB\nSwapCached: 7 kB\nShmem: 20 kB\nShmemHugePages: 9 kB\nSReclaimable: 5 kB\nSUnreclaim: 3 kB\nPageTables: 2 kB\nSecPageTables: 99 kB\nKernelStack: 1 kB\nSwapTotal: 800 kB\nSwapFree: 300 kB\n",
         );
         assert_eq!(ram.total_bytes, 1000 * 1024);
         assert_eq!(ram.used_bytes, 600 * 1024);
         assert_eq!(ram.buffers_bytes, 10 * 1024);
         assert_eq!(ram.cached_bytes, 50 * 1024);
         assert_eq!(ram.shmem_bytes, 20 * 1024);
+        assert_eq!(ram.sreclaimable_bytes, 5 * 1024);
+        // SecPageTables is a different line that merely ends in the same name.
+        assert_eq!(ram.kernel_bytes, 6 * 1024);
         assert_eq!(ram.swap_total_bytes, 800 * 1024);
         assert_eq!(ram.swap_used_bytes, 500 * 1024);
     }
@@ -257,6 +289,10 @@ mod tests {
         assert_eq!(zram_used("garbage"), None);
     }
 
+    fn inside(s: &MemSegments) -> u64 {
+        s.vram + s.gtt + s.zram + s.shmem + s.kernel + s.anon
+    }
+
     #[test]
     fn clip_gpu_when_vram_gtt_exceed_used() {
         let s = clip_used(MemParts {
@@ -266,6 +302,8 @@ mod tests {
             gtt: 50,
             zram: 40,
             shmem: 10,
+            kernel: 5,
+            cache: 30,
         });
         assert_eq!(
             s,
@@ -274,34 +312,31 @@ mod tests {
                 gtt: 20,
                 zram: 0,
                 shmem: 0,
+                kernel: 0,
                 anon: 0,
+                cache: 30,
             }
         );
-        assert_eq!(s.vram + s.gtt + s.zram + s.shmem + s.anon, 100);
+        assert_eq!(inside(&s), 100);
     }
 
     #[test]
-    fn clip_zram_shmem_after_gpu() {
+    fn clip_zram_shmem_kernel_after_gpu() {
         let s = clip_used(MemParts {
             used: 100,
             total: 200,
             vram: 10,
             gtt: 10,
-            zram: 200,
-            shmem: 50,
+            zram: 60,
+            shmem: 15,
+            kernel: 50,
+            cache: 0,
         });
-        assert_eq!(
-            s,
-            MemSegments {
-                vram: 10,
-                gtt: 10,
-                zram: 80,
-                shmem: 0,
-                anon: 0,
-            }
-        );
+        assert_eq!((s.zram, s.shmem, s.kernel, s.anon), (60, 15, 5, 0));
     }
 
+    /// Cache is what `MemAvailable` counts as free, so it is drawn beyond
+    /// `used` and only into the room `total` has left there.
     #[test]
     fn clip_never_exceeds_memtotal() {
         let s = clip_used(MemParts {
@@ -311,10 +346,18 @@ mod tests {
             gtt: 30,
             zram: 20,
             shmem: 10,
+            kernel: 0,
+            cache: 50,
         });
-        let sum = s.vram + s.gtt + s.zram + s.shmem + s.anon;
-        assert_eq!(sum, 100);
-        assert_eq!(s.anon, 0);
+        assert_eq!(inside(&s), 100);
+        assert_eq!((s.anon, s.cache), (0, 0));
+        let s = clip_used(MemParts {
+            used: 60,
+            total: 100,
+            cache: 70,
+            ..MemParts::default()
+        });
+        assert_eq!((s.anon, s.cache), (60, 40));
     }
 
     /// The reported host: 17.3 GiB used, 5.2 GiB of PSS, 10 GiB out on zram.
@@ -329,8 +372,10 @@ mod tests {
             gtt: 15,
             zram: 20,
             shmem: 10,
+            kernel: 8,
+            cache: 0,
         });
-        assert_eq!(s.anon, 50);
-        assert_eq!(s.vram + s.gtt + s.zram + s.shmem + s.anon, 100);
+        assert_eq!(s.anon, 42);
+        assert_eq!(inside(&s), 100);
     }
 }

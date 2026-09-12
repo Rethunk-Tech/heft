@@ -196,7 +196,7 @@ terminal whose environment undersells or oversells what its font has.
 
 `legacy` is for the font in between, and there are many of them: it draws the
 bars, the rules and the tree markers in Unicode, and only TREND in ASCII. A
-font can carry `█▓▒░`, the half blocks `▀▄` and the triangles `▼►` — everything
+font can carry `█▓▒░` and the triangles `▼►` — everything
 the header and the tree are made of — and still not carry `▁▂▃▅▆▇`, which is
 six of the sparkline's eight steps. On such a terminal everything renders
 except one column, and `ascii` would be a heavy answer to that: it would throw
@@ -208,9 +208,8 @@ comes up as boxes and the rest of the screen is fine.
 TUI draws without hue. Presence decides, not the value, so `NO_COLOR=0` and
 `NO_COLOR=false` disable colour too — that is the no-color.org rule, and a
 shell that exports one of those meant it. Nothing is lost by it: every bar
-segment already carries its own fill character, and the legend prints that
-character beside the label, so the distinction the colour was making is still
-on the screen. `--once` and `--json` never emitted colour to begin with.
+segment's fill differs from its neighbours', and `?` shows a swatch of each,
+so where one segment ends and the next begins is still on the screen. `--once` and `--json` never emitted colour to begin with.
 
 `--follow` keeps sampling instead of exiting after one. `--json --follow`
 emits one compact document per line — NDJSON, so a reader takes a line at a
@@ -337,10 +336,10 @@ number gets read as a current one.
 ## What the tree means
 
 - **Host** is the machine. The header is two unbordered rows: stacked CPU
-  (usr/sys/wait from `/proc/stat`) and a MEMORY row. Every bar segment has its
-  own fill character as well as its own colour, and the legend prints that
-  character beside the label (`█usr/▓sys/▒wait`), so the bars stay readable
-  without colour — piped, recorded, on a monochrome terminal, or to anyone for
+  (usr/sys/wait from `/proc/stat`) and a MEMORY row. The bars carry no legend:
+  `?` shows a coloured swatch for every segment. Each segment has its own
+  colour, and a full-height fill (`█`, `▓` or `▒`) that differs from its
+  neighbours', so the boundaries stay readable without colour — piped, recorded, on a monochrome terminal, or to anyone for
   whom cyan and magenta are the same hue. Where memory is unified, VRAM and
   GTT are carve-outs of that same pool, not a second tank, so the row is one
   MEMORY bar whose width is MemTotal. Both header bars are drawn to the same
@@ -360,8 +359,10 @@ number gets read as a current one.
   rather than which application is using it, read the kernel's own
   `/sys/class/drm/card*/device/mem_info_*` totals. The MEM bar's `used` is
   what the kernel cannot hand back, so page cache is not in it; `shm` is the
-  tmpfs and shared memory that is, and on a zram host `zram` is the RAM its
-  compressed swap occupies. No process's PSS holds that store, which is why a
+  tmpfs and shared memory that is, on a zram host `zram` is the RAM its
+  compressed swap occupies, `kernel` is unreclaimable slab, page tables and
+  kernel stacks, and `anon` is the rest. Reclaimable `cache` is drawn after
+  `used`, so the figure still reads what cannot be handed back. No process's PSS holds that store, which is why a
   zram machine's `used` can sit gigabytes above the Host row. Swap, when the machine has
   any, gets a third row of its own rather than a segment of MEM: swapped pages
   are not in RAM. A row rather than a tank beside MEM, because its figures

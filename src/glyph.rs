@@ -10,7 +10,7 @@
 //! the answer cannot change while heft runs, and `ui` already passes `Columns`
 //! down for the thing that can.
 //!
-//! `Set::Legacy` sits between the two: a font that draws `█▓▒░`, `▀▄` and `▼►`
+//! `Set::Legacy` sits between the two: a font that draws `█▓▒░` and `▼►`
 //! but not `▁▂▃▅▆▇`, which is common enough that asking such a
 //! reader to drop to ASCII would cost them a header that was rendering fine.
 //!
@@ -98,20 +98,6 @@ pub(crate) fn light() -> char {
     if ascii() { '.' } else { '░' }
 }
 
-/// Two segments that need to differ from the ramp rather than continue it.
-/// Half blocks rather than the quadrants (`▚`, `▙`) they used to be: a font
-/// carrying the shade ramp and the full block does not necessarily carry
-/// U+2596-U+259F, and a reader whose bar drew `█▓▒` correctly still got tofu
-/// where VRAM and GTT went. U+2580 and U+2584 sit in the same legacy
-/// repertoire as the ramp itself, so a font that can draw one can draw these.
-pub(crate) fn quad_a() -> char {
-    if ascii() { '%' } else { '▀' }
-}
-
-pub(crate) fn quad_b() -> char {
-    if ascii() { '*' } else { '▄' }
-}
-
 /// Eight rising steps for a sparkline, lowest first. Every one is a single
 /// column in both sets, the same rule the bars and `ellipsis` keep, so a cell
 /// of eight of them is eight columns wide whatever the terminal resolved.
@@ -168,19 +154,16 @@ mod tests {
 
     #[test]
     fn legacy_keeps_the_bars_and_drops_only_the_spark_ramp() {
-        use super::{Set, full, quad_a, set, spark_ramp};
+        use super::{Set, dark, full, medium, set, spark_ramp};
         // `set()` is process-wide and the suite runs in parallel threads, so
         // this asserts over the table rather than by initialising it.
         assert_eq!(set(), Set::Unicode, "the default the render tests rely on");
         assert_eq!(full(), '█');
-        assert_eq!(quad_a(), '▀', "a half block, not a quadrant");
         assert_eq!(spark_ramp()[0], '▁');
         // Every glyph heft draws outside the sparkline is one a legacy font
         // carries, which is what makes Legacy one branch rather than a table.
-        // U+2584 is not in that gap: it is the ramp's midpoint and a half
-        // block, so `quad_b` may and does use it.
         let missing = ['▁', '▂', '▃', '▅', '▆', '▇'];
-        for c in [full(), quad_a(), super::quad_b(), super::rule()] {
+        for c in [full(), dark(), medium(), super::rule()] {
             assert!(!missing.contains(&c), "{c} is a step a legacy font lacks");
         }
         assert_eq!(

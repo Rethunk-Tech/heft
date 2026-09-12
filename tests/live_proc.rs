@@ -12,13 +12,14 @@
 //! run itself.
 
 use std::collections::HashMap;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde_json::Value;
 
-const BIN: &str = env!("CARGO_BIN_EXE_heft");
+mod common;
+use common::{arr, heft};
 /// The floor `clamp_intervals` allows: the two `/proc` walks this far apart.
 const FAST: &str = "0.05";
 
@@ -94,17 +95,6 @@ fn sample() -> &'static Sample {
     })
 }
 
-/// Point the child at a config directory that does not exist, so a developer's
-/// saved view or grouping overrides cannot reshape the tree under test.
-fn heft(args: &[&str]) -> Command {
-    let mut cmd = Command::new(BIN);
-    cmd.args(args).env(
-        "XDG_CONFIG_HOME",
-        std::env::temp_dir().join("heft-no-config"),
-    );
-    cmd
-}
-
 /// Every pid `/proc` lists, straight from the directory.
 fn all_pids() -> Vec<u64> {
     let Ok(dir) = std::fs::read_dir("/proc") else {
@@ -147,12 +137,6 @@ fn is_kthread(stat: &str) -> bool {
         .nth(6)
         .and_then(|f| f.parse::<u32>().ok())
         .is_some_and(|flags| flags & 0x0020_0000 != 0)
-}
-
-fn arr<'a>(v: &'a Value, key: &str) -> &'a [Value] {
-    v.get(key)
-        .and_then(Value::as_array)
-        .map_or(&[][..], Vec::as_slice)
 }
 
 /// Every identity row in the tree, with the folder path that leads to it.
@@ -609,11 +593,7 @@ fn a_pid_vanishing_mid_walk_is_skipped_not_fatal() {
     let churn = std::thread::spawn(move || {
         let mut spawned = 0u32;
         while !flag.load(Ordering::Relaxed) {
-            if let Ok(mut c) = Command::new(BIN)
-                .arg("--version")
-                .stdout(Stdio::null())
-                .spawn()
-            {
+            if let Ok(mut c) = heft(&["--version"]).stdout(Stdio::null()).spawn() {
                 let _ = c.wait();
                 spawned += 1;
             }

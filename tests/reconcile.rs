@@ -18,14 +18,15 @@
 //! CPU load with a 2 GiB/s page-cache churn beside it.
 
 use std::collections::{HashMap, HashSet};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
-const BIN: &str = env!("CARGO_BIN_EXE_heft");
+mod common;
+use common::{arr, heft};
 
 /// heft's CPU window is this sleep and nothing else; the outer window a test
 /// can draw around it adds a full `/proc` walk on either side. Every CPU bound
@@ -86,13 +87,7 @@ fn sample() -> &'static Sample {
 
         let t0 = Instant::now();
         let cpu0 = host_cpu();
-        let out = Command::new(BIN)
-            .args(["--json", "--interval", &INTERVAL.to_string()])
-            // A developer's saved view must not reshape the tree under test.
-            .env(
-                "XDG_CONFIG_HOME",
-                std::env::temp_dir().join("heft-no-config"),
-            )
+        let out = heft(&["--json", "--interval", &INTERVAL.to_string()])
             .stderr(Stdio::piped())
             .output()
             .expect("run heft --json");
@@ -204,12 +199,6 @@ fn scan() -> HashMap<u32, Option<u64>> {
         out.insert(pid, pss);
     }
     out
-}
-
-fn arr<'a>(v: &'a Value, key: &str) -> &'a [Value] {
-    v.get(key)
-        .and_then(Value::as_array)
-        .map_or(&[][..], Vec::as_slice)
 }
 
 /// pid -> the PSS heft published for it. `None` is the blank cell HUMANS.md

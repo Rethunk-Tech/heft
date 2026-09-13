@@ -397,10 +397,10 @@ pub(crate) fn detail(pid: u32) -> Vec<(&'static str, String)> {
             .to_string()
     };
     // `Uid:` is real/effective/saved/fs; the real uid is the one the tree bills.
-    let uid = field("Uid:")
-        .split_whitespace()
-        .next()
-        .and_then(|u| u.parse::<u32>().ok());
+    let uid = status
+        .lines()
+        .find_map(|l| field_u64(l, "Uid:"))
+        .and_then(|u| u32::try_from(u).ok());
     let argv = read_cmdline(&format!("{base}/cmdline")).join(" ");
     vec![
         ("PID", pid.to_string()),

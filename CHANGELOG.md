@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Fixed
+
+- `--help` says `--filter` also matches the argv under a row, and that
+  `--follow` honours `--pss-interval`.
+
 ## 0.10.1 - 2026-09-13
 
 ### Added

@@ -112,9 +112,7 @@ pub fn build_tree(
 ) -> HostTree {
     let places = resolve(curr, &Ctx::new(containers, rules, curr));
     let metrics = metrics_map(prev, curr, elapsed, consts);
-    let mut tree = assemble(curr, &places, &metrics, header);
-    crate::once::sort_default(&mut tree);
-    tree
+    assemble(curr, &places, &metrics, header)
 }
 
 fn metrics_map(

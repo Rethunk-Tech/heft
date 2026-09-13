@@ -26,7 +26,7 @@ use crate::kgp;
 use crate::mem;
 use crate::once::{
     COLUMNS, Column, Columns, Filter, Sort, fmt_bytes, fmt_pct, haystack, hide_column,
-    ident_haystack, keep_matches, keep_top, keep_users, sort_tree, unhide_last,
+    ident_haystack, keep_matches, keep_top, keep_users, sort_tree,
 };
 use crate::proc;
 use crate::sixel;
@@ -690,7 +690,7 @@ fn handle_key(
             }
         }
         KeyCode::Char('u' | 'U') => {
-            if let Some(label) = unhide_last(&mut app.view) {
+            if let Some(label) = app.view.hide_columns.pop() {
                 refresh_columns(app);
                 app.status = format!("shown {label}");
             }

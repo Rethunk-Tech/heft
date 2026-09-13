@@ -418,11 +418,6 @@ pub(crate) fn hide_column(view: &mut View, label: &str) -> bool {
     true
 }
 
-/// Show the most recently hidden column. `None` when the list is empty.
-pub(crate) fn unhide_last(view: &mut View) -> Option<String> {
-    view.hide_columns.pop()
-}
-
 /// Every sort label, so `--sort` can name the valid ones in its usage error.
 #[must_use]
 pub fn sort_labels() -> Vec<&'static str> {
@@ -456,10 +451,6 @@ impl Filter {
             .ok()
             .map(Filter)
     }
-
-    fn is_match(&self, name: &str) -> bool {
-        self.0.is_match(name)
-    }
 }
 
 /// Keeps a row when its own name matches `filter`, or when it is an ancestor
@@ -481,7 +472,7 @@ pub(crate) fn keep_matches<T>(rows: &mut Vec<T>, filter: &Filter, row: impl Fn(&
     let mut keep = vec![false; rows.len()];
     for (i, r) in rows.iter().enumerate().rev() {
         let (d, name) = row(r);
-        if filter.is_match(name) || d < want {
+        if filter.0.is_match(name) || d < want {
             keep[i] = true;
             want = d;
         }
@@ -508,13 +499,6 @@ fn cmp_row(a: Row<'_>, b: Row<'_>, sort: Sort, desc: bool) -> Ordering {
     // stable over the pid order `group::proc_forest` builds, so equal rows do
     // not shuffle between ticks.
     ord.then_with(|| a.0.cmp(b.0))
-}
-
-/// The order every published tree starts in, so HUMANS.md's documented
-/// default has exactly one definition: the saved view's.
-pub(crate) fn sort_default(tree: &mut HostTree) {
-    let v = View::default();
-    sort_tree(tree, Sort::from_label(&v.sort), v.desc);
 }
 
 /// Orders every sibling group in the tree: identity rows, their instances and
@@ -1168,7 +1152,7 @@ mod tests {
     #[test]
     fn sort_tree_orders_instances_and_processes() {
         let mut tree = ordering_tree();
-        sort_default(&mut tree);
+        sort_tree(&mut tree, Sort::from_label("pss"), true);
         assert_eq!(instance_keys(&tree), ["big-pss", "busy-cpu"]);
         assert_eq!(pids(&tree), [2, 1, 3]);
 
@@ -1381,9 +1365,9 @@ mod tests {
         assert!(hide_column(&mut view, "vram"));
         assert_eq!(view.hide_columns, ["vram"]);
         assert!(hide_column(&mut view, "gtt"));
-        assert_eq!(unhide_last(&mut view).as_deref(), Some("gtt"));
-        assert_eq!(unhide_last(&mut view).as_deref(), Some("vram"));
-        assert_eq!(unhide_last(&mut view), None);
+        assert_eq!(view.hide_columns.pop().as_deref(), Some("gtt"));
+        assert_eq!(view.hide_columns.pop().as_deref(), Some("vram"));
+        assert_eq!(view.hide_columns.pop(), None);
         assert_eq!(hideable_labels().len(), COLUMNS.len() - 1);
         assert!(!hideable_labels().contains(&"name"));
     }

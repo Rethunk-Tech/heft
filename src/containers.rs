@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde::Deserialize;
-use serde_json::Value;
 
 use std::os::unix::fs::MetadataExt;
 
@@ -271,38 +270,29 @@ fn project_identity(name: &str, labels: &HashMap<String, String>) -> (String, Op
 fn supabase_project_from_name(name: &str) -> Option<&str> {
     let rest = name.strip_prefix("supabase_")?;
     let (_, proj) = rest.rsplit_once('_')?;
-    if proj.is_empty() { None } else { Some(proj) }
+    (!proj.is_empty()).then_some(proj)
 }
 
 fn docker_sock() -> Option<PathBuf> {
-    if let Ok(host) = std::env::var("DOCKER_HOST")
-        && let Some(path) = host.strip_prefix("unix://")
-    {
-        let p = PathBuf::from(path);
-        if p.exists() {
-            return Some(p);
-        }
-    }
-    let default = PathBuf::from("/var/run/docker.sock");
-    if default.exists() {
-        return Some(default);
-    }
-    let uid = crate::cpu::euid();
-    let podman = PathBuf::from(format!("/run/user/{uid}/podman/podman.sock"));
-    if podman.exists() {
-        return Some(podman);
-    }
-    // Rootful Podman, the default on RHEL and Fedora servers. Without it every
-    // container on such a host rendered `docker-<12hex>` with no owner and a
-    // blank NETNS — indistinguishable from having no socket at all. Last,
-    // because a rootless socket belongs to the user heft is running as and a
-    // rootful one may not be readable.
-    let rootful = PathBuf::from("/run/podman/podman.sock");
-    if rootful.exists() {
-        Some(rootful)
-    } else {
-        None
-    }
+    let host = std::env::var("DOCKER_HOST").ok();
+    host.as_deref()
+        .and_then(|h| h.strip_prefix("unix://"))
+        .map(PathBuf::from)
+        .into_iter()
+        .chain([
+            PathBuf::from("/var/run/docker.sock"),
+            PathBuf::from(format!(
+                "/run/user/{}/podman/podman.sock",
+                crate::cpu::euid()
+            )),
+            // Rootful Podman, the default on RHEL and Fedora servers. Without it
+            // every container on such a host rendered `docker-<12hex>` with no
+            // owner and a blank NETNS, indistinguishable from having no socket
+            // at all. Last, because a rootless socket belongs to the user heft
+            // is running as and a rootful one may not be readable.
+            PathBuf::from("/run/podman/podman.sock"),
+        ])
+        .find(|p| p.exists())
 }
 
 fn docker_get_path(path: &str) -> bool {
@@ -399,7 +389,15 @@ pub(crate) struct NetworkSettings {
     #[serde(rename = "IPAddress")]
     pub(crate) ip: Option<String>,
     #[serde(rename = "Networks")]
-    pub(crate) networks: Option<HashMap<String, Value>>,
+    pub(crate) networks: Option<HashMap<String, Network>>,
+}
+
+/// Every field optional and unknown keys ignored, so a runtime's schema
+/// difference costs an address, never the container.
+#[derive(Clone, Debug, Deserialize, Default)]
+pub(crate) struct Network {
+    #[serde(rename = "IPAddress")]
+    pub(crate) ip: Option<String>,
 }
 
 impl Inspect {
@@ -415,21 +413,18 @@ impl Inspect {
     }
 
     fn ips(&self) -> Vec<String> {
-        let mut out = Vec::new();
-        if let Some(ip) = self.network.as_ref().and_then(|n| n.ip.clone())
-            && !ip.is_empty()
-        {
-            out.push(ip);
-        }
-        if let Some(nets) = self.network.as_ref().and_then(|n| n.networks.as_ref()) {
-            for v in nets.values() {
-                if let Some(ip) = v.get("IPAddress").and_then(Value::as_str)
-                    && !ip.is_empty()
-                {
-                    out.push(ip.to_string());
-                }
-            }
-        }
+        let Some(n) = &self.network else {
+            return Vec::new();
+        };
+        let mut out: Vec<String> = n
+            .networks
+            .iter()
+            .flat_map(HashMap::values)
+            .filter_map(|net| net.ip.as_ref())
+            .chain(&n.ip)
+            .filter(|ip| !ip.is_empty())
+            .cloned()
+            .collect();
         out.sort();
         out.dedup();
         out
@@ -498,6 +493,18 @@ mod tests {
         assert!(!docker_get_path(&format!("/containers/{mid}/json")));
         assert!(docker_get_path("/containers/json"));
         assert!(docker_get_path("/containers/0123456789ab/json"));
+    }
+
+    #[test]
+    fn a_minimal_inspect_parses_and_yields_its_ips() {
+        let bare: Inspect = serde_json::from_str("{}").unwrap();
+        assert!(bare.ips().is_empty());
+        let i: Inspect = serde_json::from_str(
+            r#"{"Unknown":1,"NetworkSettings":{"IPAddress":"","Networks":{
+                "bridge":{"IPAddress":"172.17.0.2","Gateway":"172.17.0.1"},"none":{}}}}"#,
+        )
+        .unwrap();
+        assert_eq!(i.ips(), ["172.17.0.2"]);
     }
 
     fn item(id: &str, state: Option<&str>) -> ListItem {

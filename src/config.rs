@@ -1,7 +1,7 @@
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -177,7 +177,17 @@ pub fn load_view() -> View {
     let Ok(text) = fs::read_to_string(&path) else {
         return View::default();
     };
-    serde_json::from_str(&strip_comments(&text)).unwrap_or_default()
+    parse_view(&text, &path).unwrap_or_else(|warning| {
+        eprintln!("{warning}");
+        View::default()
+    })
+}
+
+/// The view in `text`, or the one-line warning naming `path` and serde's
+/// error, which carries the line and column `strip_comments` preserves.
+fn parse_view(text: &str, path: &Path) -> Result<View, String> {
+    serde_json::from_str(&strip_comments(text))
+        .map_err(|e| format!("heft: ignoring {}: {e}", path.display()))
 }
 
 /// # Errors
@@ -267,6 +277,19 @@ mod tests {
         assert_eq!(back.sort, "core");
         assert_eq!(back.filter, "a//b");
         assert_eq!(back.hide_columns, ["vram"]);
+    }
+
+    #[test]
+    fn a_view_that_does_not_parse_says_where() {
+        let path = Path::new("/home/me/.config/heft/view.json");
+        let warning = parse_view("{\n  \"sort\": \"pss\",\n}", path).unwrap_err();
+        assert!(
+            warning.starts_with("heft: ignoring /home/me/.config/heft/view.json: "),
+            "{warning}"
+        );
+        assert!(warning.contains("line 3 column 1"), "{warning}");
+        let view = parse_view(r#"{"sort": "rss", "desc": true}"#, path).unwrap();
+        assert_eq!(view.sort, "rss");
     }
 
     #[test]

@@ -364,7 +364,6 @@ impl Sort {
         self.step(cols, false)
     }
 
-    /// `next` in the other direction.
     pub(crate) fn prev(self, cols: &Columns) -> Self {
         self.step(cols, true)
     }
@@ -427,9 +426,6 @@ pub(crate) fn unhide_last(view: &mut View) -> Option<String> {
 /// Every sort label, so `--sort` can name the valid ones in its usage error.
 #[must_use]
 pub fn sort_labels() -> Vec<&'static str> {
-    // `spark` is omitted: it draws a trend, which has no ordering, so it is
-    // not one of the answers `--sort` will accept and must not be listed as
-    // one in the usage error.
     COLUMNS
         .iter()
         .filter(|c| c.key.is_some() || c.label == "name")

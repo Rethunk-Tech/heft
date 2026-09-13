@@ -679,7 +679,7 @@ mod tests {
     }
 
     /// machine.slice is neither a docker/libpod scope nor system.slice, so a
-    /// VM's qemu process and every process inside an nspawn container used to
+    /// VM's qemu process and every process inside an nspawn container would
     /// fall through to `user_place` and show up as ordinary Applications rows
     /// under whichever uid ran them.
     #[test]

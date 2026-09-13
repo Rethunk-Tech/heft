@@ -328,10 +328,8 @@ fn heft_observes_itself_with_real_numbers() {
     }
 }
 
-/// heft reports its own RSS, so it can watch itself for the class of
-/// regression `0a9ee0a` was: a per-tick allocation glibc never hands back,
-/// which grew ~15 MiB every PSS tick to 488 MiB and was found by a person
-/// noticing rather than by a gate.
+/// heft reports its own RSS, so it can watch itself for a per-tick allocation
+/// glibc never hands back, the kind that grew ~15 MiB every PSS tick to 488 MiB.
 ///
 /// Growth, not a ceiling: the ceiling low enough to catch a leak in a few
 /// seconds is below what heft legitimately uses watching a busy host. The

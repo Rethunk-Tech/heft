@@ -38,12 +38,8 @@ use crate::types::{
 /// CPU and MEMORY. A machine with swap gets a third for it.
 const HEADER_ROWS: u16 = 2;
 
-/// Swap is a device of its own, not a slice of `MemTotal`, and its readout needs
-/// the same couple of dozen columns whatever the terminal is. Sharing the
-/// MEMORY row with it cost MEM half its width, and the CPU bar is sized to
-/// match MEM's, so both headline bars halved to make room for it. It gets its
-/// own row instead, and a swapless host -- `SwapTotal: 0` -- still draws the
-/// two rows it always did.
+/// Swap gets a row of its own (`tank_widths` says why it is not a tank), and a
+/// swapless host -- `SwapTotal: 0` -- draws two.
 fn header_rows(tree: &HostTree) -> u16 {
     HEADER_ROWS + u16::from(tree.swap_total_bytes > 0)
 }
@@ -94,7 +90,6 @@ struct App {
     /// Present only when TREND is drawn with the kitty protocol: the image in
     /// flight, and what it costs to keep it in step. `None` is the ordinary character ramp.
     kgp: Option<kgp::Kgp>,
-    /// Which of the three TREND renderings is in play.
     trend: TrendMode,
     /// A sixel image and the escape that places it, built during `draw` and
     /// written after ratatui has flushed -- sixel paints over cells rather
@@ -585,10 +580,9 @@ fn handle_key(
     rows: &[Flat],
 ) -> Result<bool, Error> {
     // Raw mode turns ISIG off, so the terminal never raises SIGINT and heft
-    // has to answer Ctrl-C itself. Before this guard every modified key fell
-    // through to its bare binding, which was not a near miss: Ctrl-C cycled
-    // the sort column, Ctrl-D reversed the direction, and Ctrl-S wrote
-    // view.json without the user ever pressing `s`. One guard rather than a
+    // has to answer Ctrl-C itself. Without it, every modified key falls
+    // through: Ctrl-C cycles the sort column, Ctrl-D reverses the direction,
+    // and Ctrl-S writes view.json without the user ever pressing `s`. One guard rather than a
     // check per arm, so a binding added later cannot reintroduce it.
     //
     // SHIFT is deliberately not here: a capital is how you type one.
@@ -611,9 +605,7 @@ fn handle_key(
             }
             _ => {}
         }
-        // Only replace it when the new text compiles, so a half-written
-        // pattern keeps filtering with the last one that worked instead of
-        // flashing the whole tree back between two keystrokes.
+        // Only replace it when the new text compiles; `App::filter_re` says why.
         if app.view.filter != before {
             let compiled = Filter::new(&app.view.filter);
             app.filter_ok = compiled.is_some();
@@ -737,7 +729,7 @@ fn scrolled(cols: &Columns, skip: usize) -> Vec<&'static Column> {
 /// ratatui clips a cell that runs out of room, so a 50-column terminal drew
 /// `20.1G` as `2` and `548.5` as `5` with nothing to say they had been cut —
 /// heft showing a figure that is wrong, which is the one thing every other
-/// rule in it avoids. A column is now either drawn whole or not drawn, and
+/// rule in it avoids. A column is either drawn whole or not drawn, and
 /// `←` / `→` reach the ones left off, which is what those keys are for.
 ///
 /// At least one column always survives. The name column is a label rather than
@@ -1009,10 +1001,7 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &mut App, rows: &[Flat]) {
                 if sixel_cell {
                     cell.style(Style::default().fg(SIXEL_MARK))
                 } else if placed.is_some() {
-                    // The image id rides in the foreground colour, and it has
-                    // to be a ratatui style: a cell's symbol is written
-                    // literally, so an escape smuggled into the text would go
-                    // to the screen as text.
+                    // The image id as a style; `kgp::placeholder` says why.
                     let (r8, g8, b8) = kgp::id_rgb();
                     cell.style(Style::default().fg(Color::Rgb(r8, g8, b8)))
                 } else if alarming(c.label, &r.metrics) {
@@ -1196,8 +1185,8 @@ fn cpu_parts(tree: &HostTree, width: usize) -> (String, String, usize) {
 ///
 /// Aligned to `SWAP` unconditionally instead, a machine with neither swap nor
 /// a discrete card -- the ordinary case -- paid a column of bar for a label
-/// that was never on screen. The header heft draws there has to stay the one
-/// it drew before either existed.
+/// that was never on screen. The header heft draws there has to be the one it
+/// draws with no swap row.
 ///
 /// One helper rather than a literal per row: `cpu_header_line` and
 /// `swap_header_line` build their own prefixes and `bar_group` builds the
@@ -1236,8 +1225,7 @@ fn bar_group(
     parts: &[(u64, Color, char)],
     used: u64,
     // `total` is both the figure printed after the bar and the scale it is
-    // drawn against; they were separate until every caller passed one value
-    // twice.
+    // drawn against.
     total: u64,
 ) -> (Vec<Span<'static>>, usize) {
     let prefix = bar_prefix(label, label_w);
@@ -1252,9 +1240,6 @@ fn bar_group(
 /// The line, and the first tank's bar width for `cpu_header_line` to match.
 fn mem_header_line(tree: &HostTree, width: usize) -> (Line<'static>, usize) {
     let host = host_metrics(tree);
-    // Discrete VRAM is a second device, so measuring it against MemTotal is
-    // meaningless; it gets its own capacity instead. Unified (APU) VRAM/GTT are
-    // carve-outs of MemTotal and stay inside the MEM bar.
     let discrete = discrete_vram(tree);
     let label_w = label_width(tree);
     // GTT is pinned system RAM on a discrete card too, already counted in
@@ -1283,8 +1268,6 @@ fn mem_header_line(tree: &HostTree, width: usize) -> (Line<'static>, usize) {
         slab: tree.mem_sreclaimable_bytes,
         buffers: tree.mem_buffers_bytes,
     });
-    // Swap has its own row: it is a device rather than a slice of MemTotal,
-    // and as a tank here it took half the width, which the CPU bar matches.
     let tanks = tank_widths(width, 1 + usize::from(discrete.is_some()));
     let mem_width = tanks[0];
     let sizes = [
@@ -1888,9 +1871,9 @@ mod tests {
         assert_eq!(spark(Some(&buf(&[])), 100.0), "");
         // Steadily zero is flat at the bottom, not blank.
         assert_eq!(spark(Some(&buf(&[0.0, 0.0])), 100.0), format!("{low}{low}"));
-        // The reported defect: against its own peak a row flat at 4% drew
-        // every sample full height, so most of the column was solid and two
-        // rows could not be told apart.
+        // Against its own peak a row flat at 4% would draw every sample full
+        // height, so most of the column would be solid and two rows could not
+        // be told apart.
         assert_eq!(
             spark(Some(&buf(&[4.0; 3])), 100.0),
             format!("{low}{low}{low}")
@@ -2250,10 +2233,8 @@ mod tests {
         assert_eq!(wide_mem.chars().count(), 200);
         assert_eq!(bracket(&wide), bracket(&wide_mem), "{wide}\n{wide_mem}");
 
-        // A host with pressure renders no differently. The `psi` tail used to
-        // sit on this row and was cancelling most of that suffix difference by
-        // accident, which is why removing it alone widened the gap instead of
-        // closing it.
+        // A host with pressure renders no differently: no `psi` tail on this
+        // row, for the reason `cpu_parts` gives.
         tree.psi_cpu_avg10 = Some(12.75);
         tree.psi_io_avg10 = None;
         tree.psi_mem_avg10 = Some(0.0);
@@ -2387,7 +2368,7 @@ mod tests {
     }
 
     /// The machine this was written on has `SwapTotal: 0`, and there the header
-    /// must be byte-identical to the one heft printed before swap existed.
+    /// must be byte-identical to the one heft draws with no swap row.
     #[test]
     fn a_swapless_host_gets_no_swap_tank() {
         let tree = tree_with_gpu(&mem::GpuPool::default());
@@ -2403,9 +2384,9 @@ mod tests {
     /// than the one above it reads as a different scale.
     ///
     /// To the longest *on screen*, though. Most machines have neither swap nor
-    /// a discrete card, and there the header must be the one heft drew before
-    /// either existed rather than one carrying a column of padding for a label
-    /// that is not drawn.
+    /// a discrete card, and there the header must be the one heft draws with no
+    /// swap row rather than one carrying a column of padding for a label that
+    /// is not drawn.
     #[test]
     fn a_plain_machine_pads_nothing() {
         let tree = tree_with_gpu(&mem::GpuPool::default());
@@ -2471,11 +2452,7 @@ mod tests {
         assert_eq!(swap.chars().count(), 100);
     }
 
-    /// The reported defect: swap shared the MEMORY row, so it took half the
-    /// width, and because the CPU bar is sized to match MEM's, both headline
-    /// bars halved to make room for a readout that needs the same couple of
-    /// dozen columns at any terminal size. It has its own row now, and the
-    /// two bars above it are the width they would be on a swapless machine.
+    /// Swap has its own row, so the bars above keep their swapless width.
     #[test]
     fn swap_costs_the_mem_and_cpu_bars_nothing() {
         let g = 1024 * 1024 * 1024;
@@ -2546,11 +2523,9 @@ mod tests {
         }
     }
 
-    /// Reproduced against the real binary in a pty before this existed: from a
-    /// default view, one Ctrl-C moved the sort pss -> rss and a second moved it
-    /// to swap, exactly as the bare sort key did; Ctrl-D flipped `desc`; and
-    /// Ctrl-S wrote view.json with no `s` ever pressed. Raw mode turns ISIG
-    /// off, so nothing else was ever going to catch these.
+    /// No Ctrl or Alt combination reaches its bare binding: Ctrl-C must not
+    /// move the sort, Ctrl-D must not flip `desc`, and Ctrl-S must not write
+    /// `view.json`. Raw mode turns ISIG off, so nothing else catches these.
     #[test]
     fn a_modified_key_never_reaches_its_bare_binding() {
         let ctrl = KeyModifiers::CONTROL;
@@ -2637,7 +2612,6 @@ mod tests {
         }
         assert!(!app.filter_ok, "`app[` is not a pattern");
 
-        // Completing it clears the marker.
         handle_key(&mut app, KeyCode::Char('a'), none, &rows).unwrap();
         handle_key(&mut app, KeyCode::Char(']'), none, &rows).unwrap();
         assert!(app.filter_ok, "`app[a]` is one");
@@ -2821,9 +2795,9 @@ mod tests {
         );
     }
 
-    /// Reproduced on a user with no containers: `user:{uid}/containers` is in
-    /// the default expand set, so the empty folder drew the expanded marker
-    /// over nothing. A folder with no identities is not expandable; the id
+    /// On a user with no containers, `user:{uid}/containers` is in the default
+    /// expand set, so the empty folder would draw the expanded marker over
+    /// nothing. A folder with no identities is not expandable; the id
     /// stays in the set so the first container that appears still opens.
     #[test]
     fn empty_folders_do_not_draw_as_expanded() {

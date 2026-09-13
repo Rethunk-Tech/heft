@@ -1644,7 +1644,7 @@ mod tests {
         );
     }
 
-    /// R44: nanoseconds per process for each stage over the gui fixture and
+    /// Nanoseconds per process for each stage over the gui fixture and
     /// any `HEFT_BENCH_FIXTURE`, `HEFT_BENCH_ITERS` passes each. In the crate
     /// so it builds facts through `group::facts_of`, the tick's own path. Run
     /// with `cargo test --release --lib -- --ignored --nocapture rules_timing`.

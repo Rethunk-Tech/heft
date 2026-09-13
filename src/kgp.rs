@@ -41,11 +41,6 @@ const PLACEHOLDER: char = '\u{10eeee}';
 /// carried rather than the first handful: the row index is a table row, so a
 /// terminal taller than the list would draw an image for the rows it covered
 /// and characters for the rest.
-/// Row and column numbers are spelled with these combining marks, in this
-/// order, from kitty's `gen/rowcolumn-diacritics.txt`. The whole table is
-/// carried rather than the first handful: the row index is a table row, so a
-/// terminal taller than the list would draw an image for the rows it covered
-/// and characters for the rest.
 ///
 /// One string rather than an array: it is a contiguous list read front to
 /// back, and `MAX_BANDS` entries one per line was 2% of the crate.
@@ -84,7 +79,6 @@ const DIACRITICS: &str = "\u{0305}\u{030d}\u{030e}\u{0310}\u{0312}\u{033d}\u{033
     \u{1d187}\u{1d188}\u{1d189}\u{1d1aa}\u{1d1ab}\u{1d1ac}\u{1d1ad}\u{1d242}\
     \u{1d243}\u{1d244}";
 
-/// The combining mark that spells index `i`.
 fn diacritic(i: usize) -> Option<char> {
     DIACRITICS.chars().nth(i)
 }
@@ -635,7 +629,6 @@ mod tests {
         let mut again = Vec::new();
         k.send(&mut again, &img, 9, 1).unwrap();
         assert!(again.is_empty(), "same pixels, nothing on the wire");
-        // A changed row sends again.
         let other = paint(&[Some(&buf(&[1.0, 9.0]))], 2, (4, 8), [1, 2, 3], 100.0).unwrap();
         let mut third = Vec::new();
         k.send(&mut third, &other, 9, 1).unwrap();
@@ -727,9 +720,9 @@ mod tests {
         );
     }
 
-    /// The reported defect: against its own peak a row sitting flat at 2% drew
-    /// every sample at full height, so the column was a solid block and the
-    /// movement it exists to show was not in it.
+    /// Against its own peak a row sitting flat at 2% would draw every sample
+    /// at full height, so the column would be a solid block and the movement
+    /// it exists to show would not be in it.
     #[test]
     fn a_flat_busy_row_is_a_flat_line_near_the_floor() {
         let rows = [Some(&buf(&[2.0, 2.0, 2.0]))];

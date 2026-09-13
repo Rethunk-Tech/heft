@@ -121,10 +121,11 @@ key toggles.
 `(?-i)` turns that off; Unicode classes (`\p{Greek}`) are not supported. It
 matches a row's name and the argv of every process under it, expanded or not,
 one process per line, so `^` and `$` anchor to one process's argv. Matching
-rows are kept with their parents, and a parent keeps its full total. `--once`
-rows stop at identities and their containers while the TUI also has instance
-and process rows, so `/` can match rows `--filter` never sees. A pattern that
-does not compile is a usage error on the command line, a warning from
+rows are kept with their parents, and a parent keeps its full total.
+
+`--once` rows stop at identities and their containers while the TUI also has
+instance and process rows, so `/` can match rows `--filter` never sees. A
+pattern that does not compile is a usage error on the command line, a warning from
 `view.json`, and a `?` in the TUI footer while the last compiling pattern stays
 live.
 

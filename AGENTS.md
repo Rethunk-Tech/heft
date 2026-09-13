@@ -261,13 +261,15 @@ Every class and unit question in `group.rs`, `identity::instance_key` and
 `identity::generic_fallback` reads it; asked per call site instead, the name
 lookup alone ran 2,200 times per 293-process tick. Keyed on pid and valid for
 one `Ctx`, which lives one `build_tree`, so `exec` needs no invalidation.
+
 Session and app rules evaluate on a borrowed `Facts` in `direct_place`, and
 evaluation allocates nothing (`rules::tests::evaluation_allocates_nothing`,
 counted per thread because the other tests allocate on other threads). The
 compiled shape is what makes that affordable: a `Vec<String>` per test with a
 `windows` scan cost 750 ns per process, and equality bucketed by byte length
-with a first-byte scan for contains cost 415 to 450. `build_tree` measures
-149 to 152 µs on the gui fixture and 463 to 479 µs on a 324-process
+with a first-byte scan for contains cost 415 to 450.
+
+`build_tree` measures 149 to 152 µs on the gui fixture and 463 to 479 µs on a 324-process
 `--fixture` dump, and the four stages 433 to 438 ns per process on facts built by
 `group::facts_of`. The budget is 20% and 500 ns, measured on a quiet machine:
 `cargo test --release --test grouping -- --ignored --nocapture
@@ -378,13 +380,15 @@ so it runs inside `archlinux:base-devel`.
 The `aur` job in `release.yml` runs it after the release exists, since the
 checksums are of assets that did not exist before, commits the refresh back to
 main, and pushes `heft` and `heft-bin` to the AUR when the `AUR_SSH_KEY`
-secret is set (it skips with a notice when it is not). The secret is
-deliberately not set, so that step always skips and exits green: once the
+secret is set (it skips with a notice when it is not).
+
+The secret is deliberately not set, so that step always skips and exits green: once the
 release and the job's refresh commit exist, pull main and push both by hand —
 clone `ssh://aur@aur.archlinux.org/<pkg>.git`, copy `PKGBUILD`, `.SRCINFO` and
 `packaging/aur/LICENSE` in, commit `heft <version>`, push `master`. Check the
-result with a fresh clone, not the RPC or cgit, which lag by minutes. `heft-git` is pushed by
-hand: a tag changes nothing in a package whose `pkgver()` is `git describe`.
+result with a fresh clone, not the RPC or cgit, which lag by minutes.
+
+`heft-git` is pushed by hand: a tag changes nothing in a package whose `pkgver()` is `git describe`.
 
 ## Gates
 
@@ -397,8 +401,9 @@ on a busy host. It guards the `0a9ee0a` class of regression. Docker sock is
 optional in CI; grouping tests use `tests/fixtures/` via `tests/grouping.rs`.
 
 The gate is `cargo clippy --locked --all-targets -- -D warnings` at the
-default level plus the `[lints.clippy]` list in `Cargo.toml`. The wider groups
-are measured, not assumed, and the measurement is against that same
+default level plus the `[lints.clippy]` list in `Cargo.toml`.
+
+The wider groups are measured, not assumed, and the measurement is against that same
 `--all-targets` gate: with the list below in place, `pedantic` + `nursery` +
 `cargo` report 235 warnings across 23 lints, counted as clippy emits them for
 every target. 134 of those are the one nursery lint `redundant_pub_crate`
@@ -424,7 +429,9 @@ something real. `needless_pass_by_ref_mut`, `assigning_clones`,
 `psi::set_row` and `proc::WalkPool::collect` that never mutated, a clone
 assigned over a live `String` once a frame, a temporary formatted once a frame
 in `sixel::encode`. `use_self`, `missing_const_for_fn`, `doc_markdown` and
-`map_unwrap_or` followed, all of them machine-applicable. The four cast lints
+`map_unwrap_or` followed, all of them machine-applicable.
+
+The four cast lints
 — `cast_precision_loss`, `cast_possible_truncation`, `cast_possible_wrap`,
 `cast_sign_loss` — are the ones that earn their place: a claim that a cast is
 bounded lives as an `#[expect(..., reason = ...)]` at that site naming the

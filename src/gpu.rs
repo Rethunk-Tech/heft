@@ -5,13 +5,12 @@ use std::path::Path;
 
 use crate::types::{GpuCounters, sum_opt};
 
-/// Dri/drm symlink names select which fdinfo to read on every tick.
-/// `full_scan` (PSS / `--once`) used to walk every fdinfo when that
-/// prefilter was empty, so a GPU client whose fd name omitted dri/drm still
-/// appeared. That walk was ~318 ms of ~760 ms serial PSS-tick kernel work
-/// on 308 pids with no dri/drm fd; those clients now stay blank. A residual
-/// full walk still runs when the prefilter found fds but they yielded no
-/// GPU metrics.
+/// Dri/drm symlink names select which fdinfo to read on every tick. When
+/// that prefilter is empty, `full_scan` (PSS / `--once`) does not walk every
+/// fdinfo, so a GPU client whose fd name omits dri/drm stays blank: that walk
+/// measured ~318 ms of ~760 ms serial PSS-tick kernel work on 308 pids with no
+/// dri/drm fd. A full walk still runs when the prefilter finds fds but they
+/// yield no GPU metrics.
 pub(crate) fn read_pid(pid: u32, full_scan: bool) -> GpuCounters {
     let drm_fds = match drm_fd_nums(pid) {
         Err(e) if e.kind() == io::ErrorKind::PermissionDenied => return GpuCounters::default(),

@@ -855,9 +855,7 @@ impl Rules {
             identity: Some(identity),
             ..Facts::default()
         };
-        self.stages[&Stage::Placement]
-            .iter()
-            .find(|r| eval(&r.test, &f))
+        self.deciding(Stage::Placement, &f).first().copied()
     }
     #[must_use]
     pub fn container_owner(&self, name: &str) -> Option<u32> {
@@ -865,17 +863,23 @@ impl Rules {
             container: Some(name),
             ..Facts::default()
         };
-        self.stages[&Stage::Placement]
-            .iter()
-            .find(|r| eval(&r.test, &f))
+        self.deciding(Stage::Placement, &f)
+            .first()
             .and_then(|r| r.owner_uid)
     }
 
     /// Every rule of the stage that matches, in order (flag stages) or the
     /// first (identity stages): what `--explain` and `check` report.
+    ///
+    /// Placement is two lists by output kind: a container subject sees only
+    /// `owner_uid` rules and an identity only `fold_to`/`folder` rules. In one
+    /// list `{"not": {"container": "x"}}` holds for every identity, which has
+    /// no container, and shadowed every pin listed after it.
     #[must_use]
     pub fn deciding<'r>(&'r self, stage: Stage, f: &Facts) -> Vec<&'r Compiled> {
-        let it = self.stages[&stage].iter().filter(|r| eval(&r.test, f));
+        let it = self.stages[&stage]
+            .iter()
+            .filter(|r| r.owner_uid.is_some() == f.container.is_some() && eval(&r.test, f));
         match stage {
             Stage::Unit | Stage::Class => it.collect(),
             Stage::Session | Stage::App | Stage::Placement => it.take(1).collect(),
@@ -1248,6 +1252,36 @@ pub fn load_dir(
 mod tests {
     use super::*;
 
+    mod counting {
+        use std::alloc::{GlobalAlloc, Layout, System};
+        use std::cell::Cell;
+
+        // Per thread: `cargo test` runs other tests on other threads at the
+        // same time, and a global count would be counting theirs too.
+        thread_local! {
+            static COUNT: Cell<usize> = const { Cell::new(0) };
+        }
+
+        struct Counting;
+
+        unsafe impl GlobalAlloc for Counting {
+            unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+                let _ = COUNT.try_with(|c| c.set(c.get() + 1));
+                unsafe { System.alloc(layout) }
+            }
+            unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+                unsafe { System.dealloc(ptr, layout) }
+            }
+        }
+
+        #[global_allocator]
+        static GLOBAL: Counting = Counting;
+
+        pub fn allocations() -> usize {
+            COUNT.with(Cell::get)
+        }
+    }
+
     fn file(name: &str, text: &str) -> LoadedFile {
         LoadedFile {
             source: Source {
@@ -1288,39 +1322,250 @@ mod tests {
         assert!(!probe("c\u{e9}x"));
     }
 
+    /// Half a file loaded is a rule set nobody wrote, so every one of these
+    /// skips the whole file and leaves the others loaded.
     #[test]
-    fn an_empty_list_combinator_or_string_pattern_fails_the_file() {
+    fn a_file_outside_the_grammar_is_skipped_whole() {
         for text in [
+            "{ not json",
+            r#"{"stage":"class","rules":[{"id":"a","match":{},"classes":["noise"]}]}"#,
+            r#"{"stage":"class","rules":[{"id":"a","match":{"name":"x","exe_prefix":"/x"},"classes":["noise"]}]}"#,
+            r#"{"stage":"class","rules":[{"id":"a","match":{"name":1},"classes":["noise"]}]}"#,
             r#"{"stage":"class","rules":[{"id":"a","match":{"name":[]},"classes":["noise"]}]}"#,
             r#"{"stage":"class","rules":[{"id":"a","match":{"all":[]},"classes":["noise"]}]}"#,
             r#"{"stage":"class","rules":[{"id":"a","match":{"name_prefix":""},"classes":["noise"]}]}"#,
+            r#"{"stage":"class","rules":[{"id":"A","match":{"name":"x"},"classes":["noise"]}]}"#,
+            r#"{"stage":"class","rules":[{"id":"a","match":{"name":"x"},"classes":["noise"]},{"id":"a","match":{"name":"y"},"classes":["noise"]}]}"#,
+            r#"{"stage":"class","rules":[{"id":"a","match":{"name":"x"},"classes":["nope"]}]}"#,
+            r#"{"stage":"class","rules":[{"id":"a","match":{"name":"x"},"identity":"x"}]}"#,
+            r#"{"stage":"session","rules":[{"id":"a","match":{"name":"x"},"identity":"x"}]}"#,
+            r#"{"stage":"class","rules":[{"id":"a","match":{"script":"x"},"classes":["generic"]}]}"#,
+            r#"{"stage":"session","rules":[{"id":"a","match":{"identity":"x"},"identity":"x","folder":"applications"}]}"#,
+            r#"{"stage":"placement","rules":[{"id":"a","match":{"container":"x"},"owner_uid":1,"folder":"applications"}]}"#,
+            r#"{"stage":"class","disable":["x"],"rules":[]}"#,
+            r#"{"stage":"class","disable":["a/b.json"],"rules":[]}"#,
+            r#"{"stage":"class","rules":[],"examples":[{"comm":"x"}]}"#,
+            r#"{"stage":"class","rules":[],"examples":[{"cmdline":["x"],"expect":null}]}"#,
+            r#"{"stage":"class","rules":[],"examples":[{"comm":"x","pid":"1","expect":null}]}"#,
         ] {
-            let r = Rules::from_files(vec![file("90-a.json", text)]);
+            let r = with_builtins(vec![file("90-a.json", text)]);
             assert_eq!(r.problems.len(), 1, "{text}");
+            assert_eq!(r.count(Stage::Session), 18, "the rest still load: {text}");
         }
     }
 
     #[test]
-    fn an_example_without_expect_fails_the_file() {
+    fn every_string_test_folds_ascii_case_on_both_sides() {
+        const TESTS: [&str; 17] = [
+            "name",
+            "name_prefix",
+            "name_suffix",
+            "name_contains",
+            "exe_prefix",
+            "exe_suffix",
+            "exe_contains",
+            "arg_prefix",
+            "arg_contains",
+            "cgroup_contains",
+            "unit",
+            "unit_prefix",
+            "unit_suffix",
+            "unit_contains",
+            "script",
+            "identity",
+            "container",
+        ];
+        for key in TESTS {
+            let (stage, output) = match key {
+                "script" => (Stage::Class, r#""classes":["anonymous_script"]"#),
+                "identity" => (Stage::Placement, r#""folder":"applications""#),
+                "container" => (Stage::Placement, r#""owner_uid":1"#),
+                _ => (Stage::Class, r#""classes":["noise"]"#),
+            };
+            let name = if stage == Stage::Class {
+                "class"
+            } else {
+                "placement"
+            };
+            let r = Rules::from_files(vec![file(
+                "10-x.json",
+                &format!(
+                    r#"{{"stage":"{name}","rules":[{{"id":"t","match":{{"{key}":"{}"}},{output}}}]}}"#,
+                    if key == "container" { "abc" } else { "ABC" }
+                ),
+            )]);
+            assert!(r.problems.is_empty(), "{key}: {:?}", r.problems);
+            for (hay, hit) in [("abc", true), ("ABC", true), ("abd", false)] {
+                let argv = [hay.to_string()];
+                let f = Facts {
+                    comm: hay,
+                    name: hay,
+                    exe: Some(hay),
+                    argv: &argv,
+                    cgroup: hay,
+                    unit: Some(hay),
+                    script: Some(hay),
+                    identity: (key != "container").then_some(hay),
+                    container: (key == "container").then_some(hay),
+                };
+                assert_eq!(r.deciding(stage, &f).len() == 1, hit, "{key} on {hay}");
+            }
+        }
+    }
+
+    #[test]
+    fn lists_all_any_and_not_compose_and_flag_stages_union() {
         let r = Rules::from_files(vec![file(
-            "90-a.json",
-            r#"{"stage":"class","rules":[],"examples":[{"comm":"x"}]}"#,
+            "10-x.json",
+            r#"{"stage":"class","rules":[
+                {"id":"list","match":{"name":["a","b"]},"classes":["shell"]},
+                {"id":"both","match":{"all":[{"name":"b"},{"any":[{"exe_suffix":"/b"},{"arg_prefix":"--x"}]}]},"classes":["terminal"]},
+                {"id":"no-exe","match":{"not":{"exe_prefix":"/usr"}},"classes":["noise"]}]}"#,
         )]);
-        assert_eq!(r.problems.len(), 1);
-        assert!(
-            r.problems[0].what.contains("expect"),
-            "{}",
-            r.problems[0].what
+        let classes = |comm: &str, exe: Option<&str>, argv: &[String]| {
+            r.classes(&Facts {
+                comm,
+                name: comm,
+                exe,
+                argv,
+                ..Facts::default()
+            })
+            .names()
+        };
+        assert_eq!(classes("a", Some("/usr/bin/a"), &[]), ["shell"]);
+        assert_eq!(classes("b", Some("/usr/bin/b"), &[]), ["shell", "terminal"]);
+        assert_eq!(
+            classes("b", None, &["--xy".into()]),
+            ["shell", "terminal", "noise"],
+            "a `not` over a fact the process lacks is a hit"
         );
     }
 
     #[test]
-    fn a_placement_rule_mixing_owner_uid_with_fold_or_folder_fails_the_file() {
+    fn identity_stages_take_the_first_match_by_source_then_bytewise_name() {
+        let rule = |id: &str| {
+            format!(
+                r#"{{"stage":"app","rules":[{{"id":"{id}","match":{{"name":"x"}},"identity":"{id}"}}]}}"#
+            )
+        };
+        let mut etc = file("10-a.json", &rule("etc"));
+        etc.source.rank = 1;
+        let r = Rules::from_files(vec![
+            etc,
+            file("9-b.json", &rule("nine")),
+            file("10-c.json", &rule("ten")),
+        ]);
+        let f = Facts {
+            comm: "x",
+            name: "x",
+            ..Facts::default()
+        };
+        assert_eq!(r.app(&f), Some("ten"));
+    }
+
+    #[test]
+    fn a_container_rule_cannot_shadow_an_identity_pin() {
         let r = Rules::from_files(vec![file(
             "90-a.json",
-            r#"{"stage":"placement","rules":[{"id":"a","match":{"container":"x"},"owner_uid":1,"folder":"applications"}]}"#,
+            r#"{"stage":"placement","rules":[
+                {"id":"own","match":{"not":{"container":"x"}},"owner_uid":1},
+                {"id":"pin","match":{"identity":"htop"},"folder":"user_services"},
+                {"id":"not-y","match":{"not":{"identity":"y"}},"folder":"applications"},
+                {"id":"own-c","match":{"container":"c"},"owner_uid":7}]}"#,
         )]);
-        assert_eq!(r.problems.len(), 1);
+        assert_eq!(r.placement("htop").map(|c| c.id.as_str()), Some("pin"));
+        assert_eq!(
+            r.container_owner("c"),
+            Some(1),
+            "first owner rule, not the `not-y` pin"
+        );
+        assert_eq!(r.container_owner("x"), None);
+    }
+
+    #[test]
+    fn a_fixture_row_is_an_example_subject_and_an_explicit_unit_wins() {
+        let r = Rules::from_files(vec![file(
+            "90-a.json",
+            r#"{"stage":"unit","rules":[{"id":"svc","match":{"unit":"a.service"},"flags":["service"]}],
+               "examples":[{"pid":1,"ppid":0,"pgrp":1,"uid":1000,"comm":"x","exe":"/usr/bin/x",
+                 "cmdline":["x"],"kthread":false,"utime":1,"stime":2,
+                 "cgroup":"0::/user.slice/user-1000.slice/user@1000.service/app.slice/b.service",
+                 "unit":"a.service","expect":{"flags":["service"]}}]}"#,
+        )]);
+        assert!(r.problems.is_empty(), "{:?}", r.problems);
+        assert!(r.check().is_empty(), "{:?}", r.check());
+    }
+
+    #[test]
+    fn a_rules_directory_reads_json_files_and_what_links_to_them() {
+        use std::os::unix::fs::{PermissionsExt, symlink};
+        let dir = std::env::temp_dir().join(format!("heft-rules-dir-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("d.json")).unwrap();
+        for n in ["a.json", "b.jsonc", "C.JSON", "target", "locked.json"] {
+            std::fs::write(dir.join(n), "{}").unwrap();
+        }
+        symlink(dir.join("target"), dir.join("link.json")).unwrap();
+        symlink(dir.join("gone"), dir.join("dangling.json")).unwrap();
+        std::fs::set_permissions(dir.join("locked.json"), PermissionsExt::from_mode(0o000))
+            .unwrap();
+        // Root reads through mode 0, so the warning is only owed where it bites.
+        let locked = std::fs::read(dir.join("locked.json")).is_err();
+        let read = |path: &std::path::Path| {
+            let mut warnings = vec![];
+            let mut names: Vec<String> = load_dir(path, &Source::builtin(), &mut warnings)
+                .into_iter()
+                .map(|f| f.name)
+                .collect();
+            names.sort();
+            (names, warnings.len())
+        };
+        let want: Vec<&str> = if locked {
+            vec!["a.json", "link.json"]
+        } else {
+            vec!["a.json", "link.json", "locked.json"]
+        };
+        let linked = dir.with_extension("link");
+        let _ = std::fs::remove_file(&linked);
+        symlink(&dir, &linked).unwrap();
+        let (names, warned) = read(&dir);
+        let (through_link, _) = read(&linked);
+        let (missing, missing_warned) = read(&dir.join("absent"));
+        std::fs::remove_file(&linked).ok();
+        std::fs::remove_dir_all(&dir).ok();
+        assert_eq!(names, want);
+        assert_eq!(warned, usize::from(locked));
+        assert_eq!(through_link, want, "a symlinked rules.d is read");
+        assert!(
+            missing.is_empty() && missing_warned == 0,
+            "a missing directory is silent"
+        );
+    }
+
+    #[test]
+    fn evaluation_allocates_nothing() {
+        let r = Rules::builtin();
+        let argv = [
+            "/usr/bin/gjs".to_string(),
+            "/usr/share/gnome-shell/org.gnome.Shell.Notifications".into(),
+        ];
+        let f = Facts {
+            comm: "gjs",
+            name: "gjs-console",
+            exe: Some("/usr/bin/gjs-console"),
+            argv: &argv,
+            cgroup: "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-x.scope",
+            unit: Some("app-org.chromium.Chromium-1.scope"),
+            ..Facts::default()
+        };
+        let before = counting::allocations();
+        let session = r.session(&f).is_some();
+        let app = r.app(&f).is_some();
+        let classes = r.classes(&f).0;
+        let lying = r.unit_flags("app-org.chromium.Chromium-1.scope").lying();
+        let allocated = counting::allocations() - before;
+        assert!(session && !app && classes == 0 && lying);
+        assert_eq!(allocated, 0);
     }
 
     #[test]

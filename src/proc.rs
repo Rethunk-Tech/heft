@@ -153,7 +153,12 @@ fn walk_worker(job_rx: mpsc::Receiver<WalkJob>, result_tx: mpsc::Sender<WalkChun
     }
 }
 
-fn read_pid(pid: u32, want_pss: bool, want_swap: bool, prev: Option<&Process>) -> Option<Process> {
+pub(crate) fn read_pid(
+    pid: u32,
+    want_pss: bool,
+    want_swap: bool,
+    prev: Option<&Process>,
+) -> Option<Process> {
     let base = format!("{}/proc/{pid}", crate::root::prefix());
     let stat = fs::read_to_string(format!("{base}/stat")).ok()?;
     let parsed = parse_stat(&stat)?;

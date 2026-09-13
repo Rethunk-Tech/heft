@@ -51,6 +51,11 @@ A unix:// socket is tried before /var/run/docker.sock and the Podman sockets.
 \\fBXDG_CONFIG_HOME\\fR
 Where view.json and the user rules.d live. Defaults to ~/.config.
 .TP
+\\fBHEFT_RULES_PATH\\fR
+Colon\\-separated rules.d directories, earlier entries winning, read instead
+of the XDG and /etc directories. The built\\-in rules still load last. Set but
+empty means built\\-ins only.
+.TP
 \\fBLC_ALL\\fR, \\fBLC_CTYPE\\fR, \\fBLANG\\fR
 Read in that order by \\fB\\-\\-glyphs auto\\fR: block characters only when one
 of them names a UTF\\-8 charmap, ASCII substitutes otherwise.

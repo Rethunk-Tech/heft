@@ -104,11 +104,7 @@ fn with_user(text: &str) -> Rules {
         name: "90-mine.json".into(),
         text: text.into(),
     }];
-    files.extend(heft::rules::BUILTIN.iter().map(|(n, t)| LoadedFile {
-        source: Source::builtin(),
-        name: (*n).to_string(),
-        text: (*t).to_string(),
-    }));
+    files.extend(heft::rules::builtin_files());
     let r = Rules::from_files(files);
     assert!(r.problems.is_empty(), "{:?}", r.problems);
     r

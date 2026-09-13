@@ -25,11 +25,12 @@ fn main() -> ExitCode {
     // got, and surfacing that at the end of a `/proc` walk would burn a whole
     // `--interval` first. Non-zero, and no quiet fall back to `--once`, which
     // would surprise anyone piping heft expecting a TUI.
-    // `--explain` and `--fixture` write to stdout like the other two, so they
-    // are exempt for the same reason: they are not the TUI.
+    // `--explain`, `--fixture` and `--check-rules` write to stdout like the
+    // other two, so they are exempt for the same reason: they are not the TUI.
     if !cli.once
         && !cli.json
         && !cli.fixture
+        && !cli.check_rules
         && cli.explain.is_none()
         && !std::io::stdout().is_terminal()
     {
@@ -37,6 +38,19 @@ fn main() -> ExitCode {
             "heft: the TUI needs a terminal on stdout. Use --once for one table, or --json for one JSON document."
         );
         return ExitCode::FAILURE;
+    }
+    // Before any sampling: it reads rule files and nothing else, so it runs
+    // in a container with no `/proc` worth walking and no docker socket.
+    if cli.check_rules {
+        return match heft::rules::print_check() {
+            Ok(true) => ExitCode::SUCCESS,
+            Err(e) if is_broken_pipe(e.as_ref()) => ExitCode::SUCCESS,
+            Ok(false) => ExitCode::FAILURE,
+            Err(e) => {
+                eprintln!("{e}");
+                ExitCode::FAILURE
+            }
+        };
     }
     // Before any read, and once, for the same reason `glyph` is: it cannot
     // change while heft runs. A missing root is a usage error rather than a

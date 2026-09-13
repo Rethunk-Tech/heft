@@ -1,33 +1,30 @@
-//! `--explain <PID>`: where a process landed in the tree, and the key that
-//! moves it.
+//! `--explain <PID>`: where a process landed in the tree, the identity a
+//! placement rule keys on, and what each rules stage made of the process.
 //!
-//! `grouping.json` is keyed on "the identities the tree shows you", and until
-//! this existed there was no way to read one off a running heft. The rules
-//! behind an identity are the largest thing in the codebase -- launchers,
-//! workers, `lying_unit`, `generic_fallback`, `session_helper_ident`, folder
-//! placement -- and the TUI's `i` pane shows a process's cgroup, exe and
-//! cmdline but never what any of that resolved to. So writing an override
-//! meant guessing the key, and a wrong guess is silent: an identity that
-//! matches nothing is simply never consulted.
+//! A placement rule is keyed on the identities the tree shows, and a wrong key
+//! is silent: an identity that matches nothing is simply never consulted. The
+//! TUI's `i` pane shows a process's cgroup, exe and cmdline but never what any
+//! of that resolved to, so this is where the key is read off.
 //!
-//! It reports the resolved placement rather than narrating the rules that got
-//! there. The verdict is what a user needs to write the file, the rules are
-//! what `AGENTS.md` is for, and a reason string threaded through grouping
-//! would be paid for on every process of every tick to serve one invocation.
+//! The per-stage lines are a second, traced evaluation of the same rules, run
+//! only here. The tree's verdict also comes from ancestor walks no single
+//! stage sees, and a reason string threaded through grouping would be paid
+//! for on every process of every tick to serve one invocation.
 
 use std::time::Duration;
 
 use crate::proc;
-use crate::types::{Error, HostTree, IdentNode, ProcNode};
+use crate::rules::{Facts, Rules, Stage};
+use crate::types::{Error, HostTree, IdentNode, ProcNode, Process};
 
 /// Where in the tree a pid turned up.
 struct Found {
     /// Host → user → folder, as the tree draws it.
     path: String,
-    /// The identity row's title: the grouping.json key.
+    /// The identity row's title: the key a placement rule matches.
     ident: String,
-    /// The `applications` / `user_services` list an override would use, or
-    /// `None` where no override can reach the row.
+    /// The folder a placement rule would pin, or `None` where no rule can
+    /// reach the row.
     pinnable: Option<&'static str>,
     instance: String,
     siblings: usize,
@@ -81,8 +78,8 @@ fn locate(tree: &HostTree, pid: u32) -> Option<Found> {
                 Some("user_services"),
             )
         })
-        // A container row ignores every override, the same rule the grouping
-        // code applies: `override_place` cannot move one.
+        // A container row ignores every placement rule, the same rule the
+        // grouping code applies: `override_place` cannot move one.
         .or_else(|| hit(&u.containers, format!("Host → {who} → Containers"), None))
         {
             return Some(f);
@@ -90,6 +87,73 @@ fn locate(tree: &HostTree, pid: u32) -> Option<Found> {
     }
     hit(&tree.containers, "Host → Containers".into(), None)
         .or_else(|| hit(&tree.system, "Host → System".into(), None))
+}
+
+/// One line per stage naming the rule that decided it, `no match`, or `none`
+/// for a stage with no rules. It says what each stage makes of this process,
+/// not why the tree placed it: a session rule can match a process a container
+/// scope took first, and `placed` is the tree's verdict.
+fn trace(rules: &Rules, p: Option<&Process>, ident: &str) -> Vec<String> {
+    let Some(p) = p else {
+        return vec!["  rules     (process gone)".to_string()];
+    };
+    let unit = crate::identity::user_unit(&p.cgroup);
+    let process = Facts {
+        comm: &p.comm,
+        name: crate::classify::name_ref(p),
+        exe: p.exe.as_deref(),
+        argv: &p.cmdline,
+        cgroup: &p.cgroup,
+        unit: unit.as_deref(),
+        ..Facts::default()
+    };
+    let stages = [
+        (
+            Stage::Unit,
+            "unit",
+            Facts {
+                unit: unit.as_deref(),
+                ..Facts::default()
+            },
+        ),
+        (Stage::Class, "class", process),
+        (Stage::Session, "session", process),
+        (Stage::App, "app", process),
+        (
+            Stage::Placement,
+            "placement",
+            Facts {
+                identity: Some(ident),
+                ..Facts::default()
+            },
+        ),
+    ];
+    let mut out = Vec::new();
+    for (stage, label, f) in &stages {
+        let hits = rules.deciding(*stage, f);
+        let verdicts: Vec<String> = if rules.is_empty(*stage) {
+            vec!["none".into()]
+        } else if hits.is_empty() {
+            vec!["no match".into()]
+        } else {
+            hits.iter()
+                .map(|r| {
+                    let origin = if r.source.rank == usize::MAX {
+                        format!("built-in {}", r.name())
+                    } else {
+                        format!("{}/{}", r.source.label, r.name())
+                    };
+                    format!("{origin} -> {}", r.outputs())
+                })
+                .collect()
+        };
+        for (j, v) in verdicts.iter().enumerate() {
+            let lead = if out.is_empty() { "rules" } else { "" };
+            let label = if j == 0 { *label } else { "" };
+            out.push(format!("  {lead:<9} {label:<10} {v}"));
+        }
+    }
+    out
 }
 
 /// # Errors
@@ -141,13 +205,12 @@ pub fn run(pid: u32, interval: Duration) -> Result<(), Error> {
         if f.siblings == 1 { "" } else { "es" }
     );
 
-    let rules = crate::rules::Rules::load();
-    println!(
-        "  placement {}",
-        rules
-            .placement(&f.ident)
-            .map_or_else(|| "no match".to_string(), |r| r.name())
-    );
+    // Re-read rather than carried on the tree: the tree has no per-process
+    // facts, and a pid that exited since the sample says so here.
+    let p = proc::read_pid(pid, false, false, None);
+    for line in trace(Rules::load(), p.as_ref(), &f.ident) {
+        println!("{line}");
+    }
 
     println!();
     match f.pinnable {
@@ -226,10 +289,42 @@ mod tests {
     }
 
     #[test]
-    fn a_pid_resolves_to_the_identity_that_is_the_override_key() {
+    fn trace_names_the_deciding_rule_per_stage() {
+        let kicker = Process {
+            comm: "kicker".into(),
+            exe: Some("/opt/trinity/bin/tdeinit".into()),
+            ..Process::default()
+        };
+        let lines = trace(&Rules::builtin(), Some(&kicker), "tdeinit");
+        let line = |stage: &str| {
+            lines
+                .iter()
+                .find(|l| l.split_whitespace().any(|w| w == stage))
+                .cloned()
+                .unwrap_or_default()
+        };
+        assert!(
+            line("session")
+                .ends_with("built-in 40-trinity.json:trinity-session -> tdeinit user_services"),
+            "{lines:#?}"
+        );
+        assert!(line("unit").ends_with("no match"), "{lines:#?}");
+        assert!(line("placement").ends_with("none"), "{lines:#?}");
+        assert!(lines[0].starts_with("  rules     unit"), "{lines:#?}");
+        assert_eq!(
+            trace(&Rules::builtin(), None, "x"),
+            ["  rules     (process gone)"]
+        );
+    }
+
+    #[test]
+    fn a_pid_resolves_to_the_identity_that_is_the_placement_key() {
         let tree = tree_with(user(vec![ident("cursor", &[10, 11])], Vec::new()), vec![]);
         let f = locate(&tree, 11).expect("found");
-        assert_eq!(f.ident, "cursor", "the row title, which is the json key");
+        assert_eq!(
+            f.ident, "cursor",
+            "the row title, which is the placement key"
+        );
         assert_eq!(f.path, "Host → nomad (1000) → Applications");
         assert_eq!(f.pinnable, Some("applications"));
         assert_eq!(f.siblings, 2);
@@ -242,7 +337,7 @@ mod tests {
         assert_eq!(f.pinnable, Some("user_services"));
     }
 
-    /// An override naming a System or Containers row is ignored by the
+    /// A placement rule naming a System or Containers row is ignored by the
     /// grouping code, so `--explain` must not offer a key that does nothing.
     #[test]
     fn a_system_row_is_reported_as_unmovable() {

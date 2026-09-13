@@ -623,3 +623,141 @@ fn a_pid_vanishing_mid_walk_is_skipped_not_fatal() {
         "the table still needs its Host row"
     );
 }
+
+/// A directory of this test's own under the temp dir, emptied first.
+fn scratch(name: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("heft-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("scratch dir");
+    dir
+}
+
+/// The row a `--json` run billed heft itself to, and what it wrote to stderr.
+fn own_row(mut cmd: std::process::Command) -> (String, String) {
+    let child = cmd
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn heft --json");
+    let pid = u64::from(child.id());
+    let out = child.wait_with_output().expect("wait for heft --json");
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    assert!(
+        out.status.success(),
+        "heft --json exited {}: {stderr}",
+        out.status
+    );
+    let doc: Value = serde_json::from_slice(&out.stdout).expect("--json emits valid JSON");
+    let row = placement(&doc["host"])
+        .remove(&pid)
+        .expect("heft must see its own pid");
+    (row, stderr)
+}
+
+/// `HEFT_RULES_PATH` replaces the XDG and `/etc` directories, which is what
+/// keeps a developer's own rules out of every other binary-driven test; a
+/// leftover grouping.json is named once on stderr and never parsed.
+#[test]
+fn heft_rules_path_replaces_the_rules_directories() {
+    let dir = scratch("rules-path");
+    let rules = dir.join("heft/rules.d");
+    std::fs::create_dir_all(&rules).expect("rules.d");
+    std::fs::write(
+        rules.join("90-mine.json"),
+        r#"{"stage":"placement","rules":[{"id":"pin","match":{"identity":"heft"},"folder":"user_services"}]}"#,
+    )
+    .expect("write rule");
+    std::fs::write(dir.join("heft/grouping.json"), "{ not even json").expect("grouping.json");
+    let run = |isolated: bool| {
+        let mut cmd = heft(&["--json", "--interval", FAST]);
+        cmd.env("XDG_CONFIG_HOME", &dir);
+        if !isolated {
+            cmd.env_remove("HEFT_RULES_PATH");
+        }
+        own_row(cmd)
+    };
+    let (kept, stderr) = run(true);
+    let (moved, _) = run(false);
+    std::fs::remove_dir_all(&dir).ok();
+
+    let lines: Vec<&str> = stderr.lines().collect();
+    assert!(
+        lines.len() == 1 && lines[0].contains("grouping.json") && lines[0].contains("HUMANS.md"),
+        "one warning naming the file and where its replacement is documented: {stderr}"
+    );
+    // Where heft's own cgroup puts it is the sandbox's business: a container
+    // scope is a Containers row, and no placement rule moves one.
+    if kept.contains("/applications/") {
+        assert!(moved.contains("/user_services/"), "{kept} -> {moved}");
+    }
+}
+
+/// Reads rule files and no `/proc`, so it holds in the bare container too.
+#[test]
+fn check_rules_passes_the_built_ins_and_fails_a_wrong_user_example() {
+    let out = heft(&["--check-rules"])
+        .output()
+        .expect("run heft --check-rules");
+    assert!(
+        out.status.success(),
+        "the built-in examples fail: {}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+
+    let dir = scratch("check-rules");
+    std::fs::write(
+        dir.join("90-mine.json"),
+        r#"{"stage":"placement","rules":[{"id":"pin","match":{"identity":"x"},"folder":"applications"}],
+           "examples":[{"identity":"x","expect":{"rule":"pin","folder":"user_services"}}]}"#,
+    )
+    .expect("write rule");
+    let out = heft(&["--check-rules"])
+        .env("HEFT_RULES_PATH", &dir)
+        .output()
+        .expect("run heft --check-rules");
+    std::fs::remove_dir_all(&dir).ok();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(out.status.code(), Some(1), "{stdout}");
+    assert!(stdout.contains("90-mine.json:pin#0"), "{stdout}");
+
+    let usage = heft(&["--check-rules", "--once"])
+        .output()
+        .expect("run heft --check-rules --once");
+    assert_eq!(
+        usage.status.code(),
+        Some(2),
+        "a flag conflict is a usage error"
+    );
+}
+
+/// The trace names the user rule that matches the identity `--explain`
+/// itself reports, read off a first run so the test names no application.
+#[test]
+fn explain_names_the_placement_rule_for_its_identity() {
+    let me = std::process::id().to_string();
+    let explain = |cmd: &mut std::process::Command| {
+        String::from_utf8_lossy(&cmd.output().expect("run heft --explain").stdout).into_owned()
+    };
+    let first = explain(&mut heft(&["--explain", &me, "--interval", FAST]));
+    let ident = first
+        .lines()
+        .find_map(|l| l.trim_start().strip_prefix("identity"))
+        .map_or_else(
+            || panic!("--explain printed no identity for this test: {first}"),
+            str::trim,
+        );
+
+    let dir = scratch("explain");
+    let rule = serde_json::json!({"stage": "placement", "rules": [
+        {"id": "pin", "match": {"identity": ident}, "folder": "applications"}]});
+    std::fs::write(dir.join("90-mine.json"), rule.to_string()).expect("write rule");
+    let second =
+        explain(heft(&["--explain", &me, "--interval", FAST]).env("HEFT_RULES_PATH", &dir));
+    std::fs::remove_dir_all(&dir).ok();
+    assert!(
+        second
+            .lines()
+            .any(|l| l.contains("placement") && l.ends_with("90-mine.json:pin -> applications")),
+        "{second}"
+    );
+}

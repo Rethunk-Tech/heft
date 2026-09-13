@@ -300,6 +300,23 @@ impl Compiled {
     pub fn name(&self) -> String {
         format!("{}:{}", self.file, self.id)
     }
+    /// What the rule decides, for `--explain`: `tdeinit user_services`, `shell`.
+    #[must_use]
+    pub fn outputs(&self) -> String {
+        let mut v: Vec<String> = self.identity.iter().cloned().collect();
+        v.extend(self.fold_to.iter().map(|k| format!("fold_to {k}")));
+        v.extend(self.folder.map(|f| {
+            match f {
+                FolderName::Applications => "applications",
+                FolderName::UserServices => "user_services",
+            }
+            .to_string()
+        }));
+        v.extend(self.owner_uid.map(|u| format!("owner_uid {u}")));
+        v.extend(self.classes.names().into_iter().map(str::to_string));
+        v.extend(self.flags.names().into_iter().map(str::to_string));
+        v.join(" ")
+    }
 }
 
 /// Where a file came from. Lower `rank` wins: `HEFT_RULES_PATH` index, or 0
@@ -362,7 +379,55 @@ pub struct Rules {
     pub warnings: Vec<String>,
     /// Files that compiled, with their examples, for `check`.
     files: Vec<(Source, String, Stage, Vec<Example>)>,
-    pub disabled: HashSet<String>,
+    /// Every `disable` entry, with the file and source label that carried it.
+    disabled: BTreeMap<String, (String, String)>,
+}
+
+/// What `--check-rules` found: the lines it prints and the summary counts.
+pub struct Report {
+    pub lines: Vec<String>,
+    pub examples: usize,
+    pub files: usize,
+    pub failed: usize,
+    pub overridden: usize,
+    pub disabled: usize,
+}
+
+/// The embedded `rules.d` as loader input.
+pub fn builtin_files() -> impl Iterator<Item = LoadedFile> {
+    BUILTIN.iter().map(|(name, text)| LoadedFile {
+        source: Source::builtin(),
+        name: (*name).to_string(),
+        text: (*text).to_string(),
+    })
+}
+
+fn example_name(file: &str, ex: &Example, i: usize, source: &Source) -> String {
+    match ex.expect.as_ref().and_then(|e| e.rule.as_deref()) {
+        Some(rule) => format!("{file}:{rule}#{i} ({})", source.label),
+        None => format!("{file}#{i} ({})", source.label),
+    }
+}
+
+/// `--check-rules`: every loaded file's examples, one line per failure or
+/// difference, then a summary. `Ok(false)` means exit 1.
+///
+/// # Errors
+///
+/// Returns an error if stdout cannot be written.
+pub fn print_check() -> Result<bool, crate::types::Error> {
+    use std::io::Write;
+    let r = Rules::load().report(&Rules::builtin());
+    let mut out = std::io::stdout().lock();
+    for l in &r.lines {
+        writeln!(out, "{l}")?;
+    }
+    writeln!(
+        out,
+        "{} examples in {} files: {} failed, {} overridden, {} disabled",
+        r.examples, r.files, r.failed, r.overridden, r.disabled
+    )?;
+    Ok(r.failed == 0)
 }
 
 fn id_ok(id: &str) -> bool {
@@ -633,11 +698,7 @@ impl Rules {
                     files.extend(load_dir(&path, &source, &mut warnings));
                 }
             }
-            files.extend(BUILTIN.iter().map(|(name, text)| LoadedFile {
-                source: Source::builtin(),
-                name: (*name).to_string(),
-                text: (*text).to_string(),
-            }));
+            files.extend(builtin_files());
             let mut r = Self::from_files(files);
             r.warnings.splice(0..0, warnings);
             for p in &r.problems {
@@ -655,16 +716,7 @@ impl Rules {
     /// same table under `cargo test`.
     #[must_use]
     pub fn builtin() -> Self {
-        let r = Self::from_files(
-            BUILTIN
-                .iter()
-                .map(|(name, text)| LoadedFile {
-                    source: Source::builtin(),
-                    name: (*name).to_string(),
-                    text: (*text).to_string(),
-                })
-                .collect(),
-        );
+        let r = Self::from_files(builtin_files().collect());
         assert!(r.problems.is_empty(), "built-in rules: {:?}", r.problems);
         r
     }
@@ -688,12 +740,16 @@ impl Rules {
             (&a.source.rank, a.name.as_bytes()).cmp(&(&b.source.rank, b.name.as_bytes()))
         });
         // A file that failed to compile is skipped whole, `disable` included.
-        let disabled: HashSet<String> = units
-            .iter()
-            .flat_map(|u| u.disable.iter().cloned())
-            .collect();
+        let mut disabled: BTreeMap<String, (String, String)> = BTreeMap::new();
+        for u in &units {
+            for d in &u.disable {
+                disabled
+                    .entry(d.clone())
+                    .or_insert_with(|| (u.name.clone(), u.source.label.clone()));
+            }
+        }
         let mut warnings = vec![];
-        for d in &disabled {
+        for d in disabled.keys() {
             let names_something = units.iter().any(|u| match d.split_once(':') {
                 None => u.name == *d,
                 Some((f, id)) => u.name == f && u.rules.iter().any(|r| r.id == id),
@@ -709,7 +765,7 @@ impl Rules {
             let rules: Vec<Compiled> = u
                 .rules
                 .into_iter()
-                .filter(|r| !disabled.contains(&r.file) && !disabled.contains(&r.name()))
+                .filter(|r| !disabled.contains_key(&r.file) && !disabled.contains_key(&r.name()))
                 .collect();
             stages
                 .get_mut(&u.stage)
@@ -831,48 +887,88 @@ impl Rules {
         self.files.iter().map(|f| f.3.len()).sum()
     }
 
-    /// Run every loaded file's examples. `strict` fails every difference;
-    /// otherwise an example a higher source decided prints `overridden by`
-    /// and one whose rule a `disable` removed prints `disabled`.
+    /// Every loaded file's examples against this set, one line per failure.
+    /// `cargo test` holds the built-in set to an empty result.
     #[must_use]
-    pub fn check(&self, strict: bool) -> Vec<String> {
+    pub fn check(&self) -> Vec<String> {
         let mut out = vec![];
         for (source, file, stage, examples) in &self.files {
             for (i, ex) in examples.iter().enumerate() {
-                let rule_label = ex
-                    .expect
-                    .as_ref()
-                    .and_then(|e| e.rule.clone())
-                    .unwrap_or_else(|| "-".into());
-                let name = format!("{file}:{rule_label}#{i} ({})", source.label);
                 let owned = subject_facts(ex, *stage);
-                let f = owned.facts();
-                let hits = self.deciding(*stage, &f);
-                let fails = judge(ex, &hits, file);
-                if fails.is_empty() {
-                    continue;
-                }
-                let overridden = !strict && hits.iter().any(|r| r.source.rank < source.rank);
-                let disabled_expect = !strict
-                    && ex.expect.as_ref().is_some_and(|e| {
-                        e.rule.iter().chain(e.rules.iter().flatten()).any(|r| {
-                            let q = qualify(file, r);
-                            self.disabled.contains(&q)
-                                || q.split(':')
-                                    .next()
-                                    .is_some_and(|fname| self.disabled.contains(fname))
-                        })
-                    });
-                if overridden {
-                    out.push(format!("{name}: overridden by {}", hits[0].name()));
-                } else if disabled_expect {
-                    out.push(format!("{name}: disabled"));
-                } else {
-                    out.push(format!("{name}: FAIL {}", fails.join("; ")));
+                let fails = judge(ex, &self.deciding(*stage, &owned.facts()), file);
+                if !fails.is_empty() {
+                    let name = example_name(file, ex, i, source);
+                    out.push(format!("{name}: {}", fails.join("; ")));
                 }
             }
         }
         out
+    }
+
+    /// `--check-rules` over this merged set. A built-in example is judged
+    /// against `builtin` alone, where a failure is a bug in the binary, and
+    /// against this set only to say what a user file changed: `overridden by`
+    /// when a higher source decided it, `disabled by` when a `disable` removed
+    /// the rule. Neither fails: judged against the merged set alone, one
+    /// `disable` of `40-trinity.json` failed 14 of that file's 18 examples.
+    #[must_use]
+    pub fn report(&self, builtin: &Self) -> Report {
+        let mut r = Report {
+            lines: vec![],
+            examples: 0,
+            files: self.files.len() + self.problems.len(),
+            failed: 0,
+            overridden: 0,
+            disabled: 0,
+        };
+        for p in &self.problems {
+            r.failed += 1;
+            r.lines
+                .push(format!("{} ({}): {}", p.file, p.source.label, p.what));
+        }
+        for (source, file, stage, examples) in &self.files {
+            let is_builtin = source.rank == usize::MAX;
+            for (i, ex) in examples.iter().enumerate() {
+                r.examples += 1;
+                let name = example_name(file, ex, i, source);
+                let owned = subject_facts(ex, *stage);
+                let f = owned.facts();
+                let hits = self.deciding(*stage, &f);
+                let merged = judge(ex, &hits, file);
+                let decided = if is_builtin {
+                    judge(ex, &builtin.deciding(*stage, &f), file)
+                } else {
+                    merged.clone()
+                };
+                if !decided.is_empty() {
+                    r.failed += 1;
+                    r.lines.push(format!("{name}: {}", decided.join("; ")));
+                } else if merged.is_empty() {
+                    // The merged set agrees with the built-ins: nothing to say.
+                } else if let Some(h) = hits.iter().find(|h| h.source.rank < source.rank) {
+                    r.overridden += 1;
+                    r.lines.push(format!(
+                        "{name}: overridden by {} ({})",
+                        h.name(),
+                        h.source.label
+                    ));
+                } else if let Some((entry, (by, label))) =
+                    builtin.deciding(*stage, &f).iter().find_map(|h| {
+                        self.disabled
+                            .get_key_value(&h.name())
+                            .or_else(|| self.disabled.get_key_value(&h.file))
+                    })
+                {
+                    r.disabled += 1;
+                    r.lines
+                        .push(format!("{name}: disabled by {entry} ({by}, {label})"));
+                } else {
+                    r.failed += 1;
+                    r.lines.push(format!("{name}: {}", merged.join("; ")));
+                }
+            }
+        }
+        r
     }
 }
 
@@ -1168,7 +1264,7 @@ mod tests {
         let r = Rules::builtin();
         assert!(r.warnings.is_empty(), "{:?}", r.warnings);
         assert_eq!(r.examples_total(), 125);
-        let lines = r.check(true);
+        let lines = r.check();
         assert!(lines.is_empty(), "{}", lines.join("\n"));
     }
 
@@ -1250,18 +1346,60 @@ mod tests {
 
     #[test]
     fn disable_drops_a_file_and_a_rule_across_every_source() {
-        let mut files = vec![file(
+        let r = with_builtins(vec![file(
             "90-a.json",
             r#"{"stage":"placement","disable":["10-classes.json:noise","05-units.json","nothing.json"],"rules":[]}"#,
-        )];
-        files.extend(BUILTIN.iter().map(|(n, t)| LoadedFile {
-            source: Source::builtin(),
-            name: (*n).to_string(),
-            text: (*t).to_string(),
-        }));
-        let r = Rules::from_files(files);
+        )]);
         assert!(r.is_empty(Stage::Unit));
         assert!(!r.classes_of_name("cat").contains(Class::Noise));
         assert_eq!(r.warnings.len(), 1, "{:?}", r.warnings);
+    }
+
+    fn with_builtins(mut files: Vec<LoadedFile>) -> Rules {
+        files.extend(builtin_files());
+        Rules::from_files(files)
+    }
+
+    #[test]
+    fn check_rules_fails_a_wrong_user_example_and_a_malformed_file() {
+        let wrong = file(
+            "90-a.json",
+            r#"{"stage":"session","rules":[{"id":"x","match":{"name":"htop"},"identity":"htop","folder":"user_services"}],
+               "examples":[{"comm":"htop","expect":{"rule":"x","folder":"applications"}}]}"#,
+        );
+        let r = with_builtins(vec![wrong, file("91-b.json", "{ nope")]).report(&Rules::builtin());
+        assert_eq!(r.failed, 2, "{:#?}", r.lines);
+        assert!(
+            r.lines
+                .iter()
+                .any(|l| l.starts_with("90-a.json:x#0 (xdg): "))
+        );
+        assert!(r.lines.iter().any(|l| l.starts_with("91-b.json (xdg): ")));
+        assert_eq!(r.examples, 126);
+    }
+
+    #[test]
+    fn check_rules_reports_an_override_and_a_disable_without_failing() {
+        let mine = file(
+            "90-a.json",
+            r#"{"stage":"session","disable":["40-trinity.json"],
+               "rules":[{"id":"mine","match":{"name_prefix":"gsd-"},"identity":"mine","folder":"applications"}]}"#,
+        );
+        let r = with_builtins(vec![mine]).report(&Rules::builtin());
+        assert_eq!(r.failed, 0, "{:#?}", r.lines);
+        assert!(
+            r.lines
+                .iter()
+                .any(|l| l.ends_with("overridden by 90-a.json:mine (xdg)")),
+            "{:#?}",
+            r.lines
+        );
+        assert!(
+            r.lines
+                .iter()
+                .any(|l| l.ends_with("disabled by 40-trinity.json (90-a.json, xdg)")),
+            "{:#?}",
+            r.lines
+        );
     }
 }

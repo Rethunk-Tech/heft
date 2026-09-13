@@ -360,7 +360,9 @@ number gets read as a current one.
   not own, so every drm client inside a root-owned container is invisible:
   measured on one desktop with a single such container running, the kernel
   reported 45.7 GiB of GTT in use while heft's Host row accounted for 18.1 GiB
-  of it. The MEM bar's `used` is what the kernel cannot hand back, so page
+  of it. The only way to read those clients is to run a command inside each
+  container (`docker exec`), which is a POST, and heft's container client only
+  ever sends GET requests. The MEM bar's `used` is what the kernel cannot hand back, so page
   cache is not in it. Inside it: `shm` is tmpfs and shared memory; on a zram
   host `zram` is the RAM its compressed swap occupies, which no process's PSS
   holds and is why such a machine's `used` can sit gigabytes above the Host

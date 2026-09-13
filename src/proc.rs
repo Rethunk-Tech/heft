@@ -300,8 +300,12 @@ fn rollup_for(
     };
     match prev {
         _ if kthread => Rollup::default(),
-        Some(p) if !want_pss => carry(p, p.rollup_periods),
-        None if !want_pss => Rollup::default(),
+        // A pid the kernel handed to a new process is blank until its first
+        // read, never the figures of the process that held the pid before.
+        Some(p) if !want_pss && p.starttime_ticks.is_some() && p.starttime_ticks == now.0 => {
+            carry(p, p.rollup_periods)
+        }
+        _ if !want_pss => Rollup::default(),
         Some(p) if rollup_holds(p, now.0, now.1, cpu::page_size()) => {
             carry(p, p.rollup_periods + 1)
         }
@@ -825,16 +829,22 @@ mod tests {
         let carried = Process {
             pss_kb: Some(12),
             swap_pss_kb: Some(3),
+            starttime_ticks: Some(7),
             ..Process::default()
         };
         let unread = || unreachable!("a carried tick reads no rollup");
-        let now = (None, None);
+        let now = (Some(7), None);
         assert_eq!(
             rollup_for(false, true, Some(&carried), now, unread),
             Rollup::default()
         );
         let kept = rollup_for(false, false, Some(&carried), now, unread);
         assert_eq!((kept.pss_kb, kept.swap_pss_kb), (Some(12), Some(3)));
+        assert_eq!(
+            rollup_for(false, false, Some(&carried), (Some(8), None), unread),
+            Rollup::default(),
+            "a reused pid"
+        );
         assert_eq!(
             rollup_for(false, false, None, now, unread),
             Rollup::default()

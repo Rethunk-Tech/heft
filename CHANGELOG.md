@@ -33,6 +33,8 @@
 - The `i` pane cuts a long command line by display width and never splits a
   character from its combining mark; the `?` overlay aligns keys by display
   width.
+- Between PSS reads, a process that took over a dead process's pid shows a
+  blank PSS and SWAP, not the dead process's figures.
 - `--user ""` no longer matches an `/etc/passwd` line with an empty name.
 - `--help` says `--filter` also matches the argv under a row, and that
   `--follow` honours `--pss-interval`.

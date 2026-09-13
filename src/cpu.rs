@@ -1,8 +1,9 @@
 #![expect(
     clippy::cast_precision_loss,
-    reason = "every cast here widens a kernel counter -- clock ticks, nanoseconds, \
-bytes -- into the f64 a rate is divided in. A counter big enough to lose precision at \
-2^53 is centuries of uptime, and the quotient is printed to three significant figures."
+    reason = "every cast here is one interval's saturating_sub delta of a kernel \
+counter -- clock ticks, nanoseconds, GPU cycles -- or `clk_tck`. The counters themselves \
+can pass 2^53 (104 days of nanoseconds), but no delta across one sample interval comes \
+near it, and the quotient is printed to three significant figures."
 )]
 
 use std::fs;

@@ -127,7 +127,7 @@ fn add(map: &mut HashMap<String, (f64, f64)>, key: &str, rx: f64, tx: f64) {
 /// getting a new pid and a fresh namespace, so the delta would run negative.
 #[expect(
     clippy::cast_precision_loss,
-    reason = "an interface byte counter past f64's exact range is more traffic than a NIC moves in a human lifetime"
+    reason = "the cast is on one interval's byte delta, a counter that went backwards having returned None above; 2^53 bytes is over 8 days of 100 GbE, far past any sample interval"
 )]
 fn delta(prev: Option<&Sample>, cur: Sample, secs: f64) -> Option<(f64, f64)> {
     let p = prev?;

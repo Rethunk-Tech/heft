@@ -1,5 +1,6 @@
 pub(crate) mod caps;
 pub(crate) mod classify;
+pub mod cli;
 pub mod config;
 pub mod containers;
 pub(crate) mod cpu;

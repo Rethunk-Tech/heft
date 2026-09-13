@@ -4,7 +4,7 @@ use clap::{Parser, ValueEnum};
 /// beside the glyph table because `build.rs` compiles this file standalone to
 /// generate the completions and man page.
 #[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
-pub(crate) enum Glyphs {
+pub enum Glyphs {
     /// Unicode when the locale names a UTF-8 charmap, ASCII otherwise
     Auto,
     /// Block and box-drawing characters
@@ -15,9 +15,11 @@ pub(crate) enum Glyphs {
     Ascii,
 }
 
-/// How the TREND column is drawn.
-#[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
-pub(crate) enum Trend {
+/// How the TREND column is drawn. `Auto` is resolved by asking the terminal
+/// (`caps::probe`) once, before the first frame, because `TERM` names a
+/// terminal, not what it implements.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, ValueEnum)]
+pub enum Trend {
     /// Ask the terminal, and draw an image if it answers that it can
     Auto,
     /// Rising block characters, in whatever `--glyphs` resolved
@@ -37,7 +39,7 @@ pub(crate) enum Trend {
     about = "Read-only Linux application-weight process monitor",
     group = clap::ArgGroup::new("mode").args(["once", "json"]).multiple(true)
 )]
-pub(crate) struct Cli {
+pub struct Cli {
     /// Print one table and exit
     #[arg(long)]
     pub once: bool,

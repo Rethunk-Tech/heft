@@ -19,6 +19,7 @@ use ratatui::widgets::{Block, Borders, Cell, Clear, Padding, Paragraph, Row, Tab
 use unicode_width::UnicodeWidthStr;
 
 use crate::caps;
+use crate::cli::Trend;
 use crate::config::{self, View};
 use crate::cpu;
 use crate::glyph;
@@ -90,7 +91,7 @@ struct App {
     /// Present only when TREND is drawn with the kitty protocol: the image in
     /// flight, and what it costs to keep it in step. `None` is the ordinary character ramp.
     kgp: Option<kgp::Kgp>,
-    trend: TrendMode,
+    trend: Trend,
     /// A sixel image and the escape that places it, built during `draw` and
     /// written after ratatui has flushed -- sixel paints over cells rather
     /// than into them, so it has to go last.
@@ -119,18 +120,6 @@ const TREND: usize = 9;
 /// minute of history nobody reads across, taken from the name column beside it.
 const TREND_MAX: u16 = 30;
 
-/// How the TREND column is drawn, from `--trend`. `Auto` is resolved by asking
-/// the terminal (`caps::probe`), because `TERM` names a terminal, not what it
-/// implements.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum TrendMode {
-    /// Ask the terminal, once, before the first frame.
-    Auto,
-    Chars,
-    Kitty,
-    Sixel,
-}
-
 /// Turn what the terminal answered into what to draw.
 ///
 /// The kitty protocol ties its image to the cell grid, so it survives a
@@ -141,11 +130,11 @@ pub enum TrendMode {
 /// a frame, because a line is mostly empty and sixel run-length-encodes the
 /// empty part -- so where the terminal is at the other end of a connection and
 /// offers sixel, sixel wins.
-const fn resolve_trend(caps: caps::Caps, remote: bool) -> TrendMode {
+const fn resolve_trend(caps: caps::Caps, remote: bool) -> Trend {
     match (caps.kitty, caps.sixel, remote) {
-        (true, true, true) | (false, true, _) => TrendMode::Sixel,
-        (true, _, _) => TrendMode::Kitty,
-        (false, false, _) => TrendMode::Chars,
+        (true, true, true) | (false, true, _) => Trend::Sixel,
+        (true, _, _) => Trend::Kitty,
+        (false, false, _) => Trend::Chars,
     }
 }
 
@@ -157,7 +146,7 @@ pub fn run(
     interval: Duration,
     pss_interval: Duration,
     view: View,
-    trend: TrendMode,
+    trend: Trend,
 ) -> Result<(), Error> {
     // Resolve columns before the alternate screen: a warning about a stale
     // hide entry printed after it would be wiped on the first frame.
@@ -171,7 +160,7 @@ pub fn run(
     // After raw mode and inside the alternate screen: the reply would
     // otherwise be line-buffered and echoed, and any terminal that prints the
     // query instead of answering it has that wiped by the first frame.
-    let trend = if trend == TrendMode::Auto {
+    let trend = if trend == Trend::Auto {
         let resolved = resolve_trend(caps::probe(), kgp::is_remote());
         caps::drain();
         resolved
@@ -195,7 +184,7 @@ fn run_loop(
     pss_interval: Duration,
     view: View,
     cols: Columns,
-    trend: TrendMode,
+    trend: Trend,
 ) -> Result<(), Error> {
     let slot = Arc::new(Mutex::new(None));
     let _sampler = proc::spawn_sampler(interval, pss_interval, slot.clone())?;
@@ -219,7 +208,7 @@ fn run_loop(
         detail: false,
         paused: None,
         history: HashMap::new(),
-        kgp: (trend == TrendMode::Kitty).then(kgp::Kgp::new),
+        kgp: (trend == Trend::Kitty).then(kgp::Kgp::new),
         trend,
         sixel_out: None,
         sorted_by: String::new(),
@@ -970,12 +959,12 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &mut App, rows: &[Flat]) {
     let (trend_img, trend_pixels) = match app.trend {
         // `run` resolves Auto before the first frame, so it never reaches
         // here; drawing characters is the right answer if it ever did.
-        TrendMode::Auto | TrendMode::Chars => (false, None),
-        TrendMode::Kitty => (
+        Trend::Auto | Trend::Chars => (false, None),
+        Trend::Kitty => (
             spark_shown && end > start && send_trend(app, rows, start, end, full),
             None,
         ),
-        TrendMode::Sixel => {
+        Trend::Sixel => {
             let img = (spark_shown && end > start)
                 .then(|| trend_image(app, rows, start, end, full))
                 .flatten();
@@ -1000,11 +989,11 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &mut App, rows: &[Flat]) {
                 // The one column whose value is not a function of this
                 // sample, so `Column::fmt` (which sees only this sample)
                 // cannot produce it.
-                let sixel_cell = c.label == "spark" && trend_img && app.trend == TrendMode::Sixel;
+                let sixel_cell = c.label == "spark" && trend_img && app.trend == Trend::Sixel;
                 let placed = if c.label == "spark"
                     && trend_img
                     && r.trimmable
-                    && app.trend == TrendMode::Kitty
+                    && app.trend == Trend::Kitty
                 {
                     kgp::placeholder(i, app.trend_w)
                 } else {
@@ -1061,7 +1050,7 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &mut App, rows: &[Flat]) {
     // buffer; written to the terminal only after ratatui flushes, since sixel
     // paints over cells rather than into them.
     app.sixel_out = None;
-    if app.trend == TrendMode::Sixel
+    if app.trend == Trend::Sixel
         && trend_img
         && let Some(img) = trend_pixels
         && let Some((x, y)) = marked_corner(f.buffer_mut(), chunks[2])
@@ -1948,19 +1937,19 @@ mod tests {
         let caps = |kitty, sixel| caps::Caps { kitty, sixel };
         // Locally the kitty protocol's pixels go through shared memory, and
         // its image is tied to the cell grid rather than repainted.
-        assert_eq!(resolve_trend(caps(true, true), false), TrendMode::Kitty);
-        assert_eq!(resolve_trend(caps(true, false), false), TrendMode::Kitty);
+        assert_eq!(resolve_trend(caps(true, true), false), Trend::Kitty);
+        assert_eq!(resolve_trend(caps(true, false), false), Trend::Kitty);
         // Over ssh that transport sends every pixel inline: ~146 KB a sample
         // against sixel's 559 bytes a frame.
-        assert_eq!(resolve_trend(caps(true, true), true), TrendMode::Sixel);
+        assert_eq!(resolve_trend(caps(true, true), true), Trend::Sixel);
         // Only one on offer, so the connection does not come into it.
-        assert_eq!(resolve_trend(caps(false, true), false), TrendMode::Sixel);
-        assert_eq!(resolve_trend(caps(false, true), true), TrendMode::Sixel);
-        assert_eq!(resolve_trend(caps(true, false), true), TrendMode::Kitty);
+        assert_eq!(resolve_trend(caps(false, true), false), Trend::Sixel);
+        assert_eq!(resolve_trend(caps(false, true), true), Trend::Sixel);
+        assert_eq!(resolve_trend(caps(true, false), true), Trend::Kitty);
         // A terminal that answered neither gets the character ramp, which is
         // also what a terminal that did not answer at all gets.
-        assert_eq!(resolve_trend(caps(false, false), false), TrendMode::Chars);
-        assert_eq!(resolve_trend(caps::Caps::default(), true), TrendMode::Chars);
+        assert_eq!(resolve_trend(caps(false, false), false), Trend::Chars);
+        assert_eq!(resolve_trend(caps::Caps::default(), true), Trend::Chars);
     }
 
     /// A sum is not on the scale the entries are drawn against, so it gets
@@ -2549,7 +2538,7 @@ mod tests {
             paused: None,
             history: HashMap::new(),
             kgp: None,
-            trend: TrendMode::Chars,
+            trend: Trend::Chars,
             sixel_out: None,
             sorted_by: String::new(),
             trend_w: TREND,

@@ -4,9 +4,7 @@ use std::time::Duration;
 
 use clap::{CommandFactory, Parser, error::ErrorKind};
 
-mod cli;
-
-use cli::{Cli, Glyphs, Trend};
+use heft::cli::{Cli, Glyphs};
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
@@ -136,17 +134,7 @@ fn main() -> ExitCode {
             (true, _, true) => heft::once::follow_json(interval, pss_interval, &view),
             (_, true, false) => heft::once::print_table(interval, &view),
             (_, true, true) => heft::once::follow_table(interval, pss_interval, &view),
-            _ => heft::ui::run(
-                interval,
-                pss_interval,
-                view,
-                match cli.trend {
-                    Trend::Auto => heft::ui::TrendMode::Auto,
-                    Trend::Chars => heft::ui::TrendMode::Chars,
-                    Trend::Kitty => heft::ui::TrendMode::Kitty,
-                    Trend::Sixel => heft::ui::TrendMode::Sixel,
-                },
-            ),
+            _ => heft::ui::run(interval, pss_interval, view, cli.trend),
         }
     };
     match result {

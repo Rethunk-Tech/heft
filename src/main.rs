@@ -29,15 +29,7 @@ fn main() -> ExitCode {
     // Before any sampling: it reads rule files and nothing else, so it runs
     // in a container with no `/proc` worth walking and no docker socket.
     if cli.check_rules {
-        return match heft::rules::print_check() {
-            Ok(true) => ExitCode::SUCCESS,
-            Err(e) if is_broken_pipe(e.as_ref()) => ExitCode::SUCCESS,
-            Ok(false) => ExitCode::FAILURE,
-            Err(e) => {
-                eprintln!("{e}");
-                ExitCode::FAILURE
-            }
-        };
+        return exit_code(heft::rules::print_check());
     }
     // Before any read, and once, for the same reason `glyph` is: it cannot
     // change while heft runs. A missing root is a usage error rather than a
@@ -74,7 +66,7 @@ fn main() -> ExitCode {
     let result = if let Some(pid) = cli.explain {
         heft::explain::run(pid, interval)
     } else if cli.fixture {
-        heft::proc::print_fixture()
+        heft::proc::print_fixture().map(|()| true)
     } else {
         match (cli.json, cli.once, cli.follow) {
             (true, _, false) => heft::once::print_json(interval, &view),
@@ -83,13 +75,21 @@ fn main() -> ExitCode {
             (_, true, true) => heft::once::follow_table(interval, pss_interval, &view),
             _ => heft::ui::run(interval, pss_interval, view, cli.trend),
         }
+        .map(|()| true)
     };
+    exit_code(result)
+}
+
+/// `Ok(false)` is a clean run whose answer is "no": a failed rules example or
+/// a pid heft cannot see.
+fn exit_code(result: Result<bool, heft::types::Error>) -> ExitCode {
     match result {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(true) => ExitCode::SUCCESS,
         // Rust ignores SIGPIPE, so a closed reader surfaces as EPIPE rather
         // than killing us. `heft --once | head` is the normal case, not a
         // failure, so exit quietly instead of reporting it.
         Err(e) if is_broken_pipe(e.as_ref()) => ExitCode::SUCCESS,
+        Ok(false) => ExitCode::FAILURE,
         Err(e) => {
             eprintln!("{e}");
             ExitCode::FAILURE

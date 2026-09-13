@@ -783,6 +783,18 @@ fn explain_names_the_placement_rule_for_its_identity() {
     );
 }
 
+/// A script must be able to tell a miss from a hit. `pid_max` tops out at
+/// 2^22, so this pid can never exist.
+#[test]
+fn explain_exits_non_zero_for_a_pid_it_cannot_see() {
+    let out = heft(&["--explain", "999999999", "--interval", FAST])
+        .output()
+        .expect("run heft --explain");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("not visible"), "{stdout}");
+    assert_eq!(out.status.code(), Some(1), "{stdout}");
+}
+
 /// `--glyphs` reaches `--explain`: the tree path is the one line of it drawn
 /// with a glyph, and a console without the fonts asked for ASCII.
 #[test]

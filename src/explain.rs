@@ -142,10 +142,13 @@ fn trace(rules: &Rules, p: Option<&Process>, ident: &str) -> Vec<String> {
     out
 }
 
+/// `Ok(false)` when the pid is not visible, so a script can tell a miss from a
+/// hit by the exit code.
+///
 /// # Errors
 ///
 /// Returns an error if the sample cannot be taken.
-pub fn run(pid: u32, interval: Duration) -> Result<(), Error> {
+pub fn run(pid: u32, interval: Duration) -> Result<bool, Error> {
     let tree = proc::sample_world(interval);
     let found = locate(&tree, pid);
     // `proc::detail` answers with the fields it could read, so a pid that is
@@ -159,13 +162,14 @@ pub fn run(pid: u32, interval: Duration) -> Result<(), Error> {
     };
 
     if !visible && found.is_none() {
-        // Not an error: the pid may simply have gone, and that is the answer.
+        // Not an error message: the pid may simply have gone, and that is the
+        // answer. Still a miss, so the exit code says so.
         println!("pid {pid}: not visible");
         println!();
         println!("  It exited, or /proc hides it -- another user's process, a");
         println!("  hidepid mount, or a PID namespace. heft can only group what");
         println!("  it can walk.");
-        return Ok(());
+        return Ok(false);
     }
 
     println!("pid {pid}");
@@ -178,7 +182,7 @@ pub fn run(pid: u32, interval: Duration) -> Result<(), Error> {
         println!("  placed    nowhere: heft read this process but no row holds it.");
         println!("            A kernel thread with no cgroup, or it exited between");
         println!("            the two walks a sample takes.");
-        return Ok(());
+        return Ok(true);
     };
 
     // The tree keeps raw strings; process-chosen text is escaped only here,
@@ -226,7 +230,7 @@ pub fn run(pid: u32, interval: Duration) -> Result<(), Error> {
         println!("  `fold_to` and `folder` skip them. A rule with `owner_uid` sets a");
         println!("  container's owning uid by name.");
     }
-    Ok(())
+    Ok(true)
 }
 
 #[cfg(test)]

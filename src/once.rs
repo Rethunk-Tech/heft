@@ -643,6 +643,9 @@ pub(crate) fn keep_users(tree: &mut HostTree, uids: &[u32]) {
     if uids.is_empty() {
         return;
     }
+    if tree.walked_threads.is_none() {
+        tree.walked_threads = host_metrics(tree).threads;
+    }
     tree.users.retain(|u| uids.contains(&u.uid));
 }
 
@@ -869,7 +872,8 @@ const VISIBLE_OK: f64 = 0.9;
 /// The kernel's global thread count is not a walk, so it still answers, and
 /// the two together turn "the tree looks small" into a figure.
 pub(crate) fn coverage_tail(tree: &HostTree) -> String {
-    let (Some(total), Some(seen)) = (tree.kernel_threads, host_metrics(tree).threads) else {
+    let seen = tree.walked_threads.or_else(|| host_metrics(tree).threads);
+    let (Some(total), Some(seen)) = (tree.kernel_threads, seen) else {
         return String::new();
     };
     if total == 0 {
@@ -1583,6 +1587,33 @@ mod tests {
         // dividing by zero or inventing a share.
         assert_eq!(coverage_tail(&tree(None)), "");
         assert_eq!(coverage_tail(&tree(Some(0))), "");
+    }
+
+    /// Visibility belongs to the walk, not to the rows `--user` kept: cutting
+    /// to one user of two must not read as `/proc` hiding half the machine,
+    /// while a walk that really was short still says so after the cut.
+    #[test]
+    fn a_user_cut_does_not_read_as_hidden_pids() {
+        // sample_ident carries threads: Some(19), so each user is 19 threads.
+        let tree = |kernel: u64| HostTree {
+            kernel_threads: Some(kernel),
+            users: [1000, 0]
+                .map(|uid| UserNode {
+                    uid,
+                    name: uid.to_string(),
+                    applications: vec![sample_ident(1.0)],
+                    ..UserNode::default()
+                })
+                .into(),
+            ..HostTree::default()
+        };
+        let mut whole = tree(38);
+        keep_users(&mut whole, &[0]);
+        assert_eq!(coverage_tail(&whole), "");
+
+        let mut short = tree(3800);
+        keep_users(&mut short, &[0]);
+        assert_eq!(coverage_tail(&short), "  seeing 1% of 3800 threads");
     }
 
     /// `--top` counts per parent, not per depth: two folders each keep their

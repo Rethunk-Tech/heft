@@ -202,6 +202,12 @@ pub struct HostTree {
     /// consumer of the JSON is reading the tree itself.
     #[serde(skip)]
     pub(crate) kernel_threads: Option<u64>,
+    /// The threads the walk saw, set by `once::keep_users` before `--user`
+    /// cuts any User out, so that comparison with `kernel_threads` still
+    /// measures what `/proc` hid rather than what the user asked to leave out.
+    /// `None` on an uncut tree, where the tree's own sum is that figure.
+    #[serde(skip)]
+    pub(crate) walked_threads: Option<u64>,
     pub(crate) nproc: u32,
     pub(crate) cpu_pct: f64,
     pub(crate) cpu_user_pct: f64,

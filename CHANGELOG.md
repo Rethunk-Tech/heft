@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Changed
+
+- The `/proc` walk hands out pids one at a time, so one slow `smaps_rollup`
+  no longer holds up a whole slice: a PSS tick went from 98 to 82 ms and a
+  plain tick from 8.7 to 6.5 ms on a 750-process host.
+- Each pid's files are read through one `/proc/<pid>` handle and a reused
+  buffer: 27% fewer syscalls per walk.
+- Stall figures skip reading `cgroup.procs` for a cgroup the walk already saw
+  twice, halving that pass to under 1 ms.
+- TREND history pruning is a set lookup, which matters on a fully expanded
+  tree (274 µs to 30 µs at 730 rows).
+
 ### Fixed
 
 - `--help` says `--filter` also matches the argv under a row, and that

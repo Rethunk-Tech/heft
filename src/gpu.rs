@@ -1,8 +1,11 @@
 use std::collections::HashMap;
-use std::fs;
-use std::io::{self, Read};
-use std::path::Path;
+use std::ffi::CStr;
+use std::os::fd::AsFd;
 
+use rustix::fs::{Dir, Mode, OFlags};
+use rustix::io::Errno;
+
+use crate::proc::{read_at, read_link_at};
 use crate::types::{GpuCounters, sum_opt};
 
 /// Dri/drm symlink names select which fdinfo to read on every tick. When
@@ -10,10 +13,10 @@ use crate::types::{GpuCounters, sum_opt};
 /// fdinfo, so a GPU client whose fd name omits dri/drm stays blank: that walk
 /// measured ~318 ms of ~760 ms serial PSS-tick kernel work on 308 pids with no
 /// dri/drm fd. A full walk still runs when the prefilter finds fds but they
-/// yield no GPU metrics.
-pub(crate) fn read_pid(pid: u32, full_scan: bool) -> GpuCounters {
-    let drm_fds = match drm_fd_nums(pid) {
-        Err(e) if e.kind() == io::ErrorKind::PermissionDenied => return GpuCounters::default(),
+/// yield no GPU metrics. `dir` is the process's `/proc/<pid>`.
+pub(crate) fn read_pid(dir: impl AsFd, full_scan: bool, buf: &mut Vec<u8>) -> GpuCounters {
+    let drm_fds = match drm_fd_nums(&dir) {
+        Err(Errno::ACCESS) => return GpuCounters::default(),
         Err(_) => Vec::new(),
         Ok(v) => v,
     };
@@ -21,12 +24,12 @@ pub(crate) fn read_pid(pid: u32, full_scan: bool) -> GpuCounters {
     let filtered = if prefilter_empty {
         GpuCounters::default()
     } else {
-        read_fdinfo_files(pid, &drm_fds)
+        read_fdinfo_files(&dir, &drm_fds, buf)
     };
     if !needs_full_fdinfo(full_scan, prefilter_empty, &filtered) {
         return filtered;
     }
-    read_all_fdinfo(pid)
+    read_all_fdinfo(&dir, buf)
 }
 
 /// `/dev/dri/renderD128`, `/dev/dri/card1`, and other drm device nodes.
@@ -43,43 +46,55 @@ const fn needs_full_fdinfo(full_scan: bool, prefilter_empty: bool, filtered: &Gp
         && filtered.compute_ns.is_none()
 }
 
-fn drm_fd_nums(pid: u32) -> io::Result<Vec<u32>> {
+fn subdir(dir: impl AsFd, name: &CStr) -> rustix::io::Result<Dir> {
+    let flags = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC;
+    Dir::new(rustix::fs::openat(dir, name, flags, Mode::empty())?)
+}
+
+/// `.` and `..` are the only non-numeric names in `fd` and `fdinfo`.
+fn fd_num(name: &CStr) -> Option<u32> {
+    name.to_str().ok()?.parse().ok()
+}
+
+fn drm_fd_nums(dir: impl AsFd) -> rustix::io::Result<Vec<u32>> {
+    let mut fds = subdir(dir, c"fd")?;
+    let mut link = [0; 4096];
     let mut nums = Vec::new();
-    for ent in fs::read_dir(format!("{}/proc/{pid}/fd", crate::root::prefix()))? {
+    while let Some(ent) = fds.read() {
         let ent = ent?;
-        let Ok(link) = fs::read_link(ent.path()) else {
+        let Some(n) = fd_num(ent.file_name()) else {
             continue;
         };
-        if !fd_target_looks_like_drm(&link.to_string_lossy()) {
+        let Some(target) = read_link_at(fds.fd()?, ent.file_name(), &mut link) else {
             continue;
+        };
+        if fd_target_looks_like_drm(&String::from_utf8_lossy(target)) {
+            nums.push(n);
         }
-        let Some(n) = ent.file_name().to_str().and_then(|s| s.parse().ok()) else {
-            continue;
-        };
-        nums.push(n);
     }
     Ok(nums)
 }
 
-fn read_fdinfo_files(pid: u32, fds: &[u32]) -> GpuCounters {
+fn read_fdinfo_files(dir: impl AsFd, fds: &[u32], buf: &mut Vec<u8>) -> GpuCounters {
     let mut texts = Vec::new();
     for fd in fds {
-        push_drm_text(
-            &mut texts,
-            format!("{}/proc/{pid}/fdinfo/{fd}", crate::root::prefix()),
-        );
+        push_drm_text(&mut texts, &dir, format!("fdinfo/{fd}"), buf);
     }
     merge_fdinfo_texts(&texts)
 }
 
-fn read_all_fdinfo(pid: u32) -> GpuCounters {
-    let dir = format!("{}/proc/{pid}/fdinfo", crate::root::prefix());
-    let Ok(entries) = fs::read_dir(&dir) else {
+fn read_all_fdinfo(dir: impl AsFd, buf: &mut Vec<u8>) -> GpuCounters {
+    let Ok(mut entries) = subdir(dir, c"fdinfo") else {
         return GpuCounters::default();
     };
     let mut texts = Vec::new();
-    for ent in entries.flatten() {
-        push_drm_text(&mut texts, ent.path());
+    while let Some(Ok(ent)) = entries.read() {
+        let Ok(fdinfo) = entries.fd() else {
+            break;
+        };
+        if fd_num(ent.file_name()).is_some() {
+            push_drm_text(&mut texts, fdinfo, ent.file_name(), buf);
+        }
     }
     merge_fdinfo_texts(&texts)
 }
@@ -87,24 +102,24 @@ fn read_all_fdinfo(pid: u32) -> GpuCounters {
 /// Observed drm fdinfo on this host: vivaldi max 7 KiB, cursor 14 KiB.
 /// `localsearch-3` has a 16_038_344-byte `anon_inode:[fanotify]` fdinfo
 /// with 0 `drm-client-id`. 64 KiB is well above real drm and well below
-/// that dump. `/proc/<pid>/fdinfo/*` often reports `st_size` 0 (measured
-/// 0 on `/proc/self/fdinfo/0`), so a metadata cap alone would not skip
-/// the fanotify file; `Read::take` enforces the same bound after open.
-const FDINFO_MAX_BYTES: u64 = 64 * 1024;
+/// that dump. `/proc/<pid>/fdinfo/*` reports `st_size` 0 (measured on
+/// `/proc/self/fdinfo/0`), so the cap is on bytes read, never on metadata.
+const FDINFO_MAX_BYTES: usize = 64 * 1024;
 
-fn push_drm_text(texts: &mut Vec<String>, path: impl AsRef<Path>) {
-    let Ok(file) = fs::File::open(path) else {
+fn push_drm_text(
+    texts: &mut Vec<String>,
+    dir: impl AsFd,
+    name: impl rustix::path::Arg,
+    buf: &mut Vec<u8>,
+) {
+    let Some(bytes) = read_at(dir, name, buf, FDINFO_MAX_BYTES) else {
         return;
     };
-    if file.metadata().is_ok_and(|m| m.len() > FDINFO_MAX_BYTES) {
-        return;
-    }
-    let mut buf = String::new();
-    let mut limited = file.take(FDINFO_MAX_BYTES + 1);
-    match limited.read_to_string(&mut buf) {
-        Ok(n) if n as u64 > FDINFO_MAX_BYTES => {}
-        Ok(_) if buf.contains("drm-client-id") => texts.push(buf),
-        _ => {}
+    if bytes.len() <= FDINFO_MAX_BYTES
+        && let Ok(text) = std::str::from_utf8(bytes)
+        && text.contains("drm-client-id")
+    {
+        texts.push(text.to_owned());
     }
 }
 
@@ -413,28 +428,22 @@ mod tests {
     }
 
     #[test]
-    #[expect(
-        clippy::cast_possible_truncation,
-        reason = "FDINFO_MAX_BYTES is 64 KiB, so the fixture size fits usize on any host heft runs on"
-    )]
     fn oversized_fdinfo_is_not_slurped() {
-        let dir = std::env::temp_dir();
-        let tag = std::process::id();
-        let huge = dir.join(format!("heft-fdinfo-huge-{tag}"));
-        let small = dir.join(format!("heft-fdinfo-small-{tag}"));
-        fs::write(&huge, vec![b'x'; (FDINFO_MAX_BYTES as usize) + 1]).unwrap();
-        fs::write(&small, SAMPLE).unwrap();
-        let mut texts = Vec::new();
-        push_drm_text(&mut texts, &huge);
-        assert!(
-            texts.is_empty(),
-            "oversize without drm-client-id is skipped"
-        );
-        push_drm_text(&mut texts, &small);
+        let dir = std::env::temp_dir().join(format!("heft-fdinfo-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        // Real client text past the cap, so only the cap can reject it.
+        let huge = SAMPLE.repeat(FDINFO_MAX_BYTES / SAMPLE.len() + 1);
+        std::fs::write(dir.join("huge"), huge).unwrap();
+        std::fs::write(dir.join("small"), SAMPLE).unwrap();
+        let flags = OFlags::PATH | OFlags::DIRECTORY | OFlags::CLOEXEC;
+        let fd = rustix::fs::open(dir.as_path(), flags, Mode::empty()).unwrap();
+        let (mut texts, mut buf) = (Vec::new(), Vec::new());
+        push_drm_text(&mut texts, &fd, c"huge", &mut buf);
+        assert!(texts.is_empty(), "oversize is skipped even as a drm client");
+        push_drm_text(&mut texts, &fd, c"small", &mut buf);
         assert_eq!(texts.len(), 1);
         let g = merge_fdinfo_texts(&texts);
         assert_eq!(g.vram_bytes, Some(48596 * 1024));
-        let _ = fs::remove_file(&huge);
-        let _ = fs::remove_file(&small);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

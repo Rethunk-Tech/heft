@@ -199,7 +199,7 @@ pub fn run(pid: u32, interval: Duration) -> Result<(), Error> {
 
     // Re-read rather than carried on the tree: the tree has no per-process
     // facts, and a pid that exited since the sample says so here.
-    let p = proc::read_pid(pid, false, false, None);
+    let p = proc::read_pid(pid, false, false, None, &mut Vec::new());
     for line in trace(Rules::load(), p.as_ref(), &f.ident) {
         println!("{line}");
     }

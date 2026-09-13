@@ -1,12 +1,10 @@
-use std::fs;
+use std::os::fd::AsFd;
 
-use crate::proc::field_u64;
+use crate::proc::{field_u64, read_str};
 
-pub(crate) fn read_io(pid: u32) -> (Option<u64>, Option<u64>) {
-    match fs::read_to_string(format!("{}/proc/{pid}/io", crate::root::prefix())) {
-        Ok(text) => parse_io(&text),
-        Err(_) => (None, None),
-    }
+/// `dir` is the process's `/proc/<pid>`; `buf` is the walk's reused buffer.
+pub(crate) fn read_io(dir: impl AsFd, buf: &mut Vec<u8>) -> (Option<u64>, Option<u64>) {
+    read_str(dir, c"io", buf).map_or((None, None), parse_io)
 }
 
 fn parse_io(text: &str) -> (Option<u64>, Option<u64>) {
@@ -25,14 +23,17 @@ fn parse_io(text: &str) -> (Option<u64>, Option<u64>) {
 /// PSS and swapped-out PSS from one `smaps_rollup` read. `want_swap` is the
 /// host having swap at all: with `SwapTotal: 0` every process reports
 /// `SwapPss: 0`, and a column of zeros claims a figure exists where none does.
-pub(crate) fn read_rollup_kb(pid: u32, want_swap: bool) -> (Option<u64>, Option<u64>) {
-    match fs::read_to_string(format!("{}/proc/{pid}/smaps_rollup", crate::root::prefix())) {
-        Ok(text) => (
-            parse_pss_kb(&text),
-            want_swap.then(|| parse_swap_pss_kb(&text)).flatten(),
-        ),
-        Err(_) => (None, None),
-    }
+pub(crate) fn read_rollup_kb(
+    dir: impl AsFd,
+    want_swap: bool,
+    buf: &mut Vec<u8>,
+) -> (Option<u64>, Option<u64>) {
+    read_str(dir, c"smaps_rollup", buf).map_or((None, None), |text| {
+        (
+            parse_pss_kb(text),
+            want_swap.then(|| parse_swap_pss_kb(text)).flatten(),
+        )
+    })
 }
 
 pub(crate) fn parse_pss_kb(text: &str) -> Option<u64> {

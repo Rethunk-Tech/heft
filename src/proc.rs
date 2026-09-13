@@ -1,13 +1,19 @@
 use std::collections::HashMap;
+use std::ffi::CStr;
 use std::fs;
 use std::io;
 use std::num::NonZero;
+use std::os::fd::{AsFd, OwnedFd};
 use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
+
+use rustix::buffer::spare_capacity;
+use rustix::fs::{Mode, OFlags};
+use rustix::io::Errno;
 
 use crate::containers::{ContainerIndex, InspectCache};
 use crate::cpu;
@@ -136,12 +142,13 @@ impl Drop for WalkPool {
 }
 
 fn walk_worker(job_rx: mpsc::Receiver<WalkJob>, result_tx: mpsc::Sender<WalkChunk>) {
+    let mut buf = Vec::new();
     while let Ok(job) = job_rx.recv() {
         let chunk = std::panic::catch_unwind(AssertUnwindSafe(|| {
             let mut out = Vec::new();
             while let Some(&pid) = job.pids.get(job.next.fetch_add(1, Ordering::Relaxed)) {
                 let prev = job.prev.as_ref().and_then(|m| m.get(&pid));
-                if let Some(p) = read_pid(pid, job.want_pss, job.want_swap, prev) {
+                if let Some(p) = read_pid(pid, job.want_pss, job.want_swap, prev, &mut buf) {
                     out.push((pid, p));
                 }
             }
@@ -157,34 +164,98 @@ fn walk_worker(job_rx: mpsc::Receiver<WalkJob>, result_tx: mpsc::Sender<WalkChun
     }
 }
 
+/// `/proc/<pid>` opened once, so every file under it is an `openat` of one
+/// name rather than a path the kernel resolves from `/` again. `O_PATH`
+/// because the handle is only ever a base for those lookups.
+fn open_pid(pid: u32) -> Option<OwnedFd> {
+    let path = format!("{}/proc/{pid}", crate::root::prefix());
+    let flags = OFlags::PATH | OFlags::DIRECTORY | OFlags::CLOEXEC;
+    rustix::fs::open(path.as_str(), flags, Mode::empty()).ok()
+}
+
+/// `name` under `dir` into `buf`, replacing what it held, stopping once it
+/// holds more than `cap` bytes so an oversized file shows as `len() > cap`
+/// without being read whole. `None` when it cannot be opened or read.
+///
+/// Not `fs::read`: that `statx`es every file to size a buffer, and procfs
+/// reports size 0, so the call bought nothing. With the `open_pid` handle and
+/// a buffer reused across the walk, `--once` on ~745 pids went from 91.9k
+/// syscalls to 66.8k (`read` 39.1k to 19.4k, `statx` 9.3k to 1.0k), and a
+/// one-CPU plain walk from 41.3 ms [40.3-42.9] to 35.8 [34.8-37.0], median and
+/// p10-p90 over ten interleaved runs. The 32-thread pool shows no wall change.
+pub(crate) fn read_at(
+    dir: impl AsFd,
+    name: impl rustix::path::Arg,
+    buf: &mut Vec<u8>,
+    cap: usize,
+) -> Option<&[u8]> {
+    buf.clear();
+    let fd = rustix::fs::openat(dir, name, OFlags::RDONLY | OFlags::CLOEXEC, Mode::empty()).ok()?;
+    while buf.len() <= cap {
+        buf.reserve(4096);
+        match rustix::io::read(&fd, spare_capacity(buf)) {
+            Ok(0) => break,
+            Ok(_) | Err(Errno::INTR) => {}
+            Err(_) => return None,
+        }
+    }
+    Some(buf)
+}
+
+/// `read_at` uncapped, as text. Invalid UTF-8 is `None`, as `fs::read_to_string` has it.
+pub(crate) fn read_str(
+    dir: impl AsFd,
+    name: impl rustix::path::Arg,
+    buf: &mut Vec<u8>,
+) -> Option<&str> {
+    std::str::from_utf8(read_at(dir, name, buf, usize::MAX)?).ok()
+}
+
+/// A kernel symlink target never exceeds `PATH_MAX` (4096 with its NUL), so a
+/// buffer this size is never truncated.
+pub(crate) type LinkBuf = [u8; 4096];
+
+pub(crate) fn read_link_at(
+    dir: impl AsFd,
+    name: impl rustix::path::Arg,
+    out: &mut LinkBuf,
+) -> Option<&[u8]> {
+    let n = rustix::fs::readlinkat_raw(dir, name, &mut out[..]).ok()?;
+    out.get(..n)
+}
+
 pub(crate) fn read_pid(
     pid: u32,
     want_pss: bool,
     want_swap: bool,
     prev: Option<&Process>,
+    buf: &mut Vec<u8>,
 ) -> Option<Process> {
-    let base = format!("{}/proc/{pid}", crate::root::prefix());
-    let stat = fs::read_to_string(format!("{base}/stat")).ok()?;
-    let parsed = parse_stat(&stat)?;
-    let uid = read_uid(&format!("{base}/status")).unwrap_or(0);
-    let exe = read_exe(&format!("{base}/exe"));
-    let cmdline = read_cmdline(&format!("{base}/cmdline"));
-    let cgroup = fs::read_to_string(format!("{base}/cgroup"))
+    let dir = open_pid(pid)?;
+    let parsed = parse_stat(read_str(&dir, c"stat", buf)?)?;
+    let uid = read_str(&dir, c"status", buf)
+        .and_then(parse_uid)
+        .unwrap_or(0);
+    let exe = read_exe(&dir);
+    let cmdline = read_cmdline(&dir, buf);
+    let cgroup = read_str(&dir, c"cgroup", buf)
         .unwrap_or_default()
         .trim()
         .to_string();
-    let rss_pages = read_rss_pages(&format!("{base}/statm"));
+    let rss_pages = read_str(&dir, c"statm", buf).and_then(parse_rss_pages);
     // PSS is a level, not a rate. Kernel threads have no rollup. Prime and
     // TUI ticks between `--pss-interval` reuse last (new PIDs stay blank).
-    let (pss_kb, swap_pss_kb) = rollup_for(want_pss, want_swap, parsed.kthread, prev, pid);
+    let (pss_kb, swap_pss_kb) = rollup_for(want_pss, parsed.kthread, prev, || {
+        pio::read_rollup_kb(&dir, want_swap, buf)
+    });
     // PF_KTHREAD has no userspace /proc/pid/io or drm fdinfo.
     let (read_bytes, write_bytes, gpu) = if parsed.kthread {
         (None, None, GpuCounters::default())
     } else {
-        let (r, w) = pio::read_io(pid);
+        let (r, w) = pio::read_io(&dir, buf);
         // want_pss is the residual GPU fdinfo walk (PSS / --once) when dri/drm
         // names were found but yielded no metrics; empty prefilter skips it.
-        (r, w, gpu::read_pid(pid, want_pss))
+        (r, w, gpu::read_pid(&dir, want_pss, buf))
     };
     Some(Process {
         pid,
@@ -211,15 +282,14 @@ pub(crate) fn read_pid(
 
 fn rollup_for(
     want_pss: bool,
-    want_swap: bool,
     kthread: bool,
     prev: Option<&Process>,
-    pid: u32,
+    read: impl FnOnce() -> (Option<u64>, Option<u64>),
 ) -> (Option<u64>, Option<u64>) {
     if kthread {
         (None, None)
     } else if want_pss {
-        pio::read_rollup_kb(pid, want_swap)
+        read()
     } else {
         (
             prev.and_then(|p| p.pss_kb),
@@ -303,39 +373,35 @@ pub(crate) fn field_u64(line: &str, key: &str) -> Option<u64> {
         .ok()
 }
 
-fn read_uid(status_path: &str) -> Option<u32> {
+fn parse_uid(status: &str) -> Option<u32> {
     // /proc/<pid> inode uid is euid; grouping uses ruid (Uid: field 1). They
     // diverge on setuid (e.g. fusermount3).
-    let text = fs::read_to_string(status_path).ok()?;
-    let uid = text.lines().find_map(|l| field_u64(l, "Uid:"))?;
+    let uid = status.lines().find_map(|l| field_u64(l, "Uid:"))?;
     u32::try_from(uid).ok()
 }
 
-fn read_exe(path: &str) -> Option<String> {
-    match fs::read_link(path) {
-        Ok(p) => Some(strip_deleted(&p.to_string_lossy()).to_string()),
-        Err(_) => None,
-    }
+fn read_exe(dir: &OwnedFd) -> Option<String> {
+    let mut link = [0; 4096];
+    let target = read_link_at(dir, c"exe", &mut link)?;
+    Some(strip_deleted(&String::from_utf8_lossy(target)).to_string())
 }
 
 fn strip_deleted(s: &str) -> &str {
     s.strip_suffix(" (deleted)").unwrap_or(s)
 }
 
-fn read_cmdline(path: &str) -> Vec<String> {
-    let Ok(bytes) = fs::read(path) else {
-        return Vec::new();
-    };
-    bytes
-        .split(|b| *b == 0)
-        .filter(|s| !s.is_empty())
-        .map(|s| String::from_utf8_lossy(s).into_owned())
-        .collect()
+fn read_cmdline(dir: &OwnedFd, buf: &mut Vec<u8>) -> Vec<String> {
+    read_at(dir, c"cmdline", buf, usize::MAX).map_or_else(Vec::new, |bytes| {
+        bytes
+            .split(|b| *b == 0)
+            .filter(|s| !s.is_empty())
+            .map(|s| String::from_utf8_lossy(s).into_owned())
+            .collect()
+    })
 }
 
-fn read_rss_pages(path: &str) -> Option<u64> {
-    let text = fs::read_to_string(path).ok()?;
-    text.split_whitespace().nth(1)?.parse().ok()
+fn parse_rss_pages(statm: &str) -> Option<u64> {
+    statm.split_whitespace().nth(1)?.parse().ok()
 }
 /// A uid straight through, otherwise the `/etc/passwd` name. Numeric first
 /// because a uid is always meaningful and a passwd entry is not always there:
@@ -390,8 +456,17 @@ pub(crate) fn kernel_threads() -> Option<u64> {
 /// user's `exe`, or a pid that exited between the keypress and the read) comes
 /// back empty, the same blank contract the columns keep.
 pub(crate) fn detail(pid: u32) -> Vec<(&'static str, String)> {
-    let base = format!("{}/proc/{pid}", crate::root::prefix());
-    let status = fs::read_to_string(format!("{base}/status")).unwrap_or_default();
+    let dir = open_pid(pid);
+    let mut buf = Vec::new();
+    let mut text = |name: &CStr| {
+        dir.as_ref()
+            .and_then(|d| read_str(d, name, &mut buf))
+            .unwrap_or_default()
+            .trim()
+            .to_string()
+    };
+    let status = text(c"status");
+    let cgroup = text(c"cgroup");
     let field = |name: &str| {
         status
             .lines()
@@ -401,11 +476,11 @@ pub(crate) fn detail(pid: u32) -> Vec<(&'static str, String)> {
             .to_string()
     };
     // `Uid:` is real/effective/saved/fs; the real uid is the one the tree bills.
-    let uid = status
-        .lines()
-        .find_map(|l| field_u64(l, "Uid:"))
-        .and_then(|u| u32::try_from(u).ok());
-    let argv = read_cmdline(&format!("{base}/cmdline")).join(" ");
+    let uid = parse_uid(&status);
+    let argv = dir
+        .as_ref()
+        .map(|d| read_cmdline(d, &mut buf).join(" "))
+        .unwrap_or_default();
     vec![
         ("PID", pid.to_string()),
         ("PPID", field("PPid:")),
@@ -414,14 +489,8 @@ pub(crate) fn detail(pid: u32) -> Vec<(&'static str, String)> {
             "UID",
             uid.map_or_else(String::new, |u| format!("{u} ({})", username(u))),
         ),
-        ("EXE", read_exe(&format!("{base}/exe")).unwrap_or_default()),
-        (
-            "CGROUP",
-            fs::read_to_string(format!("{base}/cgroup"))
-                .unwrap_or_default()
-                .trim()
-                .to_string(),
-        ),
+        ("EXE", dir.as_ref().and_then(read_exe).unwrap_or_default()),
+        ("CGROUP", cgroup),
         ("CMDLINE", truncate_chars(&argv, 240)),
     ]
 }
@@ -731,14 +800,15 @@ mod tests {
             swap_pss_kb: Some(3),
             ..Process::default()
         };
+        let unread = || unreachable!("a carried tick reads no rollup");
         assert_eq!(
-            rollup_for(false, true, true, Some(&carried), 1),
+            rollup_for(false, true, Some(&carried), unread),
             (None, None)
         );
         assert_eq!(
-            rollup_for(false, true, false, Some(&carried), 1),
+            rollup_for(false, false, Some(&carried), unread),
             (Some(12), Some(3))
         );
-        assert_eq!(rollup_for(false, true, false, None, 1), (None, None));
+        assert_eq!(rollup_for(false, false, None, unread), (None, None));
     }
 }

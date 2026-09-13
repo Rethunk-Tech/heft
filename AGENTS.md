@@ -48,7 +48,8 @@ tests/fixtures/      grouping worlds: gui/ desktop snapshot, zygote/ fallback ca
 packaging/aur/       PKGBUILD + .SRCINFO for heft, heft-bin, heft-git; update.sh
 ```
 
-No `sysinfo` crate. No `nix` unless rustix cannot do it; v1 uses `std` + `libc`.
+No `sysinfo` crate. No `nix` unless rustix cannot do it; v1 uses `std` + `libc`,
+plus `rustix` (already built for crossterm) for the dirfd-relative `/proc/<pid>` reads.
 Never read `/proc/pid/mem`. Never ptrace.
 
 The hand-rolled helpers — the `/proc` and fdinfo field parsers,

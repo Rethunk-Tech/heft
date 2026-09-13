@@ -20,6 +20,7 @@ clap = { version = "4", default-features = false, features = [
 ] }
 crossterm = "0.29"
 libc = "0.2"
+rustix = { version = "1", features = ["fs"] }
 regex-lite = "0.1"
 ratatui = { version = "0.30", default-features = false, features = [
   "crossterm",

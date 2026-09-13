@@ -302,6 +302,7 @@ dependencies = [
  "libc",
  "ratatui",
  "regex-lite",
+ "rustix",
  "serde",
  "serde_json",
  "unicode-truncate",

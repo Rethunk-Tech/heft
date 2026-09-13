@@ -1,8 +1,10 @@
 use std::collections::HashMap;
-use std::io::{Read, Write};
+use std::io::{self, Read, Write};
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+use std::os::unix::ffi::OsStrExt;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::Deserialize;
 
@@ -90,16 +92,20 @@ pub(crate) struct InspectCache {
 
 impl InspectCache {
     fn refresh(&mut self, ids: Vec<String>, mut fetch: impl FnMut(&str) -> Option<Inspect>) {
-        if self.ids == ids {
-            return;
+        // Replace the map when the id set changes so vanished ids cannot
+        // linger; otherwise fetch only what is missing, which is an inspect a
+        // spent deadline or a failed GET left out.
+        if self.ids != ids {
+            self.inspects.clear();
+            self.ids = ids;
         }
-        self.inspects.clear();
-        for id in &ids {
-            if let Some(insp) = fetch(id) {
+        for id in &self.ids {
+            if !self.inspects.contains_key(id)
+                && let Some(insp) = fetch(id)
+            {
                 self.inspects.insert(id.clone(), insp);
             }
         }
-        self.ids = ids;
     }
 }
 
@@ -115,16 +121,17 @@ impl ContainerIndex {
             cache.refresh(Vec::new(), |_| None);
             return Self::default();
         };
-        let Ok(body) = unix_get(&sock, "/containers/json") else {
+        let deadline = Instant::now() + DAEMON_BUDGET;
+        let Ok(body) = unix_get(&sock, "/containers/json", deadline) else {
             return Self::default();
         };
         let Ok(list) = serde_json::from_slice::<Vec<ListItem>>(&body) else {
             return Self::default();
         };
-        // Inspect is IPs/running; names/labels come from the list GET. Replace
-        // the map when the id set changes so vanished ids cannot linger.
+        // Inspect is IPs/running; names/labels come from the list GET. An
+        // inspect past the deadline is skipped and fetched on a later sample.
         cache.refresh(live_hex_ids(&list), |id| {
-            unix_get(&sock, &format!("/containers/{id}/json"))
+            unix_get(&sock, &format!("/containers/{id}/json"), deadline)
                 .ok()
                 .and_then(|b| serde_json::from_slice(&b).ok())
         });
@@ -306,19 +313,77 @@ fn http_2xx(head: &[u8]) -> bool {
         .is_some_and(|c| c[0] == b'2' && c[1].is_ascii_digit() && c[2].is_ascii_digit())
 }
 
-fn unix_get(sock: &Path, path: &str) -> Result<Vec<u8>, crate::types::Error> {
+/// What one sample's whole container load may spend on the daemon: the list
+/// and every inspect together. A per-read timeout alone let a daemon that
+/// drips a byte a second hold a GET for as long as it kept dripping.
+const DAEMON_BUDGET: Duration = Duration::from_secs(2);
+
+fn time_left(deadline: Instant) -> Result<Duration, crate::types::Error> {
+    let left = deadline.saturating_duration_since(Instant::now());
+    if left.is_zero() {
+        return Err("docker deadline passed".into());
+    }
+    Ok(left)
+}
+
+/// `UnixStream::connect` takes no timeout and blocks while the daemon's accept
+/// queue is full. Linux's `unix_stream_connect` waits at most the socket's
+/// `SO_SNDTIMEO`, so the socket is built with libc and that timeout is set on
+/// it before `connect` runs.
+fn connect(sock: &Path, deadline: Instant) -> Result<UnixStream, crate::types::Error> {
+    let budget = time_left(deadline)?;
+    let path = sock.as_os_str().as_bytes();
+    // SAFETY: sockaddr_un is plain data and all-zero is a valid value of it,
+    // which also leaves sun_path NUL-terminated after the shorter copy below.
+    let mut addr: libc::sockaddr_un = unsafe { std::mem::zeroed() };
+    if path.len() >= addr.sun_path.len() {
+        return Err("docker socket path too long".into());
+    }
+    addr.sun_family = libc::sa_family_t::try_from(libc::AF_UNIX)?;
+    for (dst, &src) in addr.sun_path.iter_mut().zip(path) {
+        *dst = libc::c_char::from_ne_bytes([src]);
+    }
+    // SAFETY: socket has no preconditions; a negative result is checked.
+    let fd = unsafe { libc::socket(libc::AF_UNIX, libc::SOCK_STREAM | libc::SOCK_CLOEXEC, 0) };
+    if fd < 0 {
+        return Err(io::Error::last_os_error().into());
+    }
+    // SAFETY: fd was just returned by socket and nothing else owns it.
+    let stream = UnixStream::from(unsafe { OwnedFd::from_raw_fd(fd) });
+    stream.set_write_timeout(Some(budget))?;
+    let len = libc::socklen_t::try_from(std::mem::size_of::<libc::sockaddr_un>())?;
+    // SAFETY: addr is a valid sockaddr_un of len bytes and the fd is open.
+    if unsafe { libc::connect(stream.as_raw_fd(), (&raw const addr).cast(), len) } != 0 {
+        return Err(io::Error::last_os_error().into());
+    }
+    Ok(stream)
+}
+
+fn unix_get(sock: &Path, path: &str, deadline: Instant) -> Result<Vec<u8>, crate::types::Error> {
     const MAX: usize = 4 * 1024 * 1024;
     if !docker_get_path(path) {
         return Err("invalid docker path".into());
     }
-    let mut s = UnixStream::connect(sock)?;
-    s.set_read_timeout(Some(Duration::from_secs(2)))?;
-    s.set_write_timeout(Some(Duration::from_secs(2)))?;
+    let mut s = connect(sock, deadline)?;
+    s.set_write_timeout(Some(time_left(deadline)?))?;
     write!(s, "GET {path} HTTP/1.0\r\nHost: localhost\r\n\r\n")?;
     let mut buf = Vec::new();
-    s.take(MAX as u64 + 1).read_to_end(&mut buf)?;
-    if buf.len() > MAX {
-        return Err("docker response too large".into());
+    let mut chunk = [0; 8192];
+    loop {
+        // Each read may wait only for what is left of the deadline, so the
+        // sum of reads is bounded and not just each one.
+        s.set_read_timeout(Some(time_left(deadline)?))?;
+        match s.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(n) => {
+                buf.extend_from_slice(&chunk[..n]);
+                if buf.len() > MAX {
+                    return Err("docker response too large".into());
+                }
+            }
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+            Err(e) => return Err(e.into()),
+        }
     }
     let sep = buf
         .windows(4)
@@ -505,6 +570,53 @@ mod tests {
         assert_eq!(i.ips(), ["172.17.0.2"]);
     }
 
+    /// Runs `unix_get` against a listener whose accepted connection `serve`
+    /// holds, and returns how long the GET took. The GET runs on its own
+    /// thread, so a regression fails the test instead of hanging the suite.
+    fn timed_get(name: &str, serve: fn(UnixStream)) -> Duration {
+        let dir = std::env::temp_dir().join(format!("heft-{name}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let sock = dir.join("s");
+        let _ = std::fs::remove_file(&sock);
+        let listener = std::os::unix::net::UnixListener::bind(&sock).unwrap();
+        std::thread::spawn(move || serve(listener.accept().unwrap().0));
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let start = Instant::now();
+            let got = unix_get(
+                &sock,
+                "/containers/json",
+                start + Duration::from_millis(500),
+            );
+            tx.send((got.is_err(), start.elapsed())).unwrap();
+        });
+        let (failed, took) = rx
+            .recv_timeout(Duration::from_secs(4))
+            .expect("the GET outlived its deadline");
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(failed, "a daemon that never finishes is not a response");
+        took
+    }
+
+    #[test]
+    fn a_daemon_that_never_answers_costs_one_deadline() {
+        let took = timed_get("silent", |s| {
+            std::thread::sleep(Duration::from_secs(5));
+            drop(s);
+        });
+        assert!(took < Duration::from_millis(1500), "{took:?}");
+    }
+
+    #[test]
+    fn a_daemon_that_drips_costs_one_deadline() {
+        let took = timed_get("drip", |mut s| {
+            while s.write_all(b"H").is_ok() {
+                std::thread::sleep(Duration::from_millis(100));
+            }
+        });
+        assert!(took < Duration::from_millis(1500), "{took:?}");
+    }
+
     fn item(id: &str, state: Option<&str>) -> ListItem {
         ListItem {
             id: id.into(),
@@ -551,5 +663,13 @@ mod tests {
         assert_eq!(fetches, 3);
         assert!(!cache.inspects.contains_key(&a));
         assert!(cache.inspects.contains_key(&b));
+        // An inspect the deadline skipped is fetched again on the next sample.
+        cache.refresh(vec![a.clone(), b.clone()], |_| None);
+        assert!(cache.inspects.is_empty());
+        cache.refresh(vec![a, b], |_| {
+            fetches += 1;
+            Some(Inspect::default())
+        });
+        assert_eq!(fetches, 5);
     }
 }

@@ -4,9 +4,9 @@
 
 ### Changed
 
-- The `/proc` walk hands out pids one at a time, so one slow `smaps_rollup`
-  no longer holds up a whole slice: a PSS tick went from 98 to 82 ms and a
-  plain tick from 8.7 to 6.5 ms on a 750-process host.
+- The TUI redraws only on a new sample, input, a resize or the pause clock
+  rather than every 50 ms. Idle TUI CPU is about 2 points of a core lower, and
+  sixel output drops from about 14 KB/s to 1 KB/s.
 - Each pid's files are read through one `/proc/<pid>` handle and a reused
   buffer: 27% fewer syscalls per walk.
 - Stall figures skip reading `cgroup.procs` for a cgroup the walk already saw

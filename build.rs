@@ -42,8 +42,8 @@ never created. A malformed file warns once and the rest still load.
 .SH ENVIRONMENT
 .TP
 \\fBNO_COLOR\\fR
-Any non\\-empty value draws the TUI without hue. Presence decides, not the
-value, so NO_COLOR=0 disables colour too.
+Any non\\-empty value draws the TUI without hue, NO_COLOR=0 included. An
+empty value is ignored.
 .TP
 \\fBDOCKER_HOST\\fR
 A unix:// socket is tried before /var/run/docker.sock and the Podman sockets.

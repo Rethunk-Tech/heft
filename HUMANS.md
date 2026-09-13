@@ -281,8 +281,8 @@ device-attributes request, and uses the image protocol it reports: kitty when
 local, sixel over ssh. A terminal that answers neither delays the first frame
 by 400ms and gets characters. `--trend kitty`, `sixel` and `chars` force one
 and ask nothing. A terminal that does not report its cell size in pixels gets
-characters. TREND is TUI only: `--order spark` in `--once` leaves an empty
-column, and the JSON never carries it.
+characters. TREND is TUI only: `--once` has no TREND column, and the JSON
+never carries it.
 
 The kitty protocol (kitty, ghostty) sends pixels through shared memory
 locally, costing tens of bytes a sample. Over ssh they go inline as base64:
@@ -381,8 +381,9 @@ containers (no PID) do not appear.
 | config | `/etc/heft/rules.d/*.json` | the administrator's grouping rules, read after yours |
 
 heft creates no `$XDG_STATE_HOME/heft` or `$XDG_CACHE_HOME/heft`. The only file
-it writes is `view.json`; the only other state it touches is its terminal (the
-alternate screen, and termios restored on exit). Never `/proc`, sysfs, or
+it writes is `view.json`, besides the shared-memory objects `--trend kitty`
+creates under `/dev/shm` and removes; the only other state it touches is its
+terminal (the alternate screen, and termios restored on exit). Never `/proc`, sysfs, or
 cgroup files.
 
 ### Columns
@@ -415,8 +416,8 @@ survive one; rules.d files, which heft never writes, keep theirs.
 Labels are `name`, `spark`, `nproc`, `threads`, `age`, `core`,
 `machine`, `pss`, `rss`, `swap`, `vram`, `gtt`, `gfx`, `compute`, `diskr`,
 `diskw`, `cpustall`, `iostall`, `memstall`, `netns_rx`, `netns_tx`. `--sort`
-and `Shift-←` `Shift-→` take all of them except `spark`; `--hide` and
-`--order` take all of them. With no file or no `hide_columns` key, `cpustall`,
+and `Shift-←` `Shift-→` take all of them except `spark`, `--hide` all of
+them except `name`, and `--order` all of them. With no file or no `hide_columns` key, `cpustall`,
 `iostall` and `memstall` are hidden and the rest show in compiled order. An
 unknown label in the file warns on stderr and is ignored; on `--hide` or
 `--order` it is a usage error. Hiding and order are presentation only: heft
@@ -502,7 +503,7 @@ $ heft --check-rules
 90-mine.json:pin-daemon#0 (/home/me/.config/heft/rules.d): expected folder user_services, got applications
 30-gnome.json:gsd#9 (built-in): overridden by 90-mine.json:my-gsd (/home/me/.config/heft/rules.d)
 40-trinity.json#3 (built-in): disabled by 40-trinity.json (90-mine.json, /home/me/.config/heft/rules.d)
-141 examples in 13 files: 1 failed, 1 overridden, 14 disabled
+128 examples in 13 files: 1 failed, 1 overridden, 14 disabled
 ```
 
 It exits 1 on a failed example or a file that did not load. A built-in example

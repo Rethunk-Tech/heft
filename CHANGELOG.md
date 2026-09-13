@@ -13,9 +13,27 @@
   twice, halving that pass to under 1 ms.
 - TREND history pruning is a set lookup, which matters on a fully expanded
   tree (274 µs to 30 µs at 730 rows).
+- Idle `--follow` and TUI sampling cost about a quarter of the CPU: a PSS
+  tick skips `smaps_rollup` for a process whose RSS moved less than 1% (or
+  1 MiB) since its last read, for up to six PSS periods; the walk uses at
+  most four threads when following; fd tables are rescanned only on PSS
+  ticks. 5.4 s to 1.5 s of CPU per 30 s on a 730-process desktop. A process's
+  first GPU fd can take up to `--pss-interval` to show.
+- `--follow` without `--once` or `--json` is clap's usage error.
+- Containers are indexed by their 12-hex id alone; two running containers
+  sharing that prefix bill to one row.
+- A rules.d example carrying `kthread`, `utime` or `stime` fails its file.
+  heft never read them, and `--fixture` rows do not carry them.
 
 ### Fixed
 
+- An `--interval` or `--pss-interval` too large for a duration is a usage
+  error rather than an abort.
+- `--explain` draws its placement path in the `--glyphs` set.
+- The `i` pane cuts a long command line by display width and never splits a
+  character from its combining mark; the `?` overlay aligns keys by display
+  width.
+- `--user ""` no longer matches an `/etc/passwd` line with an empty name.
 - `--help` says `--filter` also matches the argv under a row, and that
   `--follow` honours `--pss-interval`.
 

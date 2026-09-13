@@ -265,10 +265,9 @@ first of the nine cells spells out its position; the rest inherit from the
 left, which the protocol allows when the colours match.
 
 Two transports, chosen from `SSH_CONNECTION` / `SSH_TTY` rather than from
-`TERM`: `t=s` hands over a POSIX shared memory object and costs tens of bytes
-a frame, and `t=d` sends the pixels inline for the case the terminal is not on
-this machine. Measured on a 24-row terminal with 10x20 cells, 19 visible rows:
-~146 KB per transmission inline, once per sample. Per *frame* it would be
+`TERM`: `t=s` hands over a POSIX shared memory object, and `t=d` sends the
+pixels inline for the case the terminal is not on this machine; what each costs
+a sample is measured in HUMANS.md, TREND. Per *frame* the inline cost would be
 twenty times that, which is why `Kgp::send` hashes the pixels and returns
 without writing when nothing changed — the loop draws on every poll timeout,
 not once per sample.
@@ -289,11 +288,11 @@ neither echoed nor left on the user's scrollback. DA1 is the sentinel that
 makes the read terminable — universally answered, and answered last, so its
 arrival proves the graphics query has been dealt with; without it every start
 on a non-graphics terminal would wait out the timeout. Only a terminal that
-answers neither does, at 400ms. `caps::drain` then swallows a late reply,
+answers neither does. `caps::drain` then swallows a late reply,
 because a DA1 answer carries `?` and `?` opens the help overlay.
 `ui::resolve_trend` prefers kitty locally (cell-grid placement, shm transport)
-and sixel when `kgp::is_remote`, on the measured 146 KB-a-sample against
-559-bytes-a-frame gap. An explicit `--trend` value asks nothing. It is also
+and sixel when `kgp::is_remote`, on the inline kitty against sixel cost gap
+measured in HUMANS.md, TREND. An explicit `--trend` value asks nothing. It is also
 `conflicts_with` `--once` and `--json`, which have no history to draw and are
 not drawing to a terminal. A terminal that reports no `ws_xpixel` cannot have
 an image sized for it, so `cell_px` returns `None` and the frame falls back to
@@ -308,10 +307,9 @@ would be a second copy of ratatui's column layout, and TREND's width moves
 with the table's slack. And it is written after `terminal.draw` returns rather than
 inside the closure, because sixel paints over cells instead of into them, so a
 cell ratatui rewrites erases the pixels; it is repainted every frame rather
-than hashed. That is affordable where the kitty inline transport was not:
-measured on an 18-row column, 559 bytes a frame against roughly 146 KB a
-sample for `f=32` inline, because a line is mostly empty and sixel
-run-length-encodes the empty part. `P2=1` in the introducer is what keeps the
+than hashed. That is affordable where the `f=32` kitty inline transport was
+not (both measured in HUMANS.md, TREND), because a line is mostly empty and
+sixel run-length-encodes the empty part. `P2=1` in the introducer is what keeps the
 zero pixels transparent so the cursor highlight still shows.
 
 `src/keys.rs` is the one TUI key list. `build.rs` includes it the way it
@@ -335,7 +333,7 @@ the seven `/proc` facts from `proc::detail`. The metrics go through
 wide: stacked one per line they were a twenty-row column of two-character
 values beside an empty half-screen, and pushed `EXE`, `CGROUP` and `CMDLINE`
 past the bottom, where `Paragraph` cuts them. `proc::detail` caps the command
-line at 240 chars for the same reason. Those are read on the keypress
+line for the same reason. Those are read on the keypress
 rather than carried on `ProcNode`: five more strings per process per tick would
 be paid on every tick to serve one row of one keystroke. `ui::popup` is shared
 with `draw_help` so the two overlays cannot drift, and only one draws at a
@@ -571,7 +569,7 @@ literal path would find the real machine through it and fill the tree. The
 container socket and `/etc/passwd` are deliberately not prefixed — one is live
 IPC rather than a file in the tree, the other is the host's.
 
-`ui::alarming` marks the cells that say a row is in trouble — a stall column at or over `STALL_ALARM` (20%) — with `ui::alarm_style`: red
+`ui::alarming` marks the cells that say a row is in trouble — a stall column at or over `STALL_ALARM` — with `ui::alarm_style`: red
 where there is colour, `REVERSED` where there is not, which is the fallback
 `sort_header` already uses. Reverse rather than a marker character because
 `CPU ST` is six columns wide and `100.0` is five, so a marker would overflow

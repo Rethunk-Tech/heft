@@ -497,7 +497,8 @@ dashes.
 Where the terminal is on this machine the pixels go through shared memory and
 the escape carries only a name, so the column costs tens of bytes a sample.
 Over ssh they have to go inline, base64, and that is not free: measured on a
-24-row terminal with 19 rows showing and TREND nine cells wide, about 146 KB
+24-row terminal with 10x20-pixel cells, 19 rows showing and TREND nine cells
+wide, about 146 KB
 per sample, or a bit over a megabit a second, and a wider TREND costs
 proportionally more. It is sent once per sample rather than once per frame, so
 holding a key down does not multiply it — but on a slow link, `--trend chars`
@@ -514,8 +515,8 @@ release.
 It is the cheaper of the two over a network, which is the opposite of what you
 might expect from the older format. A trend is a line on an empty background,
 sixel run-length-encodes the empty part, and measured on an 18-row column the
-whole image came to **559 bytes** — against about 146 KB a sample for the
-kitty protocol's inline transport, which sends every pixel. So over ssh,
+whole image came to **559 bytes** a frame, against the kitty protocol's inline
+transport above, which sends every pixel. So over ssh,
 `--trend sixel` is the one to reach for if your terminal has it.
 
 The reason it is not simply the default anywhere is that sixel has no way to
@@ -545,9 +546,9 @@ When heft can account for less than 90% of those threads it says so:
 and reaped while the walk runs — and heft stays quiet. On an unrestricted host
 the two agree exactly.
 
-This is the same blind spot the GTT note above describes with a number: the
-kernel reported 45.7 GiB in use while heft's Host row accounted for 18.1 GiB,
-because every drm client inside a root-owned container was unreadable.
+This is the same blind spot the GTT note above measures: every drm client
+inside a root-owned container is unreadable, so the kernel's GTT figure runs
+well past what the Host row can account for.
 
 ## SWAP
 

@@ -23,7 +23,7 @@ use crate::config::{self, View};
 use crate::cpu;
 use crate::glyph;
 use crate::kgp;
-use crate::mem::{self, MemParts};
+use crate::mem;
 use crate::once::{
     COLUMNS, Column, Columns, Filter, Sort, fmt_bytes, fmt_pct, haystack, hide_column,
     ident_haystack, keep_matches, keep_top, keep_users, sort_tree, unhide_last,
@@ -1281,34 +1281,26 @@ fn mem_header_line(tree: &HostTree, width: usize) -> (Line<'static>, usize) {
         0
     };
     let gtt = tree.gtt_used_bytes.or(host.gtt_bytes).unwrap_or(0);
-    let seg = mem::clip_used(MemParts {
-        used: tree.mem_used_bytes,
-        total: tree.mem_total_bytes,
-        vram,
-        gtt,
-        zram: tree.zram_used_bytes,
-        shmem: tree.mem_shmem_bytes,
-        kernel: tree.mem_kernel_bytes,
-        anon: tree.mem_anon_bytes,
+    let sizes = mem::clip_used(
+        tree.mem_used_bytes,
+        tree.mem_total_bytes,
+        [
+            vram,
+            gtt,
+            tree.zram_used_bytes,
+            tree.mem_shmem_bytes,
+            tree.mem_kernel_bytes,
+            tree.mem_anon_bytes,
+        ],
         // What `MemAvailable` counts as free: drawn after `used`, not in it.
-        cache: tree.mem_cached_bytes.saturating_sub(tree.mem_shmem_bytes),
-        slab: tree.mem_sreclaimable_bytes,
-        buffers: tree.mem_buffers_bytes,
-    });
+        [
+            tree.mem_cached_bytes.saturating_sub(tree.mem_shmem_bytes),
+            tree.mem_sreclaimable_bytes,
+            tree.mem_buffers_bytes,
+        ],
+    );
     let tanks = tank_widths(width, 1 + usize::from(discrete.is_some()));
     let mem_width = tanks[0];
-    let sizes = [
-        seg.vram,
-        seg.gtt,
-        seg.zram,
-        seg.shmem,
-        seg.kernel,
-        seg.anon,
-        seg.other,
-        seg.cache,
-        seg.slab,
-        seg.buffers,
-    ];
     let parts: Vec<(u64, Color, char)> = sizes
         .iter()
         .zip(mem_key())

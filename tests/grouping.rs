@@ -93,17 +93,22 @@ fn tree_of(path: &str, rules: &Rules) -> HostTree {
     )
 }
 
-/// One user file at the XDG rank plus the built-ins, the set `rules::load`
-/// builds when `$XDG_CONFIG_HOME/heft/rules.d/90-mine.json` exists.
-fn with_user(text: &str) -> Rules {
-    let mut files = vec![LoadedFile {
+/// `$XDG_CONFIG_HOME/heft/rules.d/90-mine.json` as the loader reads it.
+fn mine(text: &str) -> LoadedFile {
+    LoadedFile {
         source: Source {
             rank: 0,
             label: "xdg".into(),
         },
         name: "90-mine.json".into(),
         text: text.into(),
-    }];
+    }
+}
+
+/// One user file at the XDG rank plus the built-ins, the set `rules::load`
+/// builds when that file exists.
+fn with_user(text: &str) -> Rules {
+    let mut files = vec![mine(text)];
     files.extend(heft::rules::builtin_files());
     let r = Rules::from_files(files);
     assert!(r.problems.is_empty(), "{:?}", r.problems);
@@ -139,6 +144,8 @@ fn proc_names(n: &heft::IdentNode) -> Vec<String> {
 #[test]
 fn a_fixture_dump_loads_as_a_fixture() {
     let path = std::env::temp_dir().join(format!("heft-fixture-{}.json", std::process::id()));
+    // Direct rather than `common::heft`: `--fixture` reads no saved view and
+    // no rules, and `common::arr` would be dead code in this crate.
     let out = std::process::Command::new(env!("CARGO_BIN_EXE_heft"))
         .arg("--fixture")
         .output()
@@ -882,17 +889,7 @@ fn disabling_the_trinity_file_makes_a_tde_module_an_application() {
 fn a_malformed_rules_file_is_rejected_rather_than_obeyed() {
     // The loader turns each of these into a stderr warning and built-in
     // behaviour; parsing is where the file is judged.
-    let bad = |text: &str| {
-        let r = Rules::from_files(vec![LoadedFile {
-            source: Source {
-                rank: 0,
-                label: "xdg".into(),
-            },
-            name: "90-mine.json".into(),
-            text: text.into(),
-        }]);
-        r.problems.len() == 1
-    };
+    let bad = |text: &str| Rules::from_files(vec![mine(text)]).problems.len() == 1;
     assert!(bad("{ not json }"));
     assert!(
         bad(r#"{"stage":"placement","ruls":[]}"#),

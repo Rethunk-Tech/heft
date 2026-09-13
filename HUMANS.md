@@ -86,7 +86,7 @@ heft                      # fullscreen TUI, 1 s catch-all / 5 s PSS
 heft --once               # one table on stdout
 heft --json               # one JSON tree on stdout
 heft --interval 0.5       # catch-all period (TUI tick and --once/--json gap)
-heft --pss-interval 5     # TUI only: how often to read smaps_rollup (default 5s)
+heft --pss-interval 5     # TUI and --follow: how often to read smaps_rollup (default 5s)
 heft --sort rss           # start on this column instead of the saved one
 heft --once --filter '^(code|claude)$'  # keep rows matching this regex, and their parents
 heft --once --user 1000   # only this user's branch (name or uid, repeatable)
@@ -132,7 +132,7 @@ tick gains less — roughly 850ms to 340ms — because `smaps_rollup` makes the
 kernel walk each process's page tables, so it still stretches its interval.
 This is also why heft shows itself holding more than one thread.
 
-`--pss-interval` (default 5s, at least `--interval`) is TUI-only; between
+`--pss-interval` (default 5s, at least `--interval`) applies to the TUI and `--follow`; between
 those reads heft reuses last per-PID PSS (vanished PIDs drop). New PIDs show a
 blank PSS until the next rollup.
 
@@ -282,7 +282,7 @@ virtualise those, so nothing heft could read there would be namespace-local.
 | Enter / Space | collapse or expand |
 | `←` `→` / `h` `l` | scroll columns when the terminal is narrower than the table |
 | `Shift-←` `Shift-→` | previous or next sort column (default PSS descending) |
-| `/` | filter by regex on the name (Enter applies, Esc cancels) |
+| `/` | filter by regex on the name and argv (Enter applies, Esc cancels) |
 | `d` | reverse the sort direction |
 | `H` | hide the current sort column (`name` is refused) |
 | `u` | unhide the last hidden column |
@@ -413,7 +413,7 @@ number gets read as a current one.
 The GPU columns read DRM fdinfo, and only from `amdgpu`, `i915` and `xe` — the
 three drivers whose region and engine key names heft knows. Every other driver
 is refused rather than guessed at, so `nvidia-drm`, `nouveau`, and the ARM SoC
-drivers (`panfrost`, `v3d`, `msm`) leave VRAM, GTT, gfx% and compute% blank on
+drivers (`panfrost`, `v3d`, `msm`) leave VRAM, GTT, GFX and CMP blank on
 a machine that has a working GPU. That blank is the ordinary blank contract:
 no figure exists, because reading a key by the name another driver happens to
 use is how you print a confident wrong number.
@@ -434,7 +434,7 @@ overwritten.
 
 Every row in a frame is drawn against one scale, so the column reads down the
 table as well as across a row. Where the metric has a full scale of its own —
-`%CORE`, `%MACH`, `gfx%`, `compute%` and the three stall columns are all
+`%CORE`, `%MACH`, `GFX`, `CMP` and the three stall columns are all
 percentages — that is 100, and a row above it pins to the top rather than
 rescaling every row beside it. For bytes, counts and rates there is no such
 number, so the scale is the heaviest row on screen that is an *entry*: Host,
@@ -640,7 +640,7 @@ no bytes. Linux publishes no per-process byte counter that heft could read
 without CAP_NET_RAW, CAP_BPF or ptrace, all of which are outside what heft
 does; htop and btop leave the column out for the same reason.
 
-The columns are last in the table, so `]` scrolls to them on a narrow
+The columns are last in the table, so `→` scrolls to them on a narrow
 terminal. What they sum:
 
 - The container's own interfaces except `lo`. Loopback traffic never left the
@@ -687,7 +687,7 @@ reads as `2` and a wrong figure is the one thing heft will not print — the sam
 rule as the blank cells. `←` and `→` reach the columns that were left off,
 and NAME stays put while they scroll.
 
-The table has twenty columns and most terminals cannot hold them. `H` hides
+The table has twenty-one columns and most terminals cannot hold them. `H` hides
 the column you are sorting by (and moves the sort to the next visible one in
 the order on screen); `u` puts the last hidden column back. `--hide` does the
 same for `--once`, repeatable, and adds to whatever `view.json` hides.

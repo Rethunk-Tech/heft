@@ -17,8 +17,9 @@
 //!
 //! It is also emitted after ratatui flushes, not before. ratatui writes only
 //! the cells that changed, and a cell it rewrites erases the pixels over it,
-//! so the image is repainted every frame rather than hashed and skipped the
-//! way the kitty one is. That is affordable here for a reason it would not be
+//! so the image is repainted on every draw rather than hashed and skipped the
+//! way the kitty one is. `ui` draws only on a sample, input, or the pause
+//! clock, so an idle table costs one image a sample. That is affordable here for a reason it would not be
 //! there: a sparkline is mostly empty, and sixel run-length-encodes the empty
 //! part: an 18-row column measured 559 bytes a frame rather than the whole
 //! bitmap.

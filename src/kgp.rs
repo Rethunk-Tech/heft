@@ -274,9 +274,8 @@ pub(crate) const fn id_rgb() -> (u8, u8, u8) {
 
 pub(crate) struct Kgp {
     transport: Transport,
-    /// Hash of the last image sent, so a redraw for a keypress re-sends
-    /// nothing. The loop draws on every poll timeout, not once per sample, and
-    /// on `t=d` a frame is most of a megabyte.
+    /// Hash of the last image sent, so a redraw for a keypress or the pause
+    /// clock re-sends nothing. On `t=d` a frame is most of a megabyte.
     last: Option<u64>,
     /// Bumped per transmission so a new object never collides with one the
     /// terminal has not finished reading.
@@ -617,7 +616,7 @@ mod tests {
         );
     }
 
-    /// The loop draws on every poll timeout, not once per sample. On the
+    /// The loop redraws on a keypress too, not only on a sample. On the
     /// inline transport an unchanged frame re-sent is most of a megabyte.
     #[test]
     fn an_unchanged_image_is_not_sent_twice() {

@@ -286,7 +286,8 @@ frame. On a slow link without sixel, use `--trend chars`.
 wezterm, konsole 22.04 and later, iTerm2, and Windows Terminal 1.22 and later.
 kitty, ghostty and alacritty have no sixel, and GNOME Terminal's sixel setting
 does nothing because VTE strips sixel from every stable release. Sixel is
-repainted every frame, but run-length encoding keeps it small: measured on an
+repainted on every redraw (a sample or a keypress), but run-length encoding
+keeps it small: measured on an
 18-row column, **559 bytes** a frame. Over ssh it is the cheaper choice.
 
 ## How much heft can see

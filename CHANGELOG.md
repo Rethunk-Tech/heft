@@ -24,6 +24,16 @@
   sharing that prefix bill to one row.
 - A rule pinning `containers` or `system` as its folder fails its file with a
   warning naming the two folders a rule can use.
+- `?` with the `i` pane open closes the pane and shows the key help; one
+  overlay is open at a time.
+- A rules.d file named exactly `.json` is not read.
+- A crash handler whose install directory names no running process bills to
+  the app binary beside it: Vivaldi's `chrome_crashpad_handler` joins
+  `vivaldi-bin` rather than taking a `vivaldi` row of its own.
+- `--explain PID` exits 1 when the pid is not visible.
+- `--help` for `--hide` names the labels it takes.
+- Container lookups share a 2 s budget per sample. Inspects past it are
+  skipped and retried on the next sample.
 
 ### Removed
 
@@ -44,6 +54,36 @@
 
 - An `--interval` or `--pss-interval` too large for a duration is a usage
   error rather than an abort.
+- A process chain nested deeper than 48 levels no longer overflows the stack
+  (the TUI aborted and left the terminal raw). Deeper processes list flat
+  under their level-47 ancestor, and `--json` from such a chain still parses
+  with a default JSON reader.
+- A deeply nested chain of shells, launchers or app workers no longer
+  overflows the stack while heft groups it; placement follows such a chain at
+  most 64 levels.
+- `--once`, `--explain` and `--check-rules` print control characters in
+  process names and argv as visible escapes (`\u{1b}`), so a process cannot
+  send escape sequences to your terminal.
+- `--filter` and `/` anchor per process line: `--filter '^(code|claude)$'`
+  matches, and `(?-m)` restores whole-text anchors.
+- `--user` no longer causes a false `seeing N% of M threads` warning.
+- `heft --explain PID | head` exits 0 rather than panicking.
+- A process whose name is not valid UTF-8 no longer disappears; its uid and
+  cgroup read correctly.
+- heft walks `/proc` on one thread rather than aborting when it cannot start
+  walk threads (`RLIMIT_NPROC`, a cgroup's `pids.max`).
+- SWAP updates at the next PSS read after `swapon` or `swapoff`.
+- GFX and CMP no longer jump to 100% for one tick when a process opens or
+  closes a GPU client; that tick is blank.
+- A Docker or Podman socket that stalls, drips bytes or has a full accept
+  queue no longer hangs `--once`, `--json` or `--explain`, or freezes the TUI
+  tree.
+- A container whose inspect lists a `null` network keeps its IPs, NETNS
+  columns and owner.
+- The TUI shows a warning for a skipped rules.d file instead of drawing over
+  it.
+- A `view.json` that does not parse prints its path, line and column before
+  heft falls back to defaults.
 - `--explain` draws its placement path in the `--glyphs` set.
 - The `i` pane cuts a long command line by display width and never splits a
   character from its combining mark; the `?` overlay aligns keys by display

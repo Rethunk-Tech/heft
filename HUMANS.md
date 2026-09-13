@@ -109,8 +109,8 @@ rates exist, and always reads PSS.
 `--follow` keeps sampling and needs `--once` or `--json`. `--json --follow`
 writes one compact document per line (NDJSON); `--once --follow` reprints the
 table with its header each interval, separated by a blank line. The first
-sample always reads PSS. Closing the reader ends it quietly, so
-`heft --json --follow | head -5` exits 0. Every JSON document carries
+sample always reads PSS. Closing the reader ends any mode quietly, so
+`heft --json --follow | head -5` and `heft --explain 1 | head -1` exit 0. Every JSON document carries
 `host.sampled_at`, the unix second the sample was taken.
 
 `--sort` takes a column label other than `spark` ([Columns](#columns)); an
@@ -150,7 +150,10 @@ has `█▓▒░` and `▼►` but TREND shows boxes for `▁▂▃▅▆▇`. 
 
 `NO_COLOR` set to any non-empty value, `0` and `false` included, draws the TUI
 without hue. Bar segments still differ by fill, and `?` shows a swatch of
-each. `--once` and `--json` never emit colour.
+each. `--once` and `--json` never emit colour. `--once`, `--explain` and
+`--check-rules` print a control character in a name or argv as a visible
+escape such as `\u{1b}`; `--json` and `--fixture` carry the raw string,
+JSON-escaped.
 
 `--proc-root` reads `/proc` and `/sys` under another directory, such as another
 mount namespace's procfs or a tree captured off another machine; a directory
@@ -254,7 +257,12 @@ names those three drivers use are read: memory in a `vram`, `vram0`, `vram1`,
 other name is not guessed at, so on another driver those columns stay blank
 unless it uses the same names.
 heft looks for a process's GPU file descriptors on PSS reads, so a GPU a
-running process opens can take up to `--pss-interval` to show.
+running process opens can take up to `--pss-interval` to show, and on the
+tick a process's set of GPU descriptors changes its GFX and CMP are blank.
+
+Processes nest at most 48 deep: everything below a process at depth 47 is
+listed flat beneath it, in pid order, so nothing is dropped and every total is
+unchanged.
 
 Other uids appear as extra User nodes when `/proc` lists them. A metric heft
 cannot read (`smaps_rollup`, `io`, fdinfo, `exe`) or that does not exist for a
@@ -303,7 +311,8 @@ keeps it small: measured on an
 
 Where `/proc` hides pids (a `hidepid` mount, a PID namespace, another user's
 processes on a locked-down host) the tree is smaller than the machine. heft
-compares its summed threads with the kernel's global count in `/proc/loadavg`;
+compares its summed threads, taken before `--user` removes anyone, with the
+kernel's global count in `/proc/loadavg`;
 below 90% it says so, `seeing 1% of 4557 threads`, in the TUI footer and on a
 `WARN` line under the `--once` host line. The invisible drm clients under
 [What the tree means](#what-the-tree-means) are the same blind spot.
@@ -369,7 +378,9 @@ Heft `GET`s `/containers/json` and inspect on the first of these it finds:
 `$DOCKER_HOST` when it is a unix socket, `/var/run/docker.sock`,
 `/run/user/<uid>/podman/podman.sock` (rootless Podman), then
 `/run/podman/podman.sock` (rootful Podman). It never POSTs, kills or creates.
-Without a reachable socket a container title is `docker-<12hex>`. Stopped
+Without a reachable socket a container title is `docker-<12hex>`. Each sample
+gives the daemon 2 s in total for the list and every inspect; a container not
+inspected in time keeps that title until a later sample reaches it. Stopped
 containers (no PID) do not appear.
 
 ## XDG
@@ -511,7 +522,8 @@ your rules decide differently is reported as `overridden by` or `disabled by`
 rather than failed.
 
 Keys are the identities the tree shows you, not pids or comms. `heft --explain
-<PID>` tells you what a process resolved to, and what each stage made of it:
+<PID>` tells you what a process resolved to, and what each stage made of it,
+and exits 1 when that pid is not visible:
 
 ```
 $ heft --explain 156859

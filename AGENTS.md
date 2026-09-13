@@ -111,8 +111,11 @@ truncated id would silently lose its row.
   `/var/tmp`, or `/run` (`/tmp/mount`, `/tmp/.mount_cursorAb12Cd`) is per-run
   and never an identity; a stable directory nested under it
   (`…/usr/share/cursor/chrome_crashpad_handler`) names the app the same way
-  `/opt/cursor/…` does. A helper whose parent dir is the mount falls back
-  to the ancestor walk.
+  `/opt/cursor/…` does. When no process carries that directory name, the
+  helper bills to the display name of a non-helper process whose `exe` sits
+  in the same directory, lowest pid first
+  (`/opt/vivaldi/chrome_crashpad_handler` → `vivaldi-bin`). A helper whose
+  parent dir is the mount falls back to the ancestor walk.
 - User Services grouping is one identity for processes that share a systemd
   unit family, RPM/package family, D-Bus well-known name family, or documented
   process architecture — not a comm prefix. Mappings live in the `session`
@@ -125,6 +128,10 @@ truncated id would silently lose its row.
   (the `lying` rule matches `dbus:` activation, not `dbus-broker.service`);
   app-bound `xdg-dbus-proxy` bills to that app, unbound folds into `flatpak`;
   `gcr-ssh-agent` absorbs `ssh-agent` only in that unit.
+- Placement walks (`resolve_one`, `compute_place`, `owning_app_ancestor`,
+  `unique_descendant_ident`) share one depth budget, `group::MAX_WALK`; past
+  it a process is placed on its own facts. The process forest nests at most
+  `group::MAX_PROC_DEPTH`, whose doc carries the JSON depth arithmetic.
 - Split when the child's resolved identity differs and the child is a real app.
   Idle interactive shells fold into their terminal (the `terminal` class);
   a unique payload child (claude, dstat) takes the owning shell, the same
@@ -173,6 +180,10 @@ standalone to generate the completions and man page.
 `new` rather than an error, and each caller decides what that means: clap
 `InvalidValue` for `--filter`, warn-and-ignore for a stale `view.json`, and in
 the TUI the last compiling pattern stays live behind a `?` in the footer.
+
+`once::printable` is the one place process text is escaped before it reaches
+stdout (`--once`, `--explain`, `--check-rules`); the tree and `--json` keep raw
+strings, and the TUI relies on ratatui dropping control characters.
 
 `--filter` and `/` match `TableRow::search` / `Flat::search` (`once::haystack`)
 when one is built, else `name`; `keep_matches`, `keep_top` and `Filter` carry

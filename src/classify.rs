@@ -1,8 +1,8 @@
 use crate::rules::{Classes, Rules};
 use crate::types::Process;
 
-pub(crate) fn basename(path: &str) -> String {
-    path.rsplit('/').next().unwrap_or(path).to_string()
+pub(crate) fn basename(path: &str) -> &str {
+    path.rsplit_once('/').map_or(path, |(_, b)| b)
 }
 
 pub(crate) fn name_of(p: &Process) -> String {
@@ -13,7 +13,7 @@ pub(crate) fn name_of(p: &Process) -> String {
 /// per pid per tick.
 pub(crate) fn name_ref(p: &Process) -> &str {
     if let Some(exe) = &p.exe {
-        let b = exe.rsplit('/').next().unwrap_or(exe);
+        let b = basename(exe);
         // tdeinit runs konsole, kicker or kate as a module in a fork, so `exe`
         // stays tdeinit for all of them and only `comm` (set by prctl) names
         // the program. tdelibs `tdeinit.cpp` `launch()`.
@@ -52,14 +52,14 @@ fn app_from_crash_helper_path(s: &str, rules: &Rules) -> Option<String> {
         return Some("firefox".to_string());
     }
     if !rules
-        .classes_of_name(&basename(s))
+        .classes_of_name(basename(s))
         .has(Classes::CRASH_HELPER)
     {
         return None;
     }
     let dir = s.rsplit_once('/')?.0;
     let owner = basename(dir);
-    if owner.is_empty() || matches!(owner.as_str(), "bin" | "libexec" | "lib" | "lib64") {
+    if owner.is_empty() || matches!(owner, "bin" | "libexec" | "lib" | "lib64") {
         return None;
     }
     // AppImage mounts are per-run (`/tmp/mount`, `/tmp/.mount_cursorAb12Cd`)
@@ -68,10 +68,10 @@ fn app_from_crash_helper_path(s: &str, rules: &Rules) -> Option<String> {
     // `/opt/cursor/…` would name. Chromium reparents the helper to user
     // systemd, so there is no ancestor to fall back to when the parent dir
     // *is* the mount — declining that case still lets `group` walk PPID.
-    if is_temp_unpack_root(&lower) && is_ephemeral_mount_dir(&owner) {
+    if is_temp_unpack_root(&lower) && is_ephemeral_mount_dir(owner) {
         return None;
     }
-    Some(owner)
+    Some(owner.to_string())
 }
 
 fn is_temp_unpack_root(lower: &str) -> bool {
@@ -148,12 +148,12 @@ pub(crate) fn launcher_payload_hint(p: &Process, rules: &Rules) -> Option<String
             let b = basename(arg);
             // "child" is a zypak-helper subcommand, not a payload.
             if b.is_empty()
-                || rules.classes_of_name(&b).has(Classes::LAUNCHER)
+                || rules.classes_of_name(b).has(Classes::LAUNCHER)
                 || b.eq_ignore_ascii_case("child")
             {
                 continue;
             }
-            return Some(b);
+            return Some(b.to_string());
         }
     }
     None
@@ -175,7 +175,7 @@ pub(crate) fn script_basename(cmdline: &[String]) -> Option<String> {
         if arg.contains('/') {
             let b = basename(arg);
             if !b.is_empty() {
-                return Some(b);
+                return Some(b.to_string());
             }
         }
         if looks_script(arg) {

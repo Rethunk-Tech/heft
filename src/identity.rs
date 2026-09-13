@@ -96,7 +96,7 @@ pub(crate) fn user_unit(cgroup: &str) -> Option<String> {
         }
         None => cgroup,
     };
-    let leaf = after.rsplit('/').next()?;
+    let leaf = classify::basename(after);
     if leaf.is_empty() {
         return None;
     }

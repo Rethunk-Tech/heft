@@ -77,19 +77,22 @@ struct WalkJob {
 
 impl WalkPool {
     /// At most `max` workers, and never more than the CPUs this process may run on.
+    /// Fewer when a thread cannot start (`RLIMIT_NPROC`, a cgroup's `pids.max`),
+    /// which is when a monitor is most wanted; with none, `collect` walks on the
+    /// calling thread.
     fn new(max: usize) -> Self {
         let n = thread::available_parallelism()
             .map_or(1, NonZero::get)
             .min(max);
         let workers = (0..n)
-            .map(|i| {
+            .map_while(|i| {
                 let (job_tx, job_rx) = mpsc::channel();
                 let (result_tx, result_rx) = mpsc::channel();
                 thread::Builder::new()
                     .name(format!("heft-walk-{i}"))
                     .spawn(move || walk_worker(&job_rx, &result_tx))
-                    .expect("walk worker");
-                (job_tx, result_rx)
+                    .ok()?;
+                Some((job_tx, result_rx))
             })
             .collect();
         Self { workers }
@@ -110,6 +113,17 @@ impl WalkPool {
             .collect();
         if pids.is_empty() {
             return HashMap::new();
+        }
+        if self.workers.is_empty() {
+            return walk(
+                &pids,
+                want_pss,
+                want_swap,
+                prev.map(|m| &**m),
+                &mut Vec::new(),
+            )
+            .into_iter()
+            .collect();
         }
         let chunk = pids.len().div_ceil(self.workers.len());
         let busy = pids.chunks(chunk).len();
@@ -135,17 +149,32 @@ impl WalkPool {
 fn walk_worker(job_rx: &mpsc::Receiver<WalkJob>, result_tx: &mpsc::Sender<Walked>) {
     let mut buf = Vec::new();
     while let Ok(job) = job_rx.recv() {
-        let mut out = Vec::new();
-        for &pid in &job.pids {
-            let prev = job.prev.as_ref().and_then(|m| m.get(&pid));
-            if let Some(p) = read_pid(pid, job.want_pss, job.want_swap, prev, &mut buf) {
-                out.push((pid, p));
-            }
-        }
+        let out = walk(
+            &job.pids,
+            job.want_pss,
+            job.want_swap,
+            job.prev.as_deref(),
+            &mut buf,
+        );
         if result_tx.send(out).is_err() {
             break;
         }
     }
+}
+
+fn walk(
+    pids: &[u32],
+    want_pss: bool,
+    want_swap: bool,
+    prev: Option<&HashMap<u32, Process>>,
+    buf: &mut Vec<u8>,
+) -> Walked {
+    pids.iter()
+        .filter_map(|&pid| {
+            let before = prev.and_then(|m| m.get(&pid));
+            Some((pid, read_pid(pid, want_pss, want_swap, before, buf)?))
+        })
+        .collect()
 }
 
 /// `/proc/<pid>` opened once, so every file under it is an `openat` of one
@@ -825,6 +854,22 @@ mod tests {
         assert_eq!(p.comm, "\u{fffd}\u{fffd}hidden");
         assert_eq!(p.uid, cpu::euid());
         assert!(!p.cgroup.is_empty());
+    }
+
+    /// A pool whose threads could not start (`RLIMIT_NPROC`, a cgroup's
+    /// `pids.max`) walks on the calling thread and sees the same machine.
+    #[test]
+    fn a_pool_with_no_worker_walks_on_the_calling_thread() {
+        let before = WalkPool::new(2).collect(false, false, None);
+        let inline = WalkPool {
+            workers: Vec::new(),
+        }
+        .collect(false, false, None);
+        let after = WalkPool::new(2).collect(false, false, None);
+        assert!(inline.contains_key(&std::process::id()));
+        for pid in before.keys().filter(|p| after.contains_key(p)) {
+            assert!(inline.contains_key(pid), "pid {pid} ran throughout");
+        }
     }
 
     #[test]

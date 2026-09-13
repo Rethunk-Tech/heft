@@ -795,6 +795,25 @@ fn explain_exits_non_zero_for_a_pid_it_cannot_see() {
     assert_eq!(out.status.code(), Some(1), "{stdout}");
 }
 
+/// A reader that goes away is the normal end of `heft --explain PID | head`,
+/// not a crash. The pipe is closed before heft writes anything: a reader that
+/// takes one line races the pipe buffer, which can swallow the whole output
+/// and let the test pass without heft ever seeing EPIPE.
+#[test]
+fn explain_ends_quietly_when_the_reader_closes() {
+    let me = std::process::id().to_string();
+    let mut child = heft(&["--explain", &me, "--interval", "0.3"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn heft --explain");
+    drop(child.stdout.take());
+    let out = child.wait_with_output().expect("wait for heft --explain");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!stderr.contains("panicked"), "{stderr}");
+    assert!(out.status.success(), "{}: {stderr}", out.status);
+}
+
 /// `--glyphs` reaches `--explain`: the tree path is the one line of it drawn
 /// with a glyph, and a console without the fonts asked for ASCII.
 #[test]

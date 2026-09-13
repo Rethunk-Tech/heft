@@ -11,6 +11,7 @@
 //! stage sees, and a reason string threaded through grouping would be paid
 //! for on every process of every tick to serve one invocation.
 
+use std::io::Write;
 use std::time::Duration;
 
 use crate::glyph;
@@ -147,7 +148,7 @@ fn trace(rules: &Rules, p: Option<&Process>, ident: &str) -> Vec<String> {
 ///
 /// # Errors
 ///
-/// Returns an error if the sample cannot be taken.
+/// Returns an error if stdout cannot be written.
 pub fn run(pid: u32, interval: Duration) -> Result<bool, Error> {
     let tree = proc::sample_world(interval);
     let found = locate(&tree, pid);
@@ -160,75 +161,105 @@ pub fn run(pid: u32, interval: Duration) -> Result<bool, Error> {
     } else {
         Vec::new()
     };
+    // Written, not printed: `println!` panics on a closed reader, while an
+    // io error reaches `main`, which ends `--explain PID | head` quietly.
+    let mut out = std::io::stdout().lock();
 
     if !visible && found.is_none() {
         // Not an error message: the pid may simply have gone, and that is the
         // answer. Still a miss, so the exit code says so.
-        println!("pid {pid}: not visible");
-        println!();
-        println!("  It exited, or /proc hides it -- another user's process, a");
-        println!("  hidepid mount, or a PID namespace. heft can only group what");
-        println!("  it can walk.");
+        writeln!(out, "pid {pid}: not visible")?;
+        writeln!(out)?;
+        writeln!(
+            out,
+            "  It exited, or /proc hides it -- another user's process, a"
+        )?;
+        writeln!(
+            out,
+            "  hidepid mount, or a PID namespace. heft can only group what"
+        )?;
+        writeln!(out, "  it can walk.")?;
         return Ok(false);
     }
 
-    println!("pid {pid}");
+    writeln!(out, "pid {pid}")?;
     for (k, v) in &facts {
-        println!("  {k:<9} {}", printable(v));
+        writeln!(out, "  {k:<9} {}", printable(v))?;
     }
 
     let Some(f) = found else {
-        println!();
-        println!("  placed    nowhere: heft read this process but no row holds it.");
-        println!("            A kernel thread with no cgroup, or it exited between");
-        println!("            the two walks a sample takes.");
+        writeln!(out)?;
+        writeln!(
+            out,
+            "  placed    nowhere: heft read this process but no row holds it."
+        )?;
+        writeln!(
+            out,
+            "            A kernel thread with no cgroup, or it exited between"
+        )?;
+        writeln!(out, "            the two walks a sample takes.")?;
         return Ok(true);
     };
 
     // The tree keeps raw strings; process-chosen text is escaped only here,
     // where it reaches a terminal.
     let ident = printable(&f.ident);
-    println!();
-    println!("  placed    {}", printable(&f.path));
-    println!("  identity  {ident}");
-    println!(
+    writeln!(out)?;
+    writeln!(out, "  placed    {}", printable(&f.path))?;
+    writeln!(out, "  identity  {ident}")?;
+    writeln!(
+        out,
         "  instance  {} ({} process{})",
         printable(&f.instance),
         f.siblings,
         if f.siblings == 1 { "" } else { "es" }
-    );
+    )?;
 
     // Re-read rather than carried on the tree: the tree has no per-process
     // facts, and a pid that exited since the sample says so here.
     let p = proc::read_pid(pid, false, false, None, &mut Vec::new());
     for line in trace(Rules::load(), p.as_ref(), &f.ident) {
-        println!("{}", printable(&line));
+        writeln!(out, "{}", printable(&line))?;
     }
 
-    println!();
+    writeln!(out)?;
     if let Some(list) = f.pinnable {
-        println!("  \"{ident}\" is the placement key for this row.");
-        println!();
-        println!(
+        writeln!(out, "  \"{ident}\" is the placement key for this row.")?;
+        writeln!(out)?;
+        writeln!(
+            out,
             "  To pin it to a folder, in {}/rules.d/90-mine.json:",
             printable(&crate::config::config_dir().display().to_string())
-        );
+        )?;
         // JSON-quoted first, so a quote or backslash in the identity still
         // pastes as a valid rule; `printable` then covers the C1 controls
         // JSON leaves raw.
         let key = serde_json::Value::from(f.ident.as_str()).to_string();
-        println!(
+        writeln!(
+            out,
             "    {{ \"stage\": \"placement\", \"rules\": [ {{ \"id\": \"pin\", \"match\": {{ \"identity\": {} }}, \"folder\": \"{list}\" }} ] }}",
             printable(&key)
-        );
-        println!();
-        println!("  To bill it to another row instead, `\"fold_to\": \"<other identity>\"`");
-        println!("  in place of `folder`.");
+        )?;
+        writeln!(out)?;
+        writeln!(
+            out,
+            "  To bill it to another row instead, `\"fold_to\": \"<other identity>\"`"
+        )?;
+        writeln!(out, "  in place of `folder`.")?;
     } else {
-        println!("  No placement rule can move this row. A container is placed by its");
-        println!("  runtime labels and a kernel thread by the cgroup it is in, so");
-        println!("  `fold_to` and `folder` skip them. A rule with `owner_uid` sets a");
-        println!("  container's owning uid by name.");
+        writeln!(
+            out,
+            "  No placement rule can move this row. A container is placed by its"
+        )?;
+        writeln!(
+            out,
+            "  runtime labels and a kernel thread by the cgroup it is in, so"
+        )?;
+        writeln!(
+            out,
+            "  `fold_to` and `folder` skip them. A rule with `owner_uid` sets a"
+        )?;
+        writeln!(out, "  container's owning uid by name.")?;
     }
     Ok(true)
 }

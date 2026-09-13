@@ -22,6 +22,9 @@ struct Ctx<'a> {
     rules: &'a Rules,
     /// This tick's processes, for the crash helper's install-directory sibling.
     procs: &'a Procs,
+    /// Each pid's children in pid order, so the payload search visits a child
+    /// without scanning every process at every level.
+    children: HashMap<u32, Vec<u32>>,
     /// Per-tick, per-pid facts the stages read. Keyed on pid and valid for one
     /// `Ctx` only: `exec` keeps the pid while changing exe and comm, and a
     /// `Ctx` lives one `build_tree` call, so no invalidation is needed.
@@ -34,10 +37,18 @@ impl<'a> Ctx<'a> {
             .iter()
             .map(|(pid, p)| (*pid, judge(p, rules)))
             .collect();
+        let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
+        for p in curr.values() {
+            children.entry(p.ppid).or_default().push(p.pid);
+        }
+        for kids in children.values_mut() {
+            kids.sort_unstable();
+        }
         Self {
             containers,
             rules,
             procs: curr,
+            children,
             judged,
         }
     }
@@ -136,10 +147,21 @@ fn resolve(curr: &Procs, ctx: &Ctx<'_>) -> HashMap<u32, Place> {
     let mut memo: HashMap<u32, Place> = HashMap::new();
     let mut walking = HashSet::new();
     for pid in curr.keys().copied() {
-        resolve_one(pid, curr, ctx, &mut memo, &mut walking);
+        resolve_one(pid, curr, ctx, &mut memo, &mut walking, 0);
     }
     memo
 }
+
+/// How many walker frames one placement may stack, shared by `resolve_one`
+/// climbing parents and `unique_descendant_ident` descending launchers, shells
+/// and workers. A real tree nests those a handful deep (flatpak's bwrap, bwrap,
+/// zypak-helper, zygote is four); a fork chain thousands deep would otherwise
+/// overflow the sampler thread's stack, which aborts rather than panics.
+///
+/// At the bound a parent answers with `raw_place`, the verdict the cycle path
+/// already gives, and the payload search finds nothing. Where that cut lands
+/// in a chain this deep depends on resolve order.
+const MAX_WALK: usize = 64;
 
 fn resolve_one(
     pid: u32,
@@ -147,15 +169,16 @@ fn resolve_one(
     ctx: &Ctx<'_>,
     memo: &mut HashMap<u32, Place>,
     walking: &mut HashSet<u32>,
+    depth: usize,
 ) -> Option<Place> {
     if let Some(p) = memo.get(&pid) {
         return Some(p.clone());
     }
     let p = curr.get(&pid)?;
-    if !walking.insert(pid) {
+    if depth >= MAX_WALK || !walking.insert(pid) {
         return Some(override_place(ctx.rules, raw_place(p, ctx)));
     }
-    let place = override_place(ctx.rules, compute_place(p, curr, ctx, memo, walking));
+    let place = override_place(ctx.rules, compute_place(p, curr, ctx, memo, walking, depth));
     walking.remove(&pid);
     memo.insert(pid, place.clone());
     Some(place)
@@ -167,6 +190,7 @@ fn compute_place(
     ctx: &Ctx<'_>,
     memo: &mut HashMap<u32, Place>,
     walking: &mut HashSet<u32>,
+    depth: usize,
 ) -> Place {
     if let Some(place) = direct_place(p, ctx) {
         return place;
@@ -174,7 +198,7 @@ fn compute_place(
 
     let classes = ctx.classes(p);
     if classes.intersects(Classes::WORKER)
-        && let Some(parent) = resolve_one(p.ppid, curr, ctx, memo, walking)
+        && let Some(parent) = resolve_one(p.ppid, curr, ctx, memo, walking, depth + 1)
         && parent.folder != Folder::System
         // `key` is the ppid's RESOLVED Place identity, not its process name, and
         // the two disagree both ways: a `systemd` that resolved into a container
@@ -192,7 +216,7 @@ fn compute_place(
     // Pipe helpers under a launcher (flatpak bwrap `cat`) or an app (vivaldi).
     // Immediate parent only — never a sibling identity under a mixed shell.
     if classes.intersects(Classes::NOISE)
-        && let Some(parent) = resolve_one(p.ppid, curr, ctx, memo, walking)
+        && let Some(parent) = resolve_one(p.ppid, curr, ctx, memo, walking, depth + 1)
         && parent.folder != Folder::System
     {
         return Place {
@@ -206,7 +230,7 @@ fn compute_place(
     // are included so a `bash` that launched `claude` bills there; an idle
     // leftover folds into the terminal below, not here.
     if classes.intersects(Classes::LAUNCHER | Classes::SHELL) {
-        if let Some(payload) = unique_descendant_ident(p.pid, curr, ctx, memo, walking) {
+        if let Some(payload) = unique_descendant_ident(p.pid, curr, ctx, memo, walking, depth + 1) {
             return Place {
                 instance: ctx.instance(p),
                 ..payload
@@ -218,7 +242,7 @@ fn compute_place(
                 place.key = hint;
                 return place;
             }
-            if let Some(parent) = resolve_one(p.ppid, curr, ctx, memo, walking)
+            if let Some(parent) = resolve_one(p.ppid, curr, ctx, memo, walking, depth + 1)
                 && parent.folder != Folder::System
                 && !ctx
                     .rules
@@ -235,7 +259,7 @@ fn compute_place(
         // identity is the terminal that owns the tty. A unique payload child
         // already returned above, same walk as a launcher.
         if classify::is_interactive_shell(p, classes)
-            && let Some(parent) = resolve_one(p.ppid, curr, ctx, memo, walking)
+            && let Some(parent) = resolve_one(p.ppid, curr, ctx, memo, walking, depth + 1)
             && parent.folder != Folder::System
             && ctx
                 .rules
@@ -250,7 +274,7 @@ fn compute_place(
     }
 
     if classes.intersects(Classes::GENERIC)
-        && let Some(owner) = owning_app_ancestor(p.ppid, curr, ctx, memo, walking)
+        && let Some(owner) = owning_app_ancestor(p.ppid, curr, ctx, memo, walking, depth + 1)
     {
         return Place {
             instance: ctx.instance(p),
@@ -429,6 +453,7 @@ fn owning_app_ancestor(
     ctx: &Ctx<'_>,
     memo: &mut HashMap<u32, Place>,
     walking: &mut HashSet<u32>,
+    depth: usize,
 ) -> Option<Place> {
     for _ in 0..32 {
         let proc = curr.get(&pid)?;
@@ -442,7 +467,7 @@ fn owning_app_ancestor(
         if !classify::absorbs_generic(classes) {
             return None;
         }
-        let place = resolve_one(pid, curr, ctx, memo, walking)?;
+        let place = resolve_one(pid, curr, ctx, memo, walking, depth)?;
         if place.folder == Folder::System || place.folder == Folder::Containers {
             return None;
         }
@@ -457,18 +482,25 @@ fn unique_descendant_ident(
     ctx: &Ctx<'_>,
     memo: &mut HashMap<u32, Place>,
     walking: &mut HashSet<u32>,
+    depth: usize,
 ) -> Option<Place> {
+    if depth >= MAX_WALK {
+        return None;
+    }
     let mut kids = Vec::new();
-    for child in curr.values().filter(|c| c.ppid == pid) {
+    let children = ctx.children.get(&pid).map_or(&[][..], Vec::as_slice);
+    for child in children.iter().filter_map(|c| curr.get(c)) {
         let classes = ctx.classes(child);
         if classes.intersects(Classes::LAUNCHER | Classes::SHELL | Classes::NOISE) {
-            if let Some(p) = unique_descendant_ident(child.pid, curr, ctx, memo, walking) {
+            if let Some(p) = unique_descendant_ident(child.pid, curr, ctx, memo, walking, depth + 1)
+            {
                 kids.push(p);
             }
             continue;
         }
         if classes.intersects(Classes::WORKER) {
-            if let Some(p) = unique_descendant_ident(child.pid, curr, ctx, memo, walking) {
+            if let Some(p) = unique_descendant_ident(child.pid, curr, ctx, memo, walking, depth + 1)
+            {
                 kids.push(p);
             } else {
                 // Zygote-only sandbox: no non-worker grandchild to resolve, so
@@ -479,7 +511,7 @@ fn unique_descendant_ident(
             }
             continue;
         }
-        if let Some(place) = resolve_one(child.pid, curr, ctx, memo, walking) {
+        if let Some(place) = resolve_one(child.pid, curr, ctx, memo, walking, depth + 1) {
             kids.push(place);
         }
     }
@@ -748,9 +780,82 @@ mod tests {
         // machine.slice has no scope to name and must not become a row.
         assert_ne!(place("0::/machine.slice", 0).folder, Folder::Containers);
     }
+    const CHAIN: u32 = 10_000;
+    /// Pid 1 is `root`, and pids 2 to `CHAIN` each run `link` as the child of
+    /// the pid before, all in one process group of one app scope.
+    fn chain(root: &str, link: &[&str]) -> HashMap<u32, Process> {
+        (1..=CHAIN)
+            .map(|pid| {
+                let argv: Vec<String> = if pid == 1 {
+                    vec![root.into()]
+                } else {
+                    link.iter().map(|&a| a.into()).collect()
+                };
+                let p = Process {
+                    pid,
+                    ppid: pid - 1,
+                    pgrp: 1,
+                    uid: 1000,
+                    comm: argv[0].clone(),
+                    exe: Some(format!("/usr/bin/{}", argv[0])),
+                    cmdline: argv,
+                    cgroup: "0::/user.slice/user-1000.slice/user@1000.service/app.slice".into(),
+                    rss_pages: Some(1),
+                    ..Process::default()
+                };
+                (pid, p)
+            })
+            .collect()
+    }
+    fn tree_of(curr: &HashMap<u32, Process>) -> crate::types::HostTree {
+        let consts = crate::types::HostHeader {
+            nproc: 1,
+            clk_tck: 100,
+            page_size: 4096,
+        };
+        super::build_tree(
+            &HashMap::new(),
+            curr,
+            std::time::Duration::from_secs(1),
+            &consts,
+            crate::types::HostTree::default(),
+            &ContainerIndex::default(),
+            &Rules::builtin(),
+        )
+    }
+    fn placed(tree: &crate::types::HostTree) -> u32 {
+        use crate::types::folder_nproc;
+        tree.users
+            .iter()
+            .map(|u| {
+                folder_nproc(&u.applications)
+                    + folder_nproc(&u.user_services)
+                    + folder_nproc(&u.containers)
+            })
+            .sum()
+    }
+    /// A shell chain under a terminal walks the payload search down and the
+    /// idle-shell fold up; a worker chain walks the parent fold up; a launcher
+    /// chain does both. None of them may cost a stack frame per process.
+    #[test]
+    fn placing_a_deep_shell_chain_does_not_recurse_per_process() {
+        let tree = tree_of(&chain("konsole", &["bash"]));
+        assert_eq!(placed(&tree), CHAIN);
+    }
+    #[test]
+    fn placing_a_deep_worker_chain_does_not_recurse_per_process() {
+        let tree = tree_of(&chain("cursor", &["cursor", "--type=renderer"]));
+        assert_eq!(placed(&tree), CHAIN);
+    }
+    #[test]
+    fn placing_a_deep_launcher_chain_does_not_recurse_per_process() {
+        let tree = tree_of(&chain("konsole", &["bwrap"]));
+        assert_eq!(placed(&tree), CHAIN);
+    }
+
     #[test]
     fn a_deep_process_chain_is_capped_without_losing_a_process() {
-        use crate::types::{HostHeader, HostTree, ProcNode};
+        use crate::types::ProcNode;
 
         fn walk(nodes: &[ProcNode], depth: usize, max: &mut usize, count: &mut u64, rss: &mut u64) {
             for n in nodes {
@@ -761,37 +866,8 @@ mod tests {
             }
         }
 
-        const N: u32 = 10_000;
-        let curr: HashMap<u32, Process> = (1..=N)
-            .map(|pid| {
-                let p = Process {
-                    pid,
-                    ppid: pid - 1,
-                    pgrp: 1,
-                    uid: 1000,
-                    comm: "chain".into(),
-                    exe: Some("/usr/bin/chain".into()),
-                    cgroup: "0::/user.slice/user-1000.slice/user@1000.service/app.slice".into(),
-                    rss_pages: Some(1),
-                    ..Process::default()
-                };
-                (pid, p)
-            })
-            .collect();
-        let consts = HostHeader {
-            nproc: 1,
-            clk_tck: 100,
-            page_size: 4096,
-        };
-        let tree = super::build_tree(
-            &HashMap::new(),
-            &curr,
-            std::time::Duration::from_secs(1),
-            &consts,
-            HostTree::default(),
-            &ContainerIndex::default(),
-            &Rules::builtin(),
-        );
+        const N: u32 = CHAIN;
+        let tree = tree_of(&chain("chain", &["chain"]));
 
         let ident = &tree.users[0].applications[0];
         assert_eq!(ident.nproc, N);

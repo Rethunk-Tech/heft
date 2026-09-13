@@ -453,30 +453,39 @@ fn parse_rss_pages(statm: &str) -> Option<u64> {
 /// a container's uid appears in `/proc` with nothing in `/etc/passwd` to name
 /// it, and `--user 1000` has to reach that branch anyway.
 pub fn uid_for(who: &str) -> Option<u32> {
-    if let Ok(uid) = who.parse::<u32>() {
-        return Some(uid);
-    }
-    let text = fs::read_to_string("/etc/passwd").ok()?;
-    text.lines().find_map(|line| {
-        let mut it = line.split(':');
-        (it.next()? == who).then_some(())?;
-        let _ = it.next();
-        it.next()?.parse().ok()
-    })
+    who.parse().ok().or_else(|| Passwd::read().uid(who))
 }
 
-pub(crate) fn username(uid: u32) -> String {
-    if let Ok(text) = fs::read_to_string("/etc/passwd") {
-        for line in text.lines() {
-            let mut it = line.split(':');
-            let name = it.next().unwrap_or("");
-            let _ = it.next();
-            if it.next().and_then(|s| s.parse::<u32>().ok()) == Some(uid) && !name.is_empty() {
-                return name.to_string();
-            }
-        }
+/// `/etc/passwd`, read once for every lookup one tree or one command makes.
+/// Not cached for the run, so a user created while heft runs still gets a name.
+pub(crate) struct Passwd(String);
+
+impl Passwd {
+    pub(crate) fn read() -> Self {
+        Self(fs::read_to_string("/etc/passwd").unwrap_or_default())
     }
-    uid.to_string()
+
+    /// `(name, uid)` per line. A line with an empty name is no entry, so
+    /// neither lookup can match it.
+    fn entries(&self) -> impl Iterator<Item = (&str, u32)> {
+        self.0.lines().filter_map(|line| {
+            let mut it = line.split(':');
+            let name = it.next().filter(|n| !n.is_empty())?;
+            Some((name, it.nth(1)?.parse().ok()?))
+        })
+    }
+
+    fn uid(&self, name: &str) -> Option<u32> {
+        self.entries()
+            .find_map(|(n, uid)| (n == name).then_some(uid))
+    }
+
+    /// The login name, else the uid as text.
+    pub(crate) fn name(&self, uid: u32) -> String {
+        self.entries()
+            .find(|&(_, u)| u == uid)
+            .map_or_else(|| uid.to_string(), |(n, _)| n.to_string())
+    }
 }
 
 /// The kernel's own thread count: field 4 of `/proc/loadavg` is
@@ -532,7 +541,7 @@ pub(crate) fn detail(pid: u32) -> Vec<(&'static str, String)> {
         ("STATE", field("State:")),
         (
             "UID",
-            uid.map_or_else(String::new, |u| format!("{u} ({})", username(u))),
+            uid.map_or_else(String::new, |u| format!("{u} ({})", Passwd::read().name(u))),
         ),
         ("EXE", dir.as_ref().and_then(read_exe).unwrap_or_default()),
         ("CGROUP", cgroup),
@@ -822,6 +831,17 @@ mod tests {
         assert!(!pss_due(Some(start), start, five));
         assert!(!pss_due(Some(start), start + Duration::from_secs(4), five));
         assert!(pss_due(Some(start), start + five, five));
+    }
+
+    #[test]
+    fn passwd_never_matches_an_empty_name() {
+        let pw = Passwd(String::from(
+            "::7:7::/:/bin/false\nroot:x:0:0:root:/root:/bin/sh\n",
+        ));
+        assert_eq!(pw.uid(""), None);
+        assert_eq!(pw.name(7), "7");
+        assert_eq!(pw.uid("root"), Some(0));
+        assert_eq!(pw.name(0), "root");
     }
 
     #[test]

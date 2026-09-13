@@ -507,6 +507,7 @@ fn assemble(
         }
     }
 
+    let passwd = proc::Passwd::read();
     let mut users: HashMap<u32, UserNode> = HashMap::new();
     let mut host_containers = Vec::new();
     let mut system = Vec::new();
@@ -520,7 +521,7 @@ fn assemble(
                 let uid = uid.unwrap_or(0);
                 let user = users.entry(uid).or_insert_with(|| UserNode {
                     uid,
-                    name: proc::username(uid),
+                    name: passwd.name(uid),
                     ..UserNode::default()
                 });
                 match folder {

@@ -4,10 +4,9 @@ use std::fs;
 use std::io;
 use std::num::NonZero;
 use std::os::fd::{AsFd, OwnedFd};
-use std::panic::AssertUnwindSafe;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
-use std::thread::{self, JoinHandle};
+use std::thread;
 use std::time::{Duration, Instant};
 
 use rustix::buffer::spare_capacity;
@@ -53,11 +52,17 @@ use crate::{gpu, io as pio, net, psi};
 /// `smaps_rollup` no longer stalls a slice, but it kept every worker in procfs
 /// until the list drained, and idle `--json --follow` rose from 5.1 s to 6.6 s
 /// of CPU per 30 s, nearly all system time. Idle cost outranks a shorter tick.
+///
+/// Each worker has its own result channel, so a worker that panics in a
+/// debug build drops its sender and `collect` fails on that `recv` instead of
+/// waiting forever; release is `panic = "abort"`. Dropping the pool drops the
+/// job senders, which ends every worker.
 struct WalkPool {
-    job_txs: Vec<mpsc::Sender<WalkJob>>,
-    result_rx: mpsc::Receiver<WalkChunk>,
-    handles: Vec<JoinHandle<()>>,
+    workers: Vec<(mpsc::Sender<WalkJob>, mpsc::Receiver<Walked>)>,
 }
+
+/// One worker's slice of the walk.
+type Walked = Vec<(u32, Process)>;
 
 /// Walk workers for the TUI and `--follow`; see `WalkPool`.
 const FOLLOW_WALKERS: usize = 4;
@@ -69,35 +74,24 @@ struct WalkJob {
     prev: Option<Arc<HashMap<u32, Process>>>,
 }
 
-enum WalkChunk {
-    Done(Vec<(u32, Process)>),
-    Panicked,
-}
-
 impl WalkPool {
     /// At most `max` workers, and never more than the CPUs this process may run on.
     fn new(max: usize) -> Self {
         let n = thread::available_parallelism()
             .map_or(1, NonZero::get)
             .min(max);
-        let (result_tx, result_rx) = mpsc::channel();
-        let mut job_txs = Vec::with_capacity(n);
-        let mut handles = Vec::with_capacity(n);
-        for i in 0..n {
-            let (job_tx, job_rx) = mpsc::channel();
-            let result_tx = result_tx.clone();
-            let handle = thread::Builder::new()
-                .name(format!("heft-walk-{i}"))
-                .spawn(move || walk_worker(job_rx, result_tx))
-                .expect("walk worker");
-            job_txs.push(job_tx);
-            handles.push(handle);
-        }
-        Self {
-            job_txs,
-            result_rx,
-            handles,
-        }
+        let workers = (0..n)
+            .map(|i| {
+                let (job_tx, job_rx) = mpsc::channel();
+                let (result_tx, result_rx) = mpsc::channel();
+                thread::Builder::new()
+                    .name(format!("heft-walk-{i}"))
+                    .spawn(move || walk_worker(&job_rx, &result_tx))
+                    .expect("walk worker");
+                (job_tx, result_rx)
+            })
+            .collect();
+        Self { workers }
     }
 
     fn collect(
@@ -116,9 +110,9 @@ impl WalkPool {
         if pids.is_empty() {
             return HashMap::new();
         }
-        let chunk = pids.len().div_ceil(self.job_txs.len());
-        let workers = pids.chunks(chunk).len();
-        for (tx, slice) in self.job_txs.iter().zip(pids.chunks(chunk)) {
+        let chunk = pids.len().div_ceil(self.workers.len());
+        let busy = pids.chunks(chunk).len();
+        for ((tx, _), slice) in self.workers.iter().zip(pids.chunks(chunk)) {
             tx.send(WalkJob {
                 pids: slice.to_vec(),
                 want_pss,
@@ -128,45 +122,26 @@ impl WalkPool {
             .expect("a /proc walk thread exited");
         }
         let mut out = HashMap::with_capacity(pids.len());
-        for _ in 0..workers {
-            match self.result_rx.recv().expect("a /proc walk thread exited") {
-                WalkChunk::Done(v) => out.extend(v),
-                // A panic here is a bug in a `/proc` parser, and swallowing it
-                // would publish a tree quietly missing a chunk of the machine.
-                WalkChunk::Panicked => panic!("a /proc walk thread panicked"),
-            }
+        for (_, rx) in &self.workers[..busy] {
+            // A dead worker is a bug in a `/proc` parser; carrying on would
+            // publish a tree quietly missing a chunk of the machine.
+            out.extend(rx.recv().expect("a /proc walk thread exited"));
         }
         out
     }
 }
 
-impl Drop for WalkPool {
-    fn drop(&mut self) {
-        self.job_txs.clear();
-        for h in self.handles.drain(..) {
-            let _ = h.join();
-        }
-    }
-}
-
-fn walk_worker(job_rx: mpsc::Receiver<WalkJob>, result_tx: mpsc::Sender<WalkChunk>) {
+fn walk_worker(job_rx: &mpsc::Receiver<WalkJob>, result_tx: &mpsc::Sender<Walked>) {
     let mut buf = Vec::new();
     while let Ok(job) = job_rx.recv() {
-        let chunk = std::panic::catch_unwind(AssertUnwindSafe(|| {
-            let mut out = Vec::new();
-            for &pid in &job.pids {
-                let prev = job.prev.as_ref().and_then(|m| m.get(&pid));
-                if let Some(p) = read_pid(pid, job.want_pss, job.want_swap, prev, &mut buf) {
-                    out.push((pid, p));
-                }
+        let mut out = Vec::new();
+        for &pid in &job.pids {
+            let prev = job.prev.as_ref().and_then(|m| m.get(&pid));
+            if let Some(p) = read_pid(pid, job.want_pss, job.want_swap, prev, &mut buf) {
+                out.push((pid, p));
             }
-            out
-        }));
-        let msg = match chunk {
-            Ok(v) => WalkChunk::Done(v),
-            Err(_) => WalkChunk::Panicked,
-        };
-        if result_tx.send(msg).is_err() {
+        }
+        if result_tx.send(out).is_err() {
             break;
         }
     }

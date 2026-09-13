@@ -447,11 +447,13 @@ counted per thread because the other tests allocate on other threads). The
 compiled shape is what makes that affordable: a `Vec<String>` per test with a
 `windows` scan cost 750 ns per process, and equality bucketed by byte length
 with a first-byte scan for contains cost 415 to 450. Against `900a5fc`,
-`build_tree` measured 147 to 151 µs before and 155 to 166 after on the gui
-fixture, 426 to 438 before and 438 to 454 after on a 293-process dump, and the
-four stages 392 to 440 ns per process. The budget is 20% and 500 ns: `cargo test
---release --test grouping -- --ignored --nocapture timing`, with
-`HEFT_BENCH_FIXTURE` naming a `--fixture` dump.
+`build_tree` measured 147 to 151 µs before and 151 to 166 after on the gui
+fixture, 426 to 438 before and 438 to 454 after on a 293 to 301-process dump,
+and the four stages 433 to 438 ns per process on facts built by
+`group::facts_of`. The budget is 20% and 500 ns, measured on a quiet machine:
+`cargo test --release --test grouping -- --ignored --nocapture
+build_tree_timing` and `cargo test --release --lib -- --ignored --nocapture
+rules_timing`, with `HEFT_BENCH_FIXTURE` naming a `--fixture` dump.
 
 `Rules::load` resolves once behind a `OnceLock`, the way `glyph` and `root`
 do, and prints its warnings inside the init, so `--explain`'s second use stays

@@ -715,6 +715,169 @@ fn fold_bills_a_named_process_to_another_identity() {
     );
 }
 
+/// Placement is first match, so a migrated grouping.json lists its folds
+/// before its pins.
+#[test]
+fn a_pin_listed_before_a_fold_on_the_same_identity_hides_the_fold() {
+    let ov = with_user(
+        r#"{"stage":"placement","rules":[
+            {"id":"pin-spotify","match":{"identity":"spotify"},"folder":"user_services"},
+            {"id":"fold-spotify","match":{"identity":"spotify"},"fold_to":"media"}]}"#,
+    );
+    let tree = tree_of(GUI, &ov);
+    let user = user_of(&tree, 1000);
+    assert!(
+        has(&user.user_services, "spotify"),
+        "{:?}",
+        titles(&user.user_services)
+    );
+    assert!(!has(&user.applications, "media") && !has(&user.user_services, "media"));
+}
+
+#[test]
+fn a_fold_rule_may_pin_its_target_in_the_same_rule() {
+    let ov = with_user(
+        r#"{"stage":"placement","rules":[
+            {"id":"fold-spotify","match":{"identity":"spotify"},"fold_to":"media","folder":"user_services"}]}"#,
+    );
+    let tree = tree_of(GUI, &ov);
+    let user = user_of(&tree, 1000);
+    assert!(
+        has(&user.user_services, "media"),
+        "{:?}",
+        titles(&user.user_services)
+    );
+    assert!(!has(&user.applications, "media") && !has(&user.applications, "spotify"));
+}
+
+#[test]
+fn a_user_app_rule_places_a_process_by_exe_prefix() {
+    let ov = with_user(
+        r#"{"stage":"app","rules":[{"id":"music","match":{"exe_prefix":"/app/extra/share/spotify/"},"identity":"music"}]}"#,
+    );
+    let tree = tree_of(GUI, &ov);
+    let apps = &user_of(&tree, 1000).applications;
+    assert!(!has(apps, "spotify"), "{:?}", titles(apps));
+    let music = apps.iter().find(|n| n.id == "music").expect("music");
+    assert!(
+        proc_names(music).iter().any(|n| n == "spotify"),
+        "{:?}",
+        proc_names(music)
+    );
+}
+
+/// `group::direct_place` asks session rules before `classify::crash_helper_app`
+/// and app rules after it. No built-in example can hold that order: every
+/// editor-tree crash helper gets the same identity from its directory as from
+/// `70-editors.json`.
+#[test]
+fn a_user_session_rule_runs_before_the_crash_helper_and_an_app_rule_after_it() {
+    let session = with_user(
+        r#"{"stage":"session","rules":[{"id":"reporter","match":{"name":"crashhelper"},"identity":"crash-reporter","folder":"user_services"}]}"#,
+    );
+    let tree = tree_of(GUI, &session);
+    let user = user_of(&tree, 1000);
+    assert!(
+        has(&user.user_services, "crash-reporter"),
+        "a session rule beats the crash helper: {:?}",
+        titles(&user.user_services)
+    );
+
+    let app = with_user(
+        r#"{"stage":"app","rules":[{"id":"reporter","match":{"name":"crashhelper"},"identity":"crash-reporter"}]}"#,
+    );
+    let tree = tree_of(GUI, &app);
+    let user = user_of(&tree, 1000);
+    assert!(
+        !has(&user.applications, "crash-reporter") && !has(&user.user_services, "crash-reporter"),
+        "the crash helper beats an app rule: {:?}",
+        titles(&user.applications)
+    );
+    assert!(has(&user.applications, "firefox"));
+}
+
+#[test]
+fn a_user_class_rule_makes_a_name_a_compositor() {
+    let base = tree_of(GUI, &Rules::builtin());
+    assert!(has(&user_of(&base, 1000).applications, "easyeffects"));
+    let ov = with_user(
+        r#"{"stage":"class","rules":[{"id":"fx","match":{"name":"easyeffects"},"classes":["compositor"]}]}"#,
+    );
+    let tree = tree_of(GUI, &ov);
+    let user = user_of(&tree, 1000);
+    assert!(!has(&user.applications, "easyeffects"));
+    let fx = user
+        .user_services
+        .iter()
+        .find(|n| n.id == "easyeffects")
+        .expect("easyeffects under User Services");
+    assert!(
+        proc_names(fx).iter().any(|n| n == "bwrap"),
+        "its bwrap launcher folds with it: {:?}",
+        proc_names(fx)
+    );
+}
+
+#[test]
+fn a_user_unit_rule_makes_a_unit_lie() {
+    let base = tree_of(GUI, &Rules::builtin());
+    assert!(has(&user_of(&base, 1000).user_services, "node-red"));
+    let ov = with_user(
+        r#"{"stage":"unit","rules":[{"id":"red","match":{"unit":"node-red.service"},"flags":["lying"]}]}"#,
+    );
+    let tree = tree_of(GUI, &ov);
+    let user = user_of(&tree, 1000);
+    assert!(
+        !has(&user.user_services, "node-red"),
+        "a lying unit names neither the folder nor the identity: {:?}",
+        titles(&user.user_services)
+    );
+}
+
+#[test]
+fn disabling_the_trinity_file_makes_a_tde_module_an_application() {
+    let kicker = Process {
+        pid: 2,
+        ppid: 1,
+        pgrp: 2,
+        uid: 1000,
+        comm: "kicker".into(),
+        exe: Some("/opt/trinity/bin/tdeinit".into()),
+        cmdline: vec!["kicker".into()],
+        cgroup: "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-tde-kicker-1.scope"
+            .into(),
+        ..Process::default()
+    };
+    let curr = HashMap::from([(2, kicker)]);
+    let header = HostHeader {
+        nproc: 1,
+        clk_tck: 100,
+        page_size: 4096,
+    };
+    let tree_with = |rules: &Rules| {
+        build_tree(
+            &curr,
+            &curr,
+            Duration::from_secs(1),
+            &header,
+            HostTree::default(),
+            &ContainerIndex::default(),
+            rules,
+        )
+    };
+    let base = tree_with(&Rules::builtin());
+    assert!(has(&user_of(&base, 1000).user_services, "tdeinit"));
+    let tree = tree_with(&with_user(
+        r#"{"stage":"session","disable":["40-trinity.json"]}"#,
+    ));
+    let user = user_of(&tree, 1000);
+    assert!(
+        has(&user.applications, "kicker"),
+        "{:?}",
+        titles(&user.applications)
+    );
+}
+
 #[test]
 fn a_malformed_override_file_is_rejected_rather_than_obeyed() {
     // The loader turns each of these into a stderr warning and built-in

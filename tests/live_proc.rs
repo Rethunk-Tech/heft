@@ -632,8 +632,9 @@ fn scratch(name: &str) -> std::path::PathBuf {
     dir
 }
 
-/// The row a `--json` run billed heft itself to, and what it wrote to stderr.
-fn own_row(mut cmd: std::process::Command) -> (String, String) {
+/// A `--json` run: the row it billed heft itself to, every other pid's row,
+/// and what it wrote to stderr.
+fn own_row(mut cmd: std::process::Command) -> (String, HashMap<u64, String>, String) {
     let child = cmd
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -648,10 +649,9 @@ fn own_row(mut cmd: std::process::Command) -> (String, String) {
         out.status
     );
     let doc: Value = serde_json::from_slice(&out.stdout).expect("--json emits valid JSON");
-    let row = placement(&doc["host"])
-        .remove(&pid)
-        .expect("heft must see its own pid");
-    (row, stderr)
+    let mut rows = placement(&doc["host"]);
+    let row = rows.remove(&pid).expect("heft must see its own pid");
+    (row, rows, stderr)
 }
 
 /// `HEFT_RULES_PATH` replaces the XDG and `/etc` directories, which is what
@@ -668,23 +668,35 @@ fn heft_rules_path_replaces_the_rules_directories() {
     )
     .expect("write rule");
     std::fs::write(dir.join("heft/grouping.json"), "{ not even json").expect("grouping.json");
-    let run = |isolated: bool| {
+    let run = |xdg: &std::path::Path, isolated: bool| {
         let mut cmd = heft(&["--json", "--interval", FAST]);
-        cmd.env("XDG_CONFIG_HOME", &dir);
+        cmd.env("XDG_CONFIG_HOME", xdg);
         if !isolated {
             cmd.env_remove("HEFT_RULES_PATH");
         }
         own_row(cmd)
     };
-    let (kept, stderr) = run(true);
-    let (moved, _) = run(false);
+    let bare = scratch("rules-path-bare");
+    let (kept, with_file, stderr) = run(&dir, true);
+    let (_, without_file, _) = run(&bare, true);
+    let (moved, _, _) = run(&dir, false);
     std::fs::remove_dir_all(&dir).ok();
+    std::fs::remove_dir_all(&bare).ok();
 
     let lines: Vec<&str> = stderr.lines().collect();
     assert!(
         lines.len() == 1 && lines[0].contains("grouping.json") && lines[0].contains("HUMANS.md"),
         "one warning naming the file and where its replacement is documented: {stderr}"
     );
+    // Never parsed: every pid both runs saw is on the same row. System rows
+    // are left out because a kworker renames itself between two samples.
+    let moved_by_the_file: Vec<_> = with_file
+        .iter()
+        .filter(|(pid, row)| {
+            !row.starts_with("host/system") && without_file.get(pid).is_some_and(|r| r != *row)
+        })
+        .collect();
+    assert!(moved_by_the_file.is_empty(), "{moved_by_the_file:?}");
     // Where heft's own cgroup puts it is the sandbox's business: a container
     // scope is a Containers row, and no placement rule moves one.
     if kept.contains("/applications/") {
@@ -705,20 +717,40 @@ fn check_rules_passes_the_built_ins_and_fails_a_wrong_user_example() {
     );
 
     let dir = scratch("check-rules");
+    let rules = dir.join("heft/rules.d");
+    std::fs::create_dir_all(&rules).expect("rules.d");
     std::fs::write(
-        dir.join("90-mine.json"),
+        rules.join("90-mine.json"),
         r#"{"stage":"placement","rules":[{"id":"pin","match":{"identity":"x"},"folder":"applications"}],
            "examples":[{"identity":"x","expect":{"rule":"pin","folder":"user_services"}}]}"#,
     )
     .expect("write rule");
-    let out = heft(&["--check-rules"])
-        .env("HEFT_RULES_PATH", &dir)
-        .output()
-        .expect("run heft --check-rules");
+    let check = |path: Option<&std::path::Path>| {
+        let mut cmd = heft(&["--check-rules"]);
+        cmd.env("XDG_CONFIG_HOME", &dir);
+        match path {
+            Some(p) => cmd.env("HEFT_RULES_PATH", p),
+            None => cmd.env_remove("HEFT_RULES_PATH"),
+        };
+        let out = cmd.output().expect("run heft --check-rules");
+        (
+            out.status.code(),
+            String::from_utf8_lossy(&out.stdout).into_owned(),
+        )
+    };
+    let (named, named_out) = check(Some(&rules));
+    let (xdg, xdg_out) = check(None);
+    let (empty, empty_out) = check(Some(std::path::Path::new("")));
     std::fs::remove_dir_all(&dir).ok();
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    assert_eq!(out.status.code(), Some(1), "{stdout}");
-    assert!(stdout.contains("90-mine.json:pin#0"), "{stdout}");
+    assert_eq!(named, Some(1), "{named_out}");
+    assert!(named_out.contains("90-mine.json:pin#0"), "{named_out}");
+    assert_eq!(xdg, Some(1), "unset, the XDG rules.d is read: {xdg_out}");
+    assert_eq!(
+        empty,
+        Some(0),
+        "set but empty, only the built-ins load: {empty_out}"
+    );
+    assert!(empty_out.contains(" in 12 files:"), "{empty_out}");
 
     let usage = heft(&["--check-rules", "--once"])
         .output()

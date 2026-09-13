@@ -305,13 +305,7 @@ impl Compiled {
     pub fn outputs(&self) -> String {
         let mut v: Vec<String> = self.identity.iter().cloned().collect();
         v.extend(self.fold_to.iter().map(|k| format!("fold_to {k}")));
-        v.extend(self.folder.map(|f| {
-            match f {
-                FolderName::Applications => "applications",
-                FolderName::UserServices => "user_services",
-            }
-            .to_string()
-        }));
+        v.extend(self.folder.map(|f| folder_name(f).to_string()));
         v.extend(self.owner_uid.map(|u| format!("owner_uid {u}")));
         v.extend(self.classes.names().into_iter().map(str::to_string));
         v.extend(self.flags.names().into_iter().map(str::to_string));
@@ -1011,22 +1005,28 @@ fn judge(ex: &Example, hits: &[&Compiled], file: &str) -> Vec<String> {
         if let Some(id) = &e.identity
             && first.identity.as_deref() != Some(id.as_str())
         {
-            fails.push(format!("expected identity {id}, got {:?}", first.identity));
+            let got = first.identity.as_deref().unwrap_or("none");
+            fails.push(format!("expected identity {id}, got {got}"));
         }
         if let Some(fo) = e.folder
             && first.folder != Some(fo)
         {
-            fails.push(format!("expected folder {fo:?}, got {:?}", first.folder));
+            let got = first.folder.map_or("none", folder_name);
+            fails.push(format!("expected folder {}, got {got}", folder_name(fo)));
         }
         if let Some(ft) = &e.fold_to
             && first.fold_to.as_deref() != Some(ft)
         {
-            fails.push(format!("expected fold_to {ft}, got {:?}", first.fold_to));
+            let got = first.fold_to.as_deref().unwrap_or("none");
+            fails.push(format!("expected fold_to {ft}, got {got}"));
         }
         if let Some(u) = e.owner_uid
             && first.owner_uid != Some(u)
         {
-            fails.push(format!("expected owner_uid {u}, got {:?}", first.owner_uid));
+            let got = first
+                .owner_uid
+                .map_or_else(|| "none".to_string(), |u| u.to_string());
+            fails.push(format!("expected owner_uid {u}, got {got}"));
         }
     }
     if let Some(rules) = &e.rules {
@@ -1035,7 +1035,11 @@ fn judge(ex: &Example, hits: &[&Compiled], file: &str) -> Vec<String> {
         want.sort();
         got.sort();
         if want != got {
-            fails.push(format!("expected rules {want:?}, got {got:?}"));
+            fails.push(format!(
+                "expected rules [{}], got [{}]",
+                want.join(", "),
+                got.join(", ")
+            ));
         }
     }
     if let Some(cs) = &e.classes {
@@ -1047,9 +1051,9 @@ fn judge(ex: &Example, hits: &[&Compiled], file: &str) -> Vec<String> {
             .fold(Classes::default(), |a, r| Classes(a.0 | r.classes.0));
         if want != got {
             fails.push(format!(
-                "expected classes {:?}, got {:?}",
-                want.names(),
-                got.names()
+                "expected classes [{}], got [{}]",
+                want.names().join(", "),
+                got.names().join(", ")
             ));
         }
     }
@@ -1067,13 +1071,21 @@ fn judge(ex: &Example, hits: &[&Compiled], file: &str) -> Vec<String> {
             .fold(UnitFlags::default(), |a, r| UnitFlags(a.0 | r.flags.0));
         if want != got {
             fails.push(format!(
-                "expected flags {:?}, got {:?}",
-                want.names(),
-                got.names()
+                "expected flags [{}], got [{}]",
+                want.names().join(", "),
+                got.names().join(", ")
             ));
         }
     }
     fails
+}
+
+/// A folder as a rules file spells it, for messages a user reads.
+const fn folder_name(f: FolderName) -> &'static str {
+    match f {
+        FolderName::Applications => "applications",
+        FolderName::UserServices => "user_services",
+    }
 }
 
 /// Owned facts for an example subject; `Facts` borrows from it.
@@ -1297,7 +1309,7 @@ mod tests {
     fn builtin_files_parse_and_their_examples_pass() {
         let r = Rules::builtin();
         assert!(r.warnings.is_empty(), "{:?}", r.warnings);
-        assert_eq!(r.examples_total(), 125);
+        assert_eq!(r.examples_total(), 127);
         let lines = r.check();
         assert!(lines.is_empty(), "{}", lines.join("\n"));
     }
@@ -1448,19 +1460,35 @@ mod tests {
                 r#"{{"stage":"app","rules":[{{"id":"{id}","match":{{"name":"x"}},"identity":"{id}"}}]}}"#
             )
         };
-        let mut etc = file("10-a.json", &rule("etc"));
-        etc.source.rank = 1;
-        let r = Rules::from_files(vec![
-            etc,
-            file("9-b.json", &rule("nine")),
-            file("10-c.json", &rule("ten")),
-        ]);
+        let at = |name: &str, id: &str, rank: usize| LoadedFile {
+            source: if rank == usize::MAX {
+                Source::builtin()
+            } else {
+                Source {
+                    rank,
+                    label: format!("rank {rank}"),
+                }
+            },
+            name: name.into(),
+            text: rule(id),
+        };
         let f = Facts {
             comm: "x",
             name: "x",
             ..Facts::default()
         };
-        assert_eq!(r.app(&f), Some("ten"));
+        let r = Rules::from_files(vec![
+            at("01-z.json", "built", usize::MAX),
+            at("10-a.json", "etc", 1),
+            at("9-b.json", "nine", 0),
+            at("10-c.json", "ten", 0),
+        ]);
+        assert_eq!(r.app(&f), Some("ten"), "XDG first, and 10-c before 9-b");
+        let r = Rules::from_files(vec![
+            at("01-z.json", "built", usize::MAX),
+            at("99-a.json", "etc", 1),
+        ]);
+        assert_eq!(r.app(&f), Some("etc"), "/etc before every built-in");
     }
 
     #[test]
@@ -1600,6 +1628,24 @@ mod tests {
         assert_eq!(r.warnings.len(), 1, "{:?}", r.warnings);
     }
 
+    /// `disable` applies to a file name in every source, so a user file named
+    /// like a built-in that disables `file:id` drops its own rule of that id.
+    #[test]
+    fn a_same_name_user_file_that_disables_its_own_id_loses_it() {
+        let r = with_builtins(vec![file(
+            "40-trinity.json",
+            r#"{"stage":"session","disable":["40-trinity.json:trinity-session"],
+               "rules":[{"id":"trinity-session","match":{"name":"kicker"},"identity":"mine","folder":"applications"}]}"#,
+        )]);
+        let kicker = Facts {
+            comm: "kicker",
+            name: "kicker",
+            exe: Some("/opt/trinity/bin/tdeinit"),
+            ..Facts::default()
+        };
+        assert_eq!(r.session(&kicker), None);
+    }
+
     fn with_builtins(mut files: Vec<LoadedFile>) -> Rules {
         files.extend(builtin_files());
         Rules::from_files(files)
@@ -1620,7 +1666,7 @@ mod tests {
                 .any(|l| l.starts_with("90-a.json:x#0 (xdg): "))
         );
         assert!(r.lines.iter().any(|l| l.starts_with("91-b.json (xdg): ")));
-        assert_eq!(r.examples, 126);
+        assert_eq!(r.examples, 128);
     }
 
     #[test]

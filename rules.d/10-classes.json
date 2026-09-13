@@ -45,6 +45,8 @@
     { "comm": "node", "exe": "/usr/bin/node", "cmdline": ["node", "/srv/app/worker.js"], "expect": { "classes": ["generic"] } },
     { "comm": "Containerd-Shim-Runc-V2", "exe": "/usr/bin/Containerd-Shim-Runc-V2", "expect": { "classes": ["container_runtime"] } },
     { "comm": "n/a", "exe": "/usr/bin/Conmon", "expect": { "classes": ["container_runtime"] } },
+    { "comm": "RunC", "expect": { "classes": ["container_runtime"] } },
+    { "comm": "CRun", "expect": { "classes": ["container_runtime"] } },
     { "comm": "containerd", "exe": "/usr/bin/containerd", "expect": { "classes": [] } }
   ]
 }

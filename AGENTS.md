@@ -409,7 +409,8 @@ The contract, which a change may extend but not alter:
   `service`); the other three take the first match. `session` runs before
   `classify::crash_helper_app` and `app` after it, both in
   `group::direct_place`, and no built-in example can prove that order, so
-  `tests/grouping.rs` holds it.
+  `tests/grouping.rs:a_user_session_rule_runs_before_the_crash_helper_and_an_app_rule_after_it`
+  holds it.
 - Every string test folds ASCII case on both sides: patterns are lowercased
   once at compile, haystacks never. Unicode case is not folded.
 - Sources rank XDG, then `/etc`, then built-ins, whatever the file names;

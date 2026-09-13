@@ -635,34 +635,24 @@ impl Rules {
             }
             let mut warnings = vec![];
             let mut files = vec![];
-            // `HEFT_RULES_PATH` set, even empty, replaces both directories.
-            if let Some(list) = std::env::var_os("HEFT_RULES_PATH") {
-                use std::os::unix::ffi::OsStrExt;
-                for (rank, dir) in list.as_bytes().split(|&b| b == b':').enumerate() {
-                    if dir.is_empty() {
-                        continue;
-                    }
-                    let path = std::path::PathBuf::from(std::ffi::OsStr::from_bytes(dir));
-                    let source = Source {
-                        rank,
-                        label: path.display().to_string(),
-                    };
-                    files.extend(load_dir(&path, &source, &mut warnings));
-                }
-            } else {
-                for (rank, path) in [
+            // `HEFT_RULES_PATH` set, even empty, replaces both directories. An
+            // empty entry keeps its index, so the rank is the position typed.
+            let dirs: Vec<std::path::PathBuf> = match std::env::var_os("HEFT_RULES_PATH") {
+                Some(list) => std::env::split_paths(&list).collect(),
+                None => vec![
                     crate::config::config_dir().join("rules.d"),
-                    std::path::PathBuf::from("/etc/heft/rules.d"),
-                ]
-                .into_iter()
-                .enumerate()
-                {
-                    let source = Source {
-                        rank,
-                        label: path.display().to_string(),
-                    };
-                    files.extend(load_dir(&path, &source, &mut warnings));
+                    "/etc/heft/rules.d".into(),
+                ],
+            };
+            for (rank, path) in dirs.iter().enumerate() {
+                if path.as_os_str().is_empty() {
+                    continue;
                 }
+                let source = Source {
+                    rank,
+                    label: path.display().to_string(),
+                };
+                files.extend(load_dir(path, &source, &mut warnings));
             }
             files.extend(builtin_files());
             let mut r = Self::from_files(files);

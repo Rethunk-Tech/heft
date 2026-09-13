@@ -166,6 +166,10 @@ pub fn run(
     // Resolve columns before the alternate screen: a warning about a stale
     // hide entry printed after it would be wiped on the first frame.
     let cols = Columns::for_tui(&view);
+    // The same for a rules.d file skipped as malformed: the sampler thread
+    // reuses this load, and would otherwise print its warning into the
+    // alternate screen.
+    crate::rules::Rules::load();
     // Before raw mode, so the guard captures the settings it will have to put
     // back, and covers the window from here to the teardown below.
     crate::tty::guard();

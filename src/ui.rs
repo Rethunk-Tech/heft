@@ -1142,21 +1142,25 @@ fn draw_header(f: &mut ratatui::Frame<'_>, area: Rect, app: &App) {
 fn swap_header_line(tree: &HostTree, width: usize, bar_w: usize) -> Option<Line<'static>> {
     let total = (tree.swap_total_bytes > 0).then_some(tree.swap_total_bytes)?;
     let used = tree.swap_used_bytes.min(total);
-    let prefix = bar_prefix("SWAP", label_width(tree));
-    let mid = format!("] {}/{}  ", fmt_bytes(Some(used)), fmt_bytes(Some(total)));
+    let group = |w| {
+        bar_group(
+            "SWAP",
+            label_width(tree),
+            w,
+            &[(used, Color::Indexed(179), glyph::full())], // #d7af5f gold
+            used,
+            total,
+        )
+    };
     // Drawn to MEM's bar width and padded on the right, the same way the CPU
     // row is, so all three brackets stack in one column. Its own suffix is
     // shorter than MEM's, so there is always slack to give back.
-    let fits = width.saturating_sub(prefix.len() + mid.len());
-    let bar_w = bar_w.min(fits);
-    let mut spans = vec![Span::raw(prefix)];
-    spans.extend(stacked_bar(
-        bar_w,
-        &[(used, Color::Indexed(179), glyph::full())], // #d7af5f gold
-        total.max(1),
-    ));
-    spans.push(Span::raw(mid));
-    spans.push(Span::raw(" ".repeat(fits - bar_w)));
+    let (mut spans, fits) = group(width);
+    if fits > bar_w {
+        let pad = fits - bar_w;
+        spans = group(width - pad).0;
+        spans.push(Span::raw(" ".repeat(pad)));
+    }
     Some(Line::from(spans))
 }
 
@@ -1215,9 +1219,9 @@ fn cpu_parts(tree: &HostTree, width: usize) -> (String, String, usize) {
 /// that was never on screen. The header heft draws there has to be the one it
 /// draws with no swap row.
 ///
-/// One helper rather than a literal per row: `cpu_header_line` and
-/// `swap_header_line` build their own prefixes and `bar_group` builds the
-/// rest, so three copies of this would drift the first time a label changed.
+/// One helper rather than a literal per row: `cpu_parts` builds its own prefix
+/// and `bar_group` builds the rest, so two copies of this would drift the
+/// first time a label changed.
 fn bar_prefix(label: &str, label_w: usize) -> String {
     format!(" {label:>label_w$} [")
 }
@@ -1636,13 +1640,15 @@ fn help_lines(width: u16) -> Vec<Line<'static>> {
     // Each column as wide as its own longest line, so one long description
     // widens only its own half.
     let half = keys.len().div_ceil(2);
-    let col = |ls: &[&str]| ls.iter().map(|l| l.chars().count()).max().unwrap_or(0);
+    // Display width, as `popup` sizes the overlay: `{:<w$}` pads by chars.
+    let col = |ls: &[&str]| ls.iter().map(|l| l.width()).max().unwrap_or(0);
     let (lw, rw) = (col(&keys[..half]), col(&keys[half..]));
     let mut lines = if usize::from(width) >= lw + GUTTER + rw + CHROME {
         (0..half)
             .map(|i| {
                 let right = keys.get(half + i).copied().unwrap_or("");
-                Line::from(format!("{:<lw$}{:GUTTER$}{right}", keys[i], ""))
+                let pad = " ".repeat(lw - keys[i].width() + GUTTER);
+                Line::from(format!("{}{pad}{right}", keys[i]))
             })
             .collect()
     } else {

@@ -105,30 +105,15 @@ pub(crate) enum Transport {
     Direct,
 }
 
-/// `t=s` needs the terminal to be able to open a file this process created,
-/// which is exactly what an ssh session does not give it. Neither variable is
-/// set by a local terminal, and both are set by sshd, so their presence is the
-/// question being asked -- not a guess about the terminal's identity.
-pub(crate) const fn transport_for_env(ssh_connection: bool, ssh_tty: bool) -> Transport {
-    if ssh_connection || ssh_tty {
-        Transport::Direct
-    } else {
-        Transport::Shm
-    }
-}
-
 /// Whether the terminal is at the other end of a connection, which is what
 /// decides both the kitty transport and, in `ui::resolve_trend`, whether sixel
-/// is the cheaper protocol.
+/// is the cheaper protocol. `t=s` needs the terminal to be able to open a file
+/// this process created, which is exactly what an ssh session does not give
+/// it. Neither variable is set by a local terminal, and both are set by sshd,
+/// so their presence is the question being asked -- not a guess about the
+/// terminal's identity.
 pub(crate) fn is_remote() -> bool {
-    detect_transport() == Transport::Direct
-}
-
-fn detect_transport() -> Transport {
-    transport_for_env(
-        std::env::var_os("SSH_CONNECTION").is_some(),
-        std::env::var_os("SSH_TTY").is_some(),
-    )
+    std::env::var_os("SSH_CONNECTION").is_some() || std::env::var_os("SSH_TTY").is_some()
 }
 
 /// One painted TREND column: RGBA, one band of `cell_h` pixels per table row.
@@ -287,7 +272,11 @@ pub(crate) struct Kgp {
 
 impl Kgp {
     pub(crate) fn new() -> Self {
-        Self::with_transport(detect_transport())
+        Self::with_transport(if is_remote() {
+            Transport::Direct
+        } else {
+            Transport::Shm
+        })
     }
 
     pub(crate) const fn with_transport(transport: Transport) -> Self {
@@ -493,9 +482,7 @@ mod tests {
         // Shared memory the terminal cannot open is not a fallback, it is a
         // blank column, so the question is asked of the session and not of
         // `TERM`.
-        assert_eq!(transport_for_env(false, false), Transport::Shm);
-        assert_eq!(transport_for_env(true, false), Transport::Direct);
-        assert_eq!(transport_for_env(false, true), Transport::Direct);
+        assert_eq!(Kgp::new().transport == Transport::Direct, is_remote());
     }
 
     #[test]

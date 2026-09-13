@@ -275,10 +275,10 @@ fn parse_size(v: &str) -> Option<u64> {
     let n: u64 = parts.next()?.parse().ok()?;
     let unit = parts.next().unwrap_or("B");
     let mul = match unit {
-        "KiB" | "kiB" | "kB" | "KB" => 1024,
         "MiB" | "MB" => 1024 * 1024,
         "GiB" | "GB" => 1024 * 1024 * 1024,
         "B" => 1,
+        // KiB (also written kiB, kB, KB) and any unit this list does not name.
         _ => 1024,
     };
     Some(n.saturating_mul(mul))

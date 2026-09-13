@@ -1991,19 +1991,25 @@ mod tests {
             flat_row("a", true),
             flat_row("b", true),
         ];
-        assert_eq!(
-            trend_scale(Sort::from_label("core"), &rows, &history),
-            100.0,
+        // Each scale is a stored sample or a constant, never arithmetic, so it
+        // is exact.
+        let exactly = |got: f64, want: f64| (got - want).abs() < f64::EPSILON;
+        assert!(
+            exactly(
+                trend_scale(Sort::from_label("core"), &rows, &history),
+                100.0
+            ),
             "a percentage does not depend on what else is drawn"
         );
-        assert_eq!(
-            trend_scale(Sort::from_label("pss"), &rows, &history),
-            40.0,
+        assert!(
+            exactly(trend_scale(Sort::from_label("pss"), &rows, &history), 40.0),
             "the heaviest entry, and Host is not one"
         );
-        assert_eq!(
-            trend_scale(Sort::from_label("pss"), &rows, &HashMap::new()),
-            0.0,
+        assert!(
+            exactly(
+                trend_scale(Sort::from_label("pss"), &rows, &HashMap::new()),
+                0.0
+            ),
             "nothing measured yet"
         );
     }

@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default)]
 pub struct Process {
@@ -154,8 +154,9 @@ fn sum_opt_f(a: Option<f64>, b: Option<f64>) -> Option<f64> {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) enum Folder {
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Folder {
     Applications,
     UserServices,
     Containers,

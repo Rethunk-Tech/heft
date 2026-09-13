@@ -8,6 +8,8 @@
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashSet};
 
+use crate::types::Folder;
+
 include!(concat!(env!("OUT_DIR"), "/builtin_rules.rs"));
 
 /// Discriminants index `Rules::stages`.
@@ -42,7 +44,7 @@ pub struct Rule {
     #[serde(default)]
     pub identity: Option<String>,
     #[serde(default)]
-    pub folder: Option<FolderName>,
+    pub folder: Option<Folder>,
     #[serde(default)]
     pub fold_to: Option<String>,
     #[serde(default)]
@@ -51,22 +53,6 @@ pub struct Rule {
     pub classes: Vec<Class>,
     #[serde(default)]
     pub flags: Vec<UnitFlag>,
-}
-
-#[derive(Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
-#[serde(rename_all = "snake_case")]
-pub enum FolderName {
-    Applications,
-    UserServices,
-}
-
-impl From<FolderName> for crate::types::Folder {
-    fn from(f: FolderName) -> Self {
-        match f {
-            FolderName::Applications => Self::Applications,
-            FolderName::UserServices => Self::UserServices,
-        }
-    }
 }
 
 #[derive(Deserialize, Debug)]
@@ -235,7 +221,7 @@ pub struct Expect {
     pub rule: Option<String>,
     pub rules: Option<Vec<String>>,
     pub identity: Option<String>,
-    pub folder: Option<FolderName>,
+    pub folder: Option<Folder>,
     pub classes: Option<Vec<Class>>,
     pub flags: Option<Vec<UnitFlag>>,
     pub fold_to: Option<String>,
@@ -277,7 +263,7 @@ pub struct Compiled {
     pub id: String,
     test: Test,
     pub identity: Option<String>,
-    pub folder: Option<FolderName>,
+    pub folder: Option<Folder>,
     pub fold_to: Option<String>,
     pub owner_uid: Option<u32>,
     pub classes: Classes,
@@ -549,6 +535,14 @@ fn compile_rule(stage: Stage, r: Rule, file: &str, source: &Source) -> Result<Co
             return Err(format!("rule {}: stage {stage:?} requires `{req}`", r.id));
         }
     }
+    // Containers and System are bucketed by procedure, never by a rule.
+    if let Some(f @ (Folder::Containers | Folder::System)) = r.folder {
+        return Err(format!(
+            "rule {}: folder `{}` is not a rule output; use applications or user_services",
+            r.id,
+            folder_name(f)
+        ));
+    }
     if stage == Stage::Placement {
         if outputs.is_empty() {
             return Err(format!(
@@ -793,7 +787,7 @@ impl Rules {
     }
     #[inline]
     #[must_use]
-    pub fn session(&self, f: &Facts) -> Option<(&str, FolderName)> {
+    pub fn session(&self, f: &Facts) -> Option<(&str, Folder)> {
         self.stages[Stage::Session as usize]
             .iter()
             .find(|r| eval(&r.test, f))
@@ -1014,10 +1008,12 @@ fn judge(ex: &Example, hits: &[&Compiled], file: &str) -> Vec<String> {
 }
 
 /// A folder as a rules file spells it, for messages a user reads.
-const fn folder_name(f: FolderName) -> &'static str {
+const fn folder_name(f: Folder) -> &'static str {
     match f {
-        FolderName::Applications => "applications",
-        FolderName::UserServices => "user_services",
+        Folder::Applications => "applications",
+        Folder::UserServices => "user_services",
+        Folder::Containers => "containers",
+        Folder::System => "system",
     }
 }
 
@@ -1239,6 +1235,26 @@ mod tests {
         for &name in CLASS_NAMES {
             let c: Class = serde_json::from_value(name.into()).unwrap();
             assert_eq!(Classes::of(&[c]).names(), [name]);
+        }
+    }
+
+    #[test]
+    fn a_rule_folder_of_containers_or_system_fails_the_file() {
+        for folder in ["containers", "system"] {
+            let r = Rules::from_files(vec![file(
+                "10-x.json",
+                &format!(
+                    r#"{{"stage":"session","rules":[{{"id":"s","match":{{"name":"x"}},"identity":"x","folder":"{folder}"}}]}}"#
+                ),
+            )]);
+            assert_eq!(r.problems.len(), 1, "{folder} loaded");
+            assert!(
+                r.problems[0]
+                    .what
+                    .contains(&format!("folder `{folder}` is not a rule output")),
+                "{:?}",
+                r.problems
+            );
         }
     }
 

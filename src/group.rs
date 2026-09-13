@@ -338,7 +338,7 @@ fn user_place(p: &Process, ctx: &Ctx<'_>) -> Place {
 fn session_plumbing_place(p: &Process, ctx: &Ctx<'_>) -> Option<Place> {
     let (key, folder) = ctx.rules.session(&ctx.facts(p))?;
     Some(Place {
-        folder: folder.into(),
+        folder,
         uid: Some(p.uid),
         key: key.to_string(),
         instance: ctx.instance(p),
@@ -401,11 +401,11 @@ fn override_place(rules: &Rules, place: Place) -> Place {
     let r1 = rules.placement(&place.key);
     let key = r1.and_then(|r| r.fold_to.clone()).unwrap_or(place.key);
     let folder = match r1.and_then(|r| r.folder) {
-        Some(f) => f.into(),
+        Some(f) => f,
         None if r1.is_some_and(|r| r.fold_to.is_some()) => rules
             .placement(&key)
             .and_then(|r| r.folder)
-            .map_or(place.folder, Into::into),
+            .unwrap_or(place.folder),
         None => place.folder,
     };
     Place {

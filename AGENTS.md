@@ -34,7 +34,7 @@ src/once.rs          columns, tree ordering, table and JSON
 src/explain.rs       --explain PID: resolved placement, the placement key, the rule each stage matched
 src/ui.rs            ratatui header + tree table
 src/tty.rs           panic hook + signal handler; restores the terminal
-src/glyph.rs         unicode vs ascii bar/rule/marker characters; resolved once
+src/glyph.rs         unicode, legacy or ascii bar/rule/marker characters; resolved once
 src/keys.rs          the one TUI key list; build.rs includes it for the man page
 src/root.rs          the /proc and /sys prefix behind --proc-root, resolved once
 src/caps.rs          --trend auto: one round trip asking the terminal what it draws
@@ -44,7 +44,7 @@ tests/grouping.rs    integration tests over tests/fixtures/; links the library
 tests/live_proc.rs   invariants over the real /proc; must hold in a bare container
 tests/reconcile.rs   heft against /proc read independently, not against itself
 tests/common/mod.rs  heft(), arr() and pids() for the two that drive the built binary
-tests/fixtures/      GUI grouping snapshot
+tests/fixtures/      grouping worlds: gui/ desktop snapshot, zygote/ fallback case
 packaging/aur/       PKGBUILD + .SRCINFO for heft, heft-bin, heft-git; update.sh
 ```
 
@@ -220,8 +220,7 @@ cannot run off one process's arguments into the next. `TableRow::search` and
 `Flat::search` are `None` on a tick with no filter and on rows the argv cannot
 reach (Host, User, folder headers), so `keep_matches` falls back to `name` and
 an unfiltered tick allocates nothing for it. `ProcNode::cmdline` carries the
-argv `proc` already read; it is `#[serde(skip)]` because the JSON shape is a
-contract and a consumer wanting argv can read `/proc/<pid>/cmdline` itself.
+argv `proc` already read, and is serialized (`types.rs`).
 The haystack is built for a collapsed identity too, or `/` would reach only
 what happens to be expanded.
 

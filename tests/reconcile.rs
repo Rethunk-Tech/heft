@@ -26,7 +26,7 @@ use std::time::{Duration, Instant};
 use serde_json::Value;
 
 mod common;
-use common::{arr, heft};
+use common::{arr, heft, pids};
 
 /// heft's CPU window is this sleep and nothing else; the outer window a test
 /// can draw around it adds a full `/proc` walk on either side. Every CPU bound
@@ -170,14 +170,9 @@ fn meminfo() -> (u64, u64, u64) {
 /// own admission test (`proc::read_pid` gives up there first), so this is the
 /// population heft is answerable for.
 fn scan() -> HashMap<u32, Option<u64>> {
-    let Ok(dir) = std::fs::read_dir("/proc") else {
-        return HashMap::new();
-    };
     let mut out = HashMap::new();
-    for ent in dir.flatten() {
-        let Some(pid) = ent.file_name().to_str().and_then(|s| s.parse::<u32>().ok()) else {
-            continue;
-        };
+    for pid in pids() {
+        let pid = u32::try_from(pid).expect("a Linux pid is below pid_max, at most 2^22");
         if std::fs::read_to_string(format!("/proc/{pid}/stat")).is_err() {
             continue;
         }

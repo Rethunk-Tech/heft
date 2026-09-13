@@ -19,7 +19,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use serde_json::Value;
 
 mod common;
-use common::{arr, heft};
+use common::{arr, heft, pids};
 /// The floor `clamp_intervals` allows: the two `/proc` walks this far apart.
 const FAST: &str = "0.05";
 
@@ -66,7 +66,7 @@ fn sample() -> &'static Sample {
     static SAMPLE: OnceLock<Sample> = OnceLock::new();
     SAMPLE.get_or_init(|| {
         let before = kthread_pids();
-        let alive_before = all_pids();
+        let alive_before = pids();
         let child = heft(&["--json", "--interval", FAST])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -75,7 +75,7 @@ fn sample() -> &'static Sample {
         let self_pid = u64::from(child.id());
         let out = child.wait_with_output().expect("wait for heft --json");
         let after = kthread_pids();
-        let alive_after = all_pids();
+        let alive_after = pids();
         assert!(out.status.success(), "heft --json exited {}", out.status);
         assert!(
             out.stderr.is_empty(),
@@ -95,35 +95,15 @@ fn sample() -> &'static Sample {
     })
 }
 
-/// Every pid `/proc` lists, straight from the directory.
-fn all_pids() -> Vec<u64> {
-    let Ok(dir) = std::fs::read_dir("/proc") else {
-        return Vec::new();
-    };
-    dir.flatten()
-        .filter_map(|e| e.file_name().to_str().and_then(|s| s.parse::<u64>().ok()))
-        .collect()
-}
-
 /// Kernel threads straight from the kernel, parsed independently of heft: a
 /// test that asked heft where the kernel threads are would prove nothing.
 fn kthread_pids() -> Vec<u64> {
-    let Ok(dir) = std::fs::read_dir("/proc") else {
-        return Vec::new();
-    };
-    let mut out = Vec::new();
-    for ent in dir.flatten() {
-        let Some(pid) = ent.file_name().to_str().and_then(|s| s.parse::<u64>().ok()) else {
-            continue;
-        };
-        let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat")) else {
-            continue;
-        };
-        if is_kthread(&stat) {
-            out.push(pid);
-        }
-    }
-    out
+    pids()
+        .into_iter()
+        .filter(|pid| {
+            std::fs::read_to_string(format!("/proc/{pid}/stat")).is_ok_and(|s| is_kthread(&s))
+        })
+        .collect()
 }
 
 /// `PF_KTHREAD` is `stat` field 9 (flags), the 7th token after the `)` that

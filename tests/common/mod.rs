@@ -25,6 +25,17 @@ pub fn heft(args: &[&str]) -> Command {
     cmd
 }
 
+/// Every pid `/proc` lists, read straight from the directory rather than
+/// through heft: a suite checking heft against `/proc` must not ask heft.
+pub fn pids() -> Vec<u64> {
+    let Ok(dir) = std::fs::read_dir("/proc") else {
+        return Vec::new();
+    };
+    dir.flatten()
+        .filter_map(|e| e.file_name().to_str().and_then(|s| s.parse().ok()))
+        .collect()
+}
+
 /// A JSON array field, or an empty slice where the key is absent: a folder
 /// with nothing in it is left out of the tree rather than emitted empty.
 pub fn arr<'a>(v: &'a Value, key: &str) -> &'a [Value] {

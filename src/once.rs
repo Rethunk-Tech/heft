@@ -434,7 +434,9 @@ pub fn sort_labels() -> Vec<&'static str> {
 /// Case-insensitive by default, via a `(?i)` the pattern never sees: a bare
 /// `code` has always matched `Code`, and a regex that quietly became
 /// case-sensitive would break every filter anyone had saved. `(?-i)` turns it
-/// back off for whoever wants that.
+/// back off for whoever wants that. Multi-line too, via the same `(?m)`: the
+/// haystack is one line per process, so `^` and `$` anchor to one process's
+/// argv, and `(?-m)` restores whole-text anchors.
 ///
 /// `regex-lite` rather than `regex`, measured: the full engine takes the
 /// stripped release binary from 1.93 MB to 3.26 MB and pulls in four crates
@@ -448,7 +450,7 @@ impl Filter {
     /// that means for it: a usage error on the command line, a warning for a
     /// stale saved view, and nothing at all mid-keystroke in the TUI.
     pub fn new(pattern: &str) -> Option<Self> {
-        regex_lite::Regex::new(&format!("(?i){pattern}"))
+        regex_lite::Regex::new(&format!("(?im){pattern}"))
             .ok()
             .map(Filter)
     }
@@ -1716,6 +1718,21 @@ mod tests {
             printable("a\x1bb\x7f\u{9b}\tc\n"),
             r"a\u{1b}b\u{7f}\u{9b}\tc\n"
         );
+    }
+
+    /// The haystack is a title then one argv per line, so an anchor that
+    /// spanned the whole text could never match a row with processes under it.
+    #[test]
+    fn filter_anchors_hold_per_process_line() {
+        let row = "node\n/usr/bin/node server.js\nclaude";
+        assert!(Filter::new("^claude$").unwrap().0.is_match(row));
+        assert!(
+            Filter::new("^/usr/bin/node server")
+                .unwrap()
+                .0
+                .is_match(row)
+        );
+        assert!(!Filter::new("(?-m)^claude$").unwrap().0.is_match(row));
     }
 
     #[test]

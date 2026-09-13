@@ -727,8 +727,8 @@ fn fold_bills_a_named_process_to_another_identity() {
     );
 }
 
-/// Placement is first match, so a migrated grouping.json lists its folds
-/// before its pins.
+/// Placement is first match, so a file that folds and pins one identity lists
+/// the fold first.
 #[test]
 fn a_pin_listed_before_a_fold_on_the_same_identity_hides_the_fold() {
     let ov = with_user(

@@ -535,16 +535,6 @@ A wrong key is silent: an identity that matches nothing is never consulted.
 The stage lines say what each stage makes of the process on its own; `placed`
 is the tree's verdict, which also depends on the process's parents.
 
-`grouping.json` is not read. heft says so once on stderr while the file is
-there. Each of its keys is a placement rule:
-
-| grouping.json | rule |
-| --- | --- |
-| `"applications": ["x"]` | `{ "id": "pin-x", "match": { "identity": "x" }, "folder": "applications" }` |
-| `"user_services": ["x"]` | the same, with `"folder": "user_services"` |
-| `"fold": { "a": "b" }` | `{ "id": "fold-a", "match": { "identity": "a" }, "fold_to": "b" }`, listed before the pins |
-| `"container_owners": { "c": 1000 }` | `{ "id": "own-c", "match": { "container": "c" }, "owner_uid": 1000 }` |
-
 If the built-in grouping is wrong, attach `heft --fixture > heft-fixture.json`
 to a bug report. It is every process's exe, cgroup, parent and command line,
 in the shape heft's grouping tests load, so your machine becomes the test for

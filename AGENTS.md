@@ -277,9 +277,7 @@ build_tree_timing` and `cargo test --release --lib -- --ignored --nocapture
 rules_timing`, with `HEFT_BENCH_FIXTURE` naming a `--fixture` dump.
 
 `Rules::load`, `rules::load_dir` and `Rules::builtin` carry the load contract.
-The leftover-grouping.json warning stays: without it an upgrader's overrides
-would stop applying with no message. The warning, its `live_proc` test and the
-HUMANS.md migration table are removed at 0.11. `tests/common::heft` points
+`tests/common::heft` points
 `HEFT_RULES_PATH` at a missing directory so a developer's `/etc/heft/rules.d`
 cannot reach a binary-driven test.
 

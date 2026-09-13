@@ -649,8 +649,7 @@ fn own_row(mut cmd: std::process::Command) -> (String, HashMap<u64, String>, Str
 }
 
 /// `HEFT_RULES_PATH` replaces the XDG and `/etc` directories, which is what
-/// keeps a developer's own rules out of every other binary-driven test; a
-/// leftover grouping.json is named once on stderr and never parsed.
+/// keeps a developer's own rules out of every other binary-driven test.
 #[test]
 fn heft_rules_path_replaces_the_rules_directories() {
     let dir = scratch("rules-path");
@@ -661,7 +660,6 @@ fn heft_rules_path_replaces_the_rules_directories() {
         r#"{"stage":"placement","rules":[{"id":"pin","match":{"identity":"heft"},"folder":"user_services"}]}"#,
     )
     .expect("write rule");
-    std::fs::write(dir.join("heft/grouping.json"), "{ not even json").expect("grouping.json");
     let run = |xdg: &std::path::Path, isolated: bool| {
         let mut cmd = heft(&["--json", "--interval", FAST]);
         cmd.env("XDG_CONFIG_HOME", xdg);
@@ -677,13 +675,10 @@ fn heft_rules_path_replaces_the_rules_directories() {
     std::fs::remove_dir_all(&dir).ok();
     std::fs::remove_dir_all(&bare).ok();
 
-    let lines: Vec<&str> = stderr.lines().collect();
-    assert!(
-        lines.len() == 1 && lines[0].contains("grouping.json") && lines[0].contains("HUMANS.md"),
-        "one warning naming the file and where its replacement is documented: {stderr}"
-    );
-    // Never parsed: every pid both runs saw is on the same row. System rows
-    // are left out because a kworker renames itself between two samples.
+    assert!(stderr.is_empty(), "{stderr}");
+    // Not read while isolated: every pid both runs saw is on the same row.
+    // System rows are left out because a kworker renames itself between two
+    // samples.
     let moved_by_the_file: Vec<_> = with_file
         .iter()
         .filter(|(pid, row)| {

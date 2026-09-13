@@ -623,13 +623,6 @@ impl Rules {
     pub fn load() -> &'static Self {
         static RULES: std::sync::OnceLock<Rules> = std::sync::OnceLock::new();
         RULES.get_or_init(|| {
-            let legacy = crate::config::config_dir().join("grouping.json");
-            if legacy.exists() {
-                eprintln!(
-                    "heft: {} is no longer read; rules.d replaced it, see HUMANS.md",
-                    legacy.display()
-                );
-            }
             let mut warnings = vec![];
             let mut files = vec![];
             // `HEFT_RULES_PATH` set, even empty, replaces both directories. An

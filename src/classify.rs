@@ -65,7 +65,7 @@ pub(crate) fn crash_helper_app<'p>(
     // would otherwise take the row by pid order.
     let own = |q: &&Process| {
         q.uid == p.uid
-            && !(identity::in_system_slice(&q.cgroup) && !identity::in_user_slice(&q.cgroup))
+            && (!identity::in_system_slice(&q.cgroup) || identity::in_user_slice(&q.cgroup))
             && identity::docker_scope_id(&q.cgroup).is_none()
             && identity::machine_scope_name(&q.cgroup).is_none()
     };

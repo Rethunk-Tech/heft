@@ -31,6 +31,9 @@ pub struct Process {
     pub read_bytes: Option<u64>,
     pub write_bytes: Option<u64>,
     pub gpu: GpuCounters,
+    /// fd numbers whose `/proc/pid/fd` link names a drm device, as of the last
+    /// fd table scan; `gpu::read_pid` carries it between PSS ticks.
+    pub drm_fds: Vec<u32>,
 }
 
 #[derive(Clone, Debug, Default)]

@@ -14,9 +14,21 @@ use crate::types::{GpuCounters, sum_opt};
 /// measured ~318 ms of ~760 ms serial PSS-tick kernel work on 308 pids with no
 /// dri/drm fd. A full walk still runs when the prefilter finds fds but they
 /// yield no GPU metrics. `dir` is the process's `/proc/<pid>`.
-pub(crate) fn read_pid(dir: impl AsFd, full_scan: bool, buf: &mut Vec<u8>) -> GpuCounters {
-    let drm_fds = match drm_fd_nums(&dir) {
-        Err(Errno::ACCESS) => return GpuCounters::default(),
+///
+/// `carried` is the prefilter from an earlier tick, used instead of reading
+/// every `fd` symlink; the returned list is the prefilter to carry next. That
+/// scan is a `readlinkat` per open fd, ~8.8k per tick and ~17 ms of kernel
+/// time per pass here, while the fdinfo reads it selects stay per tick so
+/// GFX/CMP rates keep their cadence. A carried fd number since reused for
+/// something else fails the `drm-client-id` check in `push_drm_text`.
+pub(crate) fn read_pid(
+    dir: impl AsFd,
+    full_scan: bool,
+    carried: Option<&[u32]>,
+    buf: &mut Vec<u8>,
+) -> (GpuCounters, Vec<u32>) {
+    let drm_fds = match carried.map_or_else(|| drm_fd_nums(&dir), |v| Ok(v.to_vec())) {
+        Err(Errno::ACCESS) => return (GpuCounters::default(), Vec::new()),
         Err(_) => Vec::new(),
         Ok(v) => v,
     };
@@ -27,9 +39,9 @@ pub(crate) fn read_pid(dir: impl AsFd, full_scan: bool, buf: &mut Vec<u8>) -> Gp
         read_fdinfo_files(&dir, &drm_fds, buf)
     };
     if !needs_full_fdinfo(full_scan, prefilter_empty, &filtered) {
-        return filtered;
+        return (filtered, drm_fds);
     }
-    read_all_fdinfo(&dir, buf)
+    (read_all_fdinfo(&dir, buf), drm_fds)
 }
 
 /// `/dev/dri/renderD128`, `/dev/dri/card1`, and other drm device nodes.

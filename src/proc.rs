@@ -261,13 +261,19 @@ pub(crate) fn read_pid(
         || pio::read_rollup_kb(&dir, want_swap, buf),
     );
     // PF_KTHREAD has no userspace /proc/pid/io or drm fdinfo.
-    let (read_bytes, write_bytes, gpu) = if parsed.kthread {
-        (None, None, GpuCounters::default())
+    let (read_bytes, write_bytes, (gpu, drm_fds)) = if parsed.kthread {
+        (None, None, (GpuCounters::default(), Vec::new()))
     } else {
         let (r, w) = pio::read_io(&dir, buf);
         // want_pss is the residual GPU fdinfo walk (PSS / --once) when dri/drm
         // names were found but yielded no metrics; empty prefilter skips it.
-        (r, w, gpu::read_pid(&dir, want_pss, buf))
+        // It is also when the fd table is rescanned: between PSS ticks the
+        // same process keeps its last drm fd list.
+        let carried = prev
+            .filter(|p| !want_pss && p.starttime_ticks.is_some())
+            .filter(|p| p.starttime_ticks == parsed.starttime_ticks)
+            .map(|p| p.drm_fds.as_slice());
+        (r, w, gpu::read_pid(&dir, want_pss, carried, buf))
     };
     Some(Process {
         pid,
@@ -291,6 +297,7 @@ pub(crate) fn read_pid(
         read_bytes,
         write_bytes,
         gpu,
+        drm_fds,
     })
 }
 

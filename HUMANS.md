@@ -247,6 +247,8 @@ and the footer reads `PAUSED 8s`.
 The GPU columns (VRAM, GTT, GFX, CMP) read DRM fdinfo from `amdgpu`, `i915`
 and `xe` only. Other drivers (`nvidia-drm`, `nouveau`, `panfrost`, `v3d`,
 `msm`) are refused rather than guessed at, so those columns stay blank there.
+heft looks for a process's GPU file descriptors on PSS reads, so a GPU a
+running process opens can take up to `--pss-interval` to show.
 
 Other uids appear as extra User nodes when `/proc` lists them. A metric heft
 cannot read (`smaps_rollup`, `io`, fdinfo, `exe`) or that does not exist for a

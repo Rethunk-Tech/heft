@@ -809,7 +809,7 @@ them all:
 
 ```
 $ heft --check-rules
-90-mine.json:pin-daemon#0 (/home/me/.config/heft/rules.d): expected folder UserServices, got Some(Applications)
+90-mine.json:pin-daemon#0 (/home/me/.config/heft/rules.d): expected folder user_services, got applications
 30-gnome.json:gsd#9 (built-in): overridden by 90-mine.json:my-gsd (/home/me/.config/heft/rules.d)
 40-trinity.json#3 (built-in): disabled by 40-trinity.json (90-mine.json, /home/me/.config/heft/rules.d)
 141 examples in 13 files: 1 failed, 1 overridden, 14 disabled

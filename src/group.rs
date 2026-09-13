@@ -80,7 +80,7 @@ fn judge(p: &Process, rules: &Rules) -> Judged {
     // first positional argument. A procedure over argv, not a class rule.
     if let Some(arg) = p.cmdline.iter().skip(1).find(|a| !a.starts_with('-'))
         && rules
-            .classes_of_name(&classify::basename(arg))
+            .classes_of_name(arg.rsplit('/').next().unwrap_or(arg))
             .has(Classes::LAUNCHER)
     {
         classes.0 |= Classes::LAUNCHER;

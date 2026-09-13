@@ -6,26 +6,17 @@ pub(crate) fn basename(path: &str) -> String {
 }
 
 pub(crate) fn name_of(p: &Process) -> String {
-    if let Some(exe) = &p.exe {
-        let b = basename(exe);
-        // tdeinit runs konsole, kicker or kate as a module in a fork, so `exe`
-        // stays tdeinit for all of them and only `comm` (set by prctl) names
-        // the program. tdelibs `tdeinit.cpp` `launch()`.
-        if b == "tdeinit" && !p.comm.is_empty() {
-            return p.comm.clone();
-        }
-        if !b.is_empty() && b != "exe" && !b.starts_with('[') {
-            return b;
-        }
-    }
-    p.comm.clone()
+    name_ref(p).to_string()
 }
 
-/// The `&str` twin of `name_of`, so a rules `Facts` can borrow the display
-/// name without allocating it once per pid per tick.
+/// The display name, borrowed, so a rules `Facts` does not allocate it once
+/// per pid per tick.
 pub(crate) fn name_ref(p: &Process) -> &str {
     if let Some(exe) = &p.exe {
         let b = exe.rsplit('/').next().unwrap_or(exe);
+        // tdeinit runs konsole, kicker or kate as a module in a fork, so `exe`
+        // stays tdeinit for all of them and only `comm` (set by prctl) names
+        // the program. tdelibs `tdeinit.cpp` `launch()`.
         if b == "tdeinit" && !p.comm.is_empty() {
             return &p.comm;
         }

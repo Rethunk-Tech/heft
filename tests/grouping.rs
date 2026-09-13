@@ -676,7 +676,7 @@ fn a_lone_crash_helper_under_a_launcher_bills_to_its_app() {
 }
 
 #[test]
-fn one_override_moves_one_row_and_leaves_the_rest_alone() {
+fn one_placement_rule_moves_one_row_and_leaves_the_rest_alone() {
     let base = tree_of(GUI, &Rules::builtin());
     let ov = with_user(
         r#"{"stage":"placement","rules":[{"id":"pin-htop","match":{"identity":"htop"},"folder":"user_services"}]}"#,
@@ -879,7 +879,7 @@ fn disabling_the_trinity_file_makes_a_tde_module_an_application() {
 }
 
 #[test]
-fn a_malformed_override_file_is_rejected_rather_than_obeyed() {
+fn a_malformed_rules_file_is_rejected_rather_than_obeyed() {
     // The loader turns each of these into a stderr warning and built-in
     // behaviour; parsing is where the file is judged.
     let bad = |text: &str| {
@@ -908,7 +908,7 @@ fn a_malformed_override_file_is_rejected_rather_than_obeyed() {
 }
 
 #[test]
-fn an_override_cannot_break_a_structural_invariant() {
+fn a_placement_rule_cannot_break_a_structural_invariant() {
     let ov = with_user(
         r#"{"stage":"placement","rules":[
             {"id":"fold-kernel","match":{"identity":"kernel"},"fold_to":"myapp","folder":"applications"},
@@ -932,7 +932,7 @@ fn an_override_cannot_break_a_structural_invariant() {
 }
 
 #[test]
-fn a_container_owner_override_beats_bind_mount_inference() {
+fn a_container_owner_rule_beats_bind_mount_inference() {
     let ov = with_user(
         r#"{"stage":"placement","rules":[{"id":"own","match":{"container":"acme-encoder"},"owner_uid":1001}]}"#,
     );

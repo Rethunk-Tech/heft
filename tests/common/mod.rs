@@ -8,8 +8,9 @@ use serde_json::Value;
 
 const BIN: &str = env!("CARGO_BIN_EXE_heft");
 
-/// Point the child at a config directory that does not exist, so a developer's
-/// saved view or grouping overrides cannot reshape the tree under test.
+/// Point the child at a config directory and a rules path that do not exist,
+/// so a developer's saved view or rules.d files, XDG or `/etc`, cannot reshape
+/// the tree under test.
 pub fn heft(args: &[&str]) -> Command {
     let mut cmd = Command::new(BIN);
     cmd.args(args)

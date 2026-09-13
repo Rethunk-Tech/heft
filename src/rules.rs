@@ -10,7 +10,8 @@ use std::collections::{BTreeMap, HashSet};
 
 include!(concat!(env!("OUT_DIR"), "/builtin_rules.rs"));
 
-#[derive(Deserialize, Clone, Copy, PartialEq, Eq, Debug, Hash, PartialOrd, Ord)]
+/// Discriminants index `Rules::stages`.
+#[derive(Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 #[serde(rename_all = "snake_case")]
 pub enum Stage {
     Unit,
@@ -19,13 +20,6 @@ pub enum Stage {
     App,
     Placement,
 }
-pub const STAGES: [Stage; 5] = [
-    Stage::Unit,
-    Stage::Class,
-    Stage::Session,
-    Stage::App,
-    Stage::Placement,
-];
 
 #[derive(Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
@@ -166,10 +160,6 @@ impl Classes {
         self.0 & bits != 0
     }
     #[must_use]
-    pub const fn contains(self, c: Class) -> bool {
-        self.has(Self::bit(c))
-    }
-    #[must_use]
     pub fn names(self) -> Vec<&'static str> {
         (0..CLASS_NAMES.len())
             .filter(|i| self.0 & (1 << i) != 0)
@@ -241,7 +231,7 @@ pub struct Example {
     pub expect: Option<Expect>,
 }
 
-#[derive(Deserialize, Debug, Default)]
+#[derive(Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct Expect {
     pub rule: Option<String>,
@@ -315,7 +305,7 @@ impl Compiled {
 
 /// Where a file came from. Lower `rank` wins: `HEFT_RULES_PATH` index, or 0
 /// for XDG and 1 for `/etc`; built-ins are `usize::MAX`.
-#[derive(Clone, PartialEq, Eq, Debug, Hash, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Source {
     pub rank: usize,
     pub label: String,
@@ -368,10 +358,10 @@ struct FileUnit {
 }
 
 pub struct Rules {
-    stages: BTreeMap<Stage, Vec<Compiled>>,
+    stages: [Vec<Compiled>; 5],
     pub problems: Vec<Problem>,
     pub warnings: Vec<String>,
-    /// Files that compiled, with their examples, for `check`.
+    /// Files that compiled, with their examples, for `report`.
     files: Vec<(Source, String, Stage, Vec<Example>)>,
     /// Every `disable` entry, with the file and source label that carried it.
     disabled: BTreeMap<String, (String, String)>,
@@ -752,19 +742,14 @@ impl Rules {
                 warnings.push(format!("disable `{d}` names no loaded file or rule"));
             }
         }
-        let mut stages: BTreeMap<Stage, Vec<Compiled>> =
-            STAGES.iter().map(|s| (*s, vec![])).collect();
+        let mut stages: [Vec<Compiled>; 5] = Default::default();
         let mut kept_files = vec![];
         for u in units {
-            let rules: Vec<Compiled> = u
-                .rules
-                .into_iter()
-                .filter(|r| !disabled.contains_key(&r.file) && !disabled.contains_key(&r.name()))
-                .collect();
-            stages
-                .get_mut(&u.stage)
-                .expect("every stage is seeded")
-                .extend(rules);
+            stages[u.stage as usize].extend(
+                u.rules.into_iter().filter(|r| {
+                    !disabled.contains_key(&r.file) && !disabled.contains_key(&r.name())
+                }),
+            );
             kept_files.push((u.source, u.name, u.stage, u.examples));
         }
         Self {
@@ -777,12 +762,8 @@ impl Rules {
     }
 
     #[must_use]
-    pub fn is_empty(&self, stage: Stage) -> bool {
-        self.stages[&stage].is_empty()
-    }
-    #[must_use]
-    pub fn count(&self, stage: Stage) -> usize {
-        self.stages[&stage].len()
+    pub const fn is_empty(&self, stage: Stage) -> bool {
+        self.stages[stage as usize].is_empty()
     }
 
     #[inline]
@@ -793,7 +774,7 @@ impl Rules {
             ..Facts::default()
         };
         let mut out = UnitFlags::default();
-        for r in &self.stages[&Stage::Unit] {
+        for r in &self.stages[Stage::Unit as usize] {
             if eval(&r.test, &f) {
                 out.0 |= r.flags.0;
             }
@@ -804,7 +785,7 @@ impl Rules {
     #[must_use]
     pub fn classes(&self, f: &Facts) -> Classes {
         let mut out = Classes::default();
-        for r in &self.stages[&Stage::Class] {
+        for r in &self.stages[Stage::Class as usize] {
             if eval(&r.test, f) {
                 out.0 |= r.classes.0;
             }
@@ -825,7 +806,7 @@ impl Rules {
     #[inline]
     #[must_use]
     pub fn session(&self, f: &Facts) -> Option<(&str, FolderName)> {
-        self.stages[&Stage::Session]
+        self.stages[Stage::Session as usize]
             .iter()
             .find(|r| eval(&r.test, f))
             .map(|r| {
@@ -838,7 +819,7 @@ impl Rules {
     #[inline]
     #[must_use]
     pub fn app(&self, f: &Facts) -> Option<&str> {
-        self.stages[&Stage::App]
+        self.stages[Stage::App as usize]
             .iter()
             .find(|r| eval(&r.test, f))
             .and_then(|r| r.identity.as_deref())
@@ -863,7 +844,7 @@ impl Rules {
     }
 
     /// Every rule of the stage that matches, in order (flag stages) or the
-    /// first (identity stages): what `--explain` and `check` report.
+    /// first (identity stages): what `--explain` and `report` judge.
     ///
     /// Placement is two lists by output kind: a container subject sees only
     /// `owner_uid` rules and an identity only `fold_to`/`folder` rules. In one
@@ -871,36 +852,13 @@ impl Rules {
     /// no container, and shadowed every pin listed after it.
     #[must_use]
     pub fn deciding<'r>(&'r self, stage: Stage, f: &Facts) -> Vec<&'r Compiled> {
-        let it = self.stages[&stage]
+        let it = self.stages[stage as usize]
             .iter()
             .filter(|r| r.owner_uid.is_some() == f.container.is_some() && eval(&r.test, f));
         match stage {
             Stage::Unit | Stage::Class => it.collect(),
             Stage::Session | Stage::App | Stage::Placement => it.take(1).collect(),
         }
-    }
-
-    #[must_use]
-    pub fn examples_total(&self) -> usize {
-        self.files.iter().map(|f| f.3.len()).sum()
-    }
-
-    /// Every loaded file's examples against this set, one line per failure.
-    /// `cargo test` holds the built-in set to an empty result.
-    #[must_use]
-    pub fn check(&self) -> Vec<String> {
-        let mut out = vec![];
-        for (source, file, stage, examples) in &self.files {
-            for (i, ex) in examples.iter().enumerate() {
-                let owned = subject_facts(ex, *stage);
-                let fails = judge(ex, &self.deciding(*stage, &owned.facts()), file);
-                if !fails.is_empty() {
-                    let name = example_name(file, ex, i, source);
-                    out.push(format!("{name}: {}", fails.join("; ")));
-                }
-            }
-        }
-        out
     }
 
     /// `--check-rules` over this merged set. A built-in example is judged
@@ -1307,11 +1265,12 @@ mod tests {
 
     #[test]
     fn builtin_files_parse_and_their_examples_pass() {
-        let r = Rules::builtin();
-        assert!(r.warnings.is_empty(), "{:?}", r.warnings);
-        assert_eq!(r.examples_total(), 127);
-        let lines = r.check();
-        assert!(lines.is_empty(), "{}", lines.join("\n"));
+        let rules = Rules::builtin();
+        assert!(rules.warnings.is_empty(), "{:?}", rules.warnings);
+        let r = rules.report(&Rules::builtin());
+        assert_eq!(r.failed, 0, "{}", r.lines.join("\n"));
+        assert!(r.lines.is_empty(), "{}", r.lines.join("\n"));
+        assert_eq!(r.examples, 127);
     }
 
     #[test]
@@ -1327,7 +1286,7 @@ mod tests {
                 name: hay,
                 ..Facts::default()
             })
-            .contains(Class::Noise)
+            .has(Classes::NOISE)
         };
         assert!(probe("caf\u{e9}x"));
         assert!(!probe("caf"));
@@ -1362,7 +1321,16 @@ mod tests {
         ] {
             let r = with_builtins(vec![file("90-a.json", text)]);
             assert_eq!(r.problems.len(), 1, "{text}");
-            assert_eq!(r.count(Stage::Session), 18, "the rest still load: {text}");
+            let gsd = Facts {
+                comm: "gsd-color",
+                name: "gsd-color",
+                ..Facts::default()
+            };
+            assert_eq!(
+                r.session(&gsd).map(|(i, _)| i),
+                Some("gnome-settings-daemon"),
+                "the rest still load: {text}"
+            );
         }
     }
 
@@ -1521,7 +1489,8 @@ mod tests {
                  "unit":"a.service","expect":{"flags":["service"]}}]}"#,
         )]);
         assert!(r.problems.is_empty(), "{:?}", r.problems);
-        assert!(r.check().is_empty(), "{:?}", r.check());
+        let report = r.report(&r);
+        assert_eq!(report.failed, 0, "{:?}", report.lines);
     }
 
     #[test]
@@ -1624,7 +1593,7 @@ mod tests {
             r#"{"stage":"placement","disable":["10-classes.json:noise","05-units.json","nothing.json"],"rules":[]}"#,
         )]);
         assert!(r.is_empty(Stage::Unit));
-        assert!(!r.classes_of_name("cat").contains(Class::Noise));
+        assert!(!r.classes_of_name("cat").has(Classes::NOISE));
         assert_eq!(r.warnings.len(), 1, "{:?}", r.warnings);
     }
 

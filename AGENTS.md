@@ -667,8 +667,8 @@ visibility style this crate keeps deliberately; the rest is
 `option_if_let_else`, `too_many_lines` over render functions that are one
 piece on purpose, and `multiple_crate_versions` for two `hashbrown` majors
 ratatui pulls. Adopting those wholesale is a mechanical rewrite buying style,
-and is refused. Re-measure before quoting a number here; this paragraph
-carried 216/87 for long enough to be wrong by 181.
+and is refused. Re-measure before quoting a number here: the counts move with
+every clippy release and every change to this code.
 
 Nothing in the wider groups is a latent bug, which is what makes the refusal
 safe rather than lucky: every lint that looked like one is a false positive.
@@ -686,10 +686,9 @@ assigned over a live `String` once a frame, a temporary formatted once a frame
 in `sixel::encode`. `use_self`, `missing_const_for_fn`, `doc_markdown` and
 `map_unwrap_or` followed, all of them machine-applicable. The four cast lints
 — `cast_precision_loss`, `cast_possible_truncation`, `cast_possible_wrap`,
-`cast_sign_loss` — are the ones that earn their place: this file used to claim
-the casts were "bounded by the code around them", and denying the lints turned
-that prose into an `#[expect(..., reason = ...)]` at each site naming the
-bound, which the compiler now checks is still firing. `cpu.rs` takes one
+`cast_sign_loss` — are the ones that earn their place: a claim that a cast is
+bounded lives as an `#[expect(..., reason = ...)]` at that site naming the
+bound, never as prose, and the compiler checks the expect is still firing. `cpu.rs` takes one
 module-level expect because every cast in it is the same widening of a kernel
 counter into the f64 a rate is divided in. Each lint is at zero, which is what
 makes denying it free.

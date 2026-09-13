@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{self, Read, Write};
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt;
@@ -84,26 +84,46 @@ pub(crate) struct ContainerInfo {
     pub(crate) own_netns: bool,
 }
 
+/// Why an inspect is missing.
+enum Miss {
+    /// The sample's daemon budget ran out first; the next sample retries.
+    Deadline,
+    /// Any other failure with budget left (an HTTP error, a body serde
+    /// rejects), which a retry against the same container would repeat.
+    Failed,
+}
+
 #[derive(Default)]
 pub(crate) struct InspectCache {
     ids: Vec<String>,
     inspects: HashMap<String, Inspect>,
+    /// Ids whose inspect failed other than by deadline, not asked again until
+    /// the id set changes.
+    failed: HashSet<String>,
 }
 
 impl InspectCache {
-    fn refresh(&mut self, ids: Vec<String>, mut fetch: impl FnMut(&str) -> Option<Inspect>) {
+    fn refresh(&mut self, ids: Vec<String>, mut fetch: impl FnMut(&str) -> Result<Inspect, Miss>) {
         // Replace the map when the id set changes so vanished ids cannot
-        // linger; otherwise fetch only what is missing, which is an inspect a
-        // spent deadline or a failed GET left out.
+        // linger; otherwise fetch only what is missing and has not failed,
+        // which leaves an inspect a spent deadline cut.
         if self.ids != ids {
             self.inspects.clear();
+            self.failed.clear();
             self.ids = ids;
         }
         for id in &self.ids {
-            if !self.inspects.contains_key(id)
-                && let Some(insp) = fetch(id)
-            {
-                self.inspects.insert(id.clone(), insp);
+            if self.inspects.contains_key(id) || self.failed.contains(id) {
+                continue;
+            }
+            match fetch(id) {
+                Ok(insp) => {
+                    self.inspects.insert(id.clone(), insp);
+                }
+                Err(Miss::Failed) => {
+                    self.failed.insert(id.clone());
+                }
+                Err(Miss::Deadline) => {}
             }
         }
     }
@@ -118,7 +138,7 @@ pub struct ContainerIndex {
 impl ContainerIndex {
     pub(crate) fn load(cache: &mut InspectCache, rules: &Rules) -> Self {
         let Some(sock) = docker_sock() else {
-            cache.refresh(Vec::new(), |_| None);
+            cache.refresh(Vec::new(), |_| Err(Miss::Deadline));
             return Self::default();
         };
         let deadline = Instant::now() + DAEMON_BUDGET;
@@ -134,6 +154,13 @@ impl ContainerIndex {
             unix_get(&sock, &format!("/containers/{id}/json"), deadline)
                 .ok()
                 .and_then(|b| serde_json::from_slice(&b).ok())
+                .ok_or_else(|| {
+                    if Instant::now() >= deadline {
+                        Miss::Deadline
+                    } else {
+                        Miss::Failed
+                    }
+                })
         });
         Self::from_list(&list, &cache.inspects, path_owner, rules)
     }
@@ -649,28 +676,54 @@ mod tests {
         let b = "0123456789cd".to_string();
         cache.refresh(vec![a.clone(), b.clone()], |_| {
             fetches += 1;
-            Some(Inspect::default())
+            Ok(Inspect::default())
         });
         assert_eq!(fetches, 2);
         cache.refresh(vec![a.clone(), b.clone()], |_| {
             fetches += 1;
-            Some(Inspect::default())
+            Ok(Inspect::default())
         });
         assert_eq!(fetches, 2);
         cache.refresh(vec![b.clone()], |_| {
             fetches += 1;
-            Some(Inspect::default())
+            Ok(Inspect::default())
         });
         assert_eq!(fetches, 3);
         assert!(!cache.inspects.contains_key(&a));
         assert!(cache.inspects.contains_key(&b));
         // An inspect the deadline skipped is fetched again on the next sample.
-        cache.refresh(vec![a.clone(), b.clone()], |_| None);
+        cache.refresh(vec![a.clone(), b.clone()], |_| Err(Miss::Deadline));
         assert!(cache.inspects.is_empty());
         cache.refresh(vec![a, b], |_| {
             fetches += 1;
-            Some(Inspect::default())
+            Ok(Inspect::default())
         });
         assert_eq!(fetches, 5);
+    }
+
+    /// A failed inspect waits for the id set to change; one the deadline cut
+    /// is fetched again on the next sample.
+    #[test]
+    fn inspect_cache_retries_a_deadline_miss_but_not_a_failure() {
+        let mut cache = InspectCache::default();
+        let a = "0123456789ab".to_string();
+        let b = "0123456789cd".to_string();
+        let mut asked = Vec::new();
+        let fetch = |ids: &[&String], cache: &mut InspectCache, asked: &mut Vec<String>| {
+            cache.refresh(ids.iter().map(|s| (*s).clone()).collect(), |id| {
+                asked.push(id.to_string());
+                if id == a {
+                    Err(Miss::Failed)
+                } else {
+                    Err(Miss::Deadline)
+                }
+            });
+        };
+        fetch(&[&a, &b], &mut cache, &mut asked);
+        fetch(&[&a, &b], &mut cache, &mut asked);
+        assert_eq!(asked, [a.as_str(), b.as_str(), b.as_str()]);
+        asked.clear();
+        fetch(&[&a], &mut cache, &mut asked);
+        assert_eq!(asked, [a.as_str()], "a new id set asks again");
     }
 }

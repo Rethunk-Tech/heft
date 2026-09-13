@@ -240,8 +240,7 @@ mod tests {
     }
 
     #[test]
-    fn shells_and_crash_helpers() {
-        let rules = Rules::builtin();
+    fn interactive_shells() {
         let shell = Classes::SHELL;
         assert!(is_interactive_shell(&p("bash", &["-bash"]), shell));
         assert!(
@@ -257,6 +256,11 @@ mod tests {
             &p("bashful", &["bashful"]),
             Classes::default()
         ));
+    }
+
+    #[test]
+    fn crash_helpers_name_their_app() {
+        let rules = Rules::builtin();
         let helper = Classes::CRASH_HELPER | Classes::WORKER;
         assert_eq!(
             crash_helper_app(
@@ -348,6 +352,11 @@ mod tests {
             Some("cursor"),
             "a nested owner under an AppImage mount still names the app"
         );
+    }
+
+    #[test]
+    fn launcher_payload_hints_through_bwrap() {
+        let rules = Rules::builtin();
         let zypak = p(
             "bwrap",
             &[

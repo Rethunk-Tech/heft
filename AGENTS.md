@@ -154,7 +154,7 @@ truncated id would silently lose its row.
 `once::follow_table` and `once::follow_json` share rendering with the one-shot
 pair through `render_table` and `json_text`.
 
-`main` resolves one `View` and hands it to whichever surface runs, so
+`main::resolve_view` builds one `View` and `main` hands it to whichever surface runs, so
 precedence lives in one place: `--sort`, `--asc` / `--desc`, `--filter`,
 `--user`, `--top` and `--order` overwrite whatever the saved view held,
 `--hide` adds to its list, and only `sort`, `desc`, `filter`, `hide_columns`
@@ -188,7 +188,7 @@ decisions, `ui::resolve_trend` the kitty-versus-sixel choice with its
 measurement, and `tty::hold_shm` the signal-safe shm cleanup.
 
 `i` (`ui::draw_detail`, `ui::metric_grid`, `proc::detail`) and `?` share
-`ui::popup`, and only one draws at a time, which is why `i` clears `help`.
+`ui::popup`; `ui::Overlay` holds which one is open, so only one draws.
 
 ## Columns
 

@@ -70,6 +70,36 @@ fn main() -> ExitCode {
     // the default of 5.
     let interval = check_interval("interval", cli.interval);
     let pss_interval = check_interval("pss-interval", cli.pss_interval).max(interval);
+    let view = resolve_view(&cli);
+    let result = if let Some(pid) = cli.explain {
+        heft::explain::run(pid, interval)
+    } else if cli.fixture {
+        heft::proc::print_fixture()
+    } else {
+        match (cli.json, cli.once, cli.follow) {
+            (true, _, false) => heft::once::print_json(interval, &view),
+            (true, _, true) => heft::once::follow_json(interval, pss_interval, &view),
+            (_, true, false) => heft::once::print_table(interval, &view),
+            (_, true, true) => heft::once::follow_table(interval, pss_interval, &view),
+            _ => heft::ui::run(interval, pss_interval, view, cli.trend),
+        }
+    };
+    match result {
+        Ok(()) => ExitCode::SUCCESS,
+        // Rust ignores SIGPIPE, so a closed reader surfaces as EPIPE rather
+        // than killing us. `heft --once | head` is the normal case, not a
+        // failure, so exit quietly instead of reporting it.
+        Err(e) if is_broken_pipe(e.as_ref()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("{e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// The one `View` every surface gets: the saved one, or the default for
+/// `--json`, with each flag the user typed laid over it.
+fn resolve_view(cli: &Cli) -> heft::config::View {
     // A saved view is a human's TUI preference. `--json` is a documented
     // contract, so only an explicit flag reshapes it.
     let mut view = if cli.json {
@@ -77,12 +107,12 @@ fn main() -> ExitCode {
     } else {
         heft::config::load_view()
     };
-    if let Some(label) = cli.sort {
-        view.sort = check_sort(&label).to_string();
+    if let Some(label) = &cli.sort {
+        view.sort = check_sort(label).to_string();
     }
-    if let Some(filter) = cli.filter {
-        check_filter(&filter);
-        view.filter = filter;
+    if let Some(filter) = &cli.filter {
+        check_filter(filter);
+        view.filter.clone_from(filter);
     }
     view.top = cli.top.map(|n| n as usize);
     // `--sort age` alone meant whichever direction the saved view happened to
@@ -124,30 +154,7 @@ fn main() -> ExitCode {
     // nodes, which the JSON tree has, where "keep the ancestors" had nothing
     // to mean there.
     view.users = cli.user.iter().map(|who| check_user(who)).collect();
-    let result = if let Some(pid) = cli.explain {
-        heft::explain::run(pid, interval)
-    } else if cli.fixture {
-        heft::proc::print_fixture()
-    } else {
-        match (cli.json, cli.once, cli.follow) {
-            (true, _, false) => heft::once::print_json(interval, &view),
-            (true, _, true) => heft::once::follow_json(interval, pss_interval, &view),
-            (_, true, false) => heft::once::print_table(interval, &view),
-            (_, true, true) => heft::once::follow_table(interval, pss_interval, &view),
-            _ => heft::ui::run(interval, pss_interval, view, cli.trend),
-        }
-    };
-    match result {
-        Ok(()) => ExitCode::SUCCESS,
-        // Rust ignores SIGPIPE, so a closed reader surfaces as EPIPE rather
-        // than killing us. `heft --once | head` is the normal case, not a
-        // failure, so exit quietly instead of reporting it.
-        Err(e) if is_broken_pipe(e.as_ref()) => ExitCode::SUCCESS,
-        Err(e) => {
-            eprintln!("{e}");
-            ExitCode::FAILURE
-        }
-    }
+    view
 }
 
 /// The typed seconds as a `Duration`, or a usage error. `is_finite` first, so a

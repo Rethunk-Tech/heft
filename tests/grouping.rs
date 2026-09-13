@@ -170,9 +170,9 @@ fn a_fixture_dump_loads_as_a_fixture() {
 }
 
 #[test]
-fn gui_and_docker_fixture() {
+fn desktop_apps_are_application_rows() {
     let tree = tree_of(GUI, &Rules::builtin());
-    let user = tree.users.iter().find(|u| u.uid == 1000).expect("uid 1000");
+    let user = user_of(&tree, 1000);
 
     for name in [
         "ghostty",
@@ -244,6 +244,12 @@ fn gui_and_docker_fixture() {
         "node MCP under cursor folds into cursor: {:?}",
         titles(&user.applications)
     );
+}
+
+#[test]
+fn session_plumbing_is_never_an_application() {
+    let tree = tree_of(GUI, &Rules::builtin());
+    let user = user_of(&tree, 1000);
     for name in [
         "gdm-wayland-session",
         "gnome-session-init-worker",
@@ -291,7 +297,12 @@ fn gui_and_docker_fixture() {
             titles(&user.applications)
         );
     }
+}
 
+#[test]
+fn a_launching_agent_keeps_its_workers_visible() {
+    let tree = tree_of(GUI, &Rules::builtin());
+    let user = user_of(&tree, 1000);
     let claude = user
         .applications
         .iter()
@@ -308,7 +319,12 @@ fn gui_and_docker_fixture() {
         claude_procs.iter().any(|n| n == "bash"),
         "the bash that launched claude bills to claude, not ghostty: {claude_procs:?}"
     );
+}
 
+#[test]
+fn session_services_are_user_service_rows() {
+    let tree = tree_of(GUI, &Rules::builtin());
+    let user = user_of(&tree, 1000);
     assert!(has(&user.user_services, "node-red"));
     assert!(has(&user.user_services, "homebridge"));
     assert!(has(&user.user_services, "gnome-shell"));
@@ -366,7 +382,12 @@ fn gui_and_docker_fixture() {
         "independent apps must not fold into User Services: {:?}",
         titles(&user.user_services)
     );
+}
 
+#[test]
+fn session_services_keep_their_helpers_visible() {
+    let tree = tree_of(GUI, &Rules::builtin());
+    let user = user_of(&tree, 1000);
     let gnome = user
         .user_services
         .iter()
@@ -432,6 +453,12 @@ fn gui_and_docker_fixture() {
             && p11_procs.iter().any(|n| n == "p11-kit-remote"),
         "p11-kit server and remote must share one identity: {p11_procs:?}"
     );
+}
+
+#[test]
+fn service_families_keep_their_members_visible() {
+    let tree = tree_of(GUI, &Rules::builtin());
+    let user = user_of(&tree, 1000);
     let gsd = user
         .user_services
         .iter()
@@ -512,6 +539,12 @@ fn gui_and_docker_fixture() {
         "pipewire-pulse bills to pipewire (exe basename): {:?}",
         proc_names(pw)
     );
+}
+
+#[test]
+fn an_app_keeps_its_helpers() {
+    let tree = tree_of(GUI, &Rules::builtin());
+    let user = user_of(&tree, 1000);
     assert!(has(&user.applications, "htop"));
     assert!(!has(&user.user_services, "htop"));
     let code = user
@@ -574,7 +607,12 @@ fn gui_and_docker_fixture() {
         "cat under an app must not leak into User Services: {:?}",
         titles(&user.user_services)
     );
+}
 
+#[test]
+fn containers_bill_to_their_project_or_owner() {
+    let tree = tree_of(GUI, &Rules::builtin());
+    let user = user_of(&tree, 1000);
     assert!(has(&user.containers, "supabase:demo"));
     assert!(has(&user.containers, "acme-encoder"));
     assert!(has(&user.containers, "acme-indexer"));
@@ -602,7 +640,11 @@ fn gui_and_docker_fixture() {
         demo.containers.len() >= 2,
         "project should expand to member containers"
     );
+}
 
+#[test]
+fn system_holds_kernel_threads_and_daemons() {
+    let tree = tree_of(GUI, &Rules::builtin());
     // Kernel threads sit on cgroup `0::/`, in neither slice, so System is
     // reachable for them only through the PF_KTHREAD flag.
     assert!(

@@ -459,7 +459,8 @@ quiet. Only regular files by `fs::metadata` ending `.json` are read, so a
 symlink counts and `.JSON` does not; a missing directory is silent and an
 unreadable one warns and the rest load. `HEFT_RULES_PATH` splits on bytes, never
 lossily. A leftover grouping.json prints one line naming HUMANS.md and is never
-parsed. `tests/common::heft` points `HEFT_RULES_PATH` at a missing directory
+parsed. That warning stays on purpose: without it an upgrader's grouping.json
+overrides would stop applying with no message. `tests/common::heft` points `HEFT_RULES_PATH` at a missing directory
 so a developer's `/etc/heft/rules.d` cannot reach a binary-driven test.
 `/etc/heft/rules.d` is not under `--proc-root`: it is the host's
 configuration, like `/etc/passwd`. `Rules::builtin` panics on a bad embedded

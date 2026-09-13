@@ -71,7 +71,12 @@ fn load(path: &str, rules: &Rules) -> (HashMap<u32, Process>, ContainerIndex, Ho
             },
         );
     }
-    let idx = ContainerIndex::from_list(&fix.containers, &fix.inspects, &fix.workdir_uids, rules);
+    let idx = ContainerIndex::from_list(
+        &fix.containers,
+        &fix.inspects,
+        |p| fix.workdir_uids.get(p).copied(),
+        rules,
+    );
     let header = HostHeader {
         nproc: fix.nproc,
         clk_tck: fix.clk_tck,

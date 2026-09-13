@@ -101,16 +101,15 @@ pub struct ContainerIndex {
 
 impl ContainerIndex {
     pub(crate) fn load(cache: &mut InspectCache, rules: &Rules) -> Self {
-        let mut idx = Self::default();
         let Some(sock) = docker_sock() else {
             cache.refresh(Vec::new(), |_| None);
-            return idx;
+            return Self::default();
         };
         let Ok(body) = unix_get(&sock, "/containers/json") else {
-            return idx;
+            return Self::default();
         };
         let Ok(list) = serde_json::from_slice::<Vec<ListItem>>(&body) else {
-            return idx;
+            return Self::default();
         };
         // Inspect is IPs/running; names/labels come from the list GET. Replace
         // the map when the id set changes so vanished ids cannot linger.
@@ -119,27 +118,22 @@ impl ContainerIndex {
                 .ok()
                 .and_then(|b| serde_json::from_slice(&b).ok())
         });
-        for item in &list {
-            if list_skip(item) {
-                continue;
-            }
-            idx.insert_resolved(item, inspect_for(item, &cache.inspects), None, rules);
-        }
-        idx
+        Self::from_list(&list, &cache.inspects, path_owner, rules)
     }
+
+    /// The index over a container list. `owner_of` is a path's owning uid:
+    /// `path_owner` on a live host, a recorded map for a fixture from another
+    /// machine, whose paths do not exist here.
     #[must_use]
     pub fn from_list(
         items: &[ListItem],
         inspects: &HashMap<String, Inspect>,
-        workdir_uids: &HashMap<PathBuf, u32>,
+        owner_of: impl Fn(&Path) -> Option<u32>,
         rules: &Rules,
     ) -> Self {
         let mut idx = Self::default();
-        for item in items {
-            if list_skip(item) {
-                continue;
-            }
-            idx.insert_resolved(item, inspect_for(item, inspects), Some(workdir_uids), rules);
+        for item in items.iter().filter(|item| !list_skip(item)) {
+            idx.insert_resolved(item, inspect_for(item, inspects), &owner_of, rules);
         }
         idx
     }
@@ -148,7 +142,7 @@ impl ContainerIndex {
         &mut self,
         item: &ListItem,
         inspect: Option<&Inspect>,
-        workdir_uids: Option<&HashMap<PathBuf, u32>>,
+        owner_of: &impl Fn(&Path) -> Option<u32>,
         rules: &Rules,
     ) {
         let Some(id) = normalized_id(&item.id) else {
@@ -167,10 +161,6 @@ impl ContainerIndex {
                 .get("com.docker.compose.project.working_dir")
                 .cloned()
         });
-        let owner_of = |p: &str| match workdir_uids {
-            Some(map) => map.get(Path::new(p)).copied(),
-            None => path_owner(Path::new(p)),
-        };
         // A named volume lives under /var/lib/docker/volumes and is root-owned,
         // so only a bind source carries ownership, and uid 0 is no information
         // rather than an owner: Host -> Containers stays right for a container
@@ -179,14 +169,14 @@ impl ContainerIndex {
         // mounts nothing of theirs, so inference must not be able to beat it.
         let owner = rules
             .container_owner(&name)
-            .or_else(|| workdir.as_deref().and_then(owner_of))
+            .or_else(|| workdir.as_deref().and_then(|p| owner_of(Path::new(p))))
             .or_else(|| {
                 inspect
                     .map(|i| i.mounts.as_slice())
                     .unwrap_or_default()
                     .iter()
                     .filter(|m| m.kind.as_deref() == Some("bind"))
-                    .filter_map(|m| owner_of(m.source.as_deref()?))
+                    .filter_map(|m| owner_of(Path::new(m.source.as_deref()?)))
                     .find(|&uid| uid != 0)
             });
         let ips = inspect.map(Inspect::ips).unwrap_or_default();

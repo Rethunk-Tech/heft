@@ -231,7 +231,7 @@ mod tests {
                 state: Some("running".into()),
             }],
             &inspects,
-            &HashMap::new(),
+            |_| None,
             &crate::rules::Rules::builtin(),
         )
     }

@@ -88,7 +88,7 @@ pub struct Cli {
     /// Sort low to high, whatever the saved view holds
     #[arg(long)]
     pub asc: bool,
-    /// Leave this column out of the table; repeat. The labels Shift-arrows cycle. Refused with --json
+    /// Leave this column out of the table; repeat. Any column label except name. Refused with --json
     #[arg(long, value_name = "COLUMN", conflicts_with = "json")]
     pub hide: Vec<String>,
     /// Left-to-right column order; repeat. Unlisted keep default order after these. name stays first unless listed. Refused with --json

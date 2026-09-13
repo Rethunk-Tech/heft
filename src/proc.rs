@@ -347,19 +347,6 @@ fn rollup_holds(
 /// finish its `/proc` walk before the next one is due.
 pub const MIN_INTERVAL: f64 = 0.05;
 
-/// Floor `MIN_INTERVAL`; PSS cadence is at least the catch-all interval.
-///
-/// Still clamps rather than failing: `main` refuses a typed value below the
-/// floor, so what reaches here is either already valid or came from a caller
-/// of the library, which should get a working monitor rather than a panic.
-/// `max` also absorbs a NaN, which `Duration::from_secs_f64` would panic on.
-#[must_use]
-pub fn clamp_intervals(interval_s: f64, pss_s: f64) -> (Duration, Duration) {
-    let interval = Duration::from_secs_f64(interval_s.max(MIN_INTERVAL));
-    let pss = Duration::from_secs_f64(pss_s.max(MIN_INTERVAL)).max(interval);
-    (interval, pss)
-}
-
 fn pss_due(last: Option<Instant>, now: Instant, interval: Duration) -> bool {
     last.is_none_or(|t| now.saturating_duration_since(t) >= interval)
 }
@@ -808,19 +795,6 @@ mod tests {
         let p = parse_stat(&tail).unwrap();
         assert!(p.kthread);
         assert_eq!(p.ppid, 2);
-    }
-
-    #[test]
-    fn clamp_floors_and_pss_at_least_interval() {
-        let (i, p) = clamp_intervals(1.0, 5.0);
-        assert_eq!(i, Duration::from_secs(1));
-        assert_eq!(p, Duration::from_secs(5));
-        let (i, p) = clamp_intervals(0.01, 0.01);
-        assert_eq!(i, Duration::from_millis(50));
-        assert_eq!(p, Duration::from_millis(50));
-        let (i, p) = clamp_intervals(10.0, 5.0);
-        assert_eq!(i, Duration::from_secs(10));
-        assert_eq!(p, Duration::from_secs(10));
     }
 
     #[test]

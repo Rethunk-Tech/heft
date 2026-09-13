@@ -1,5 +1,6 @@
 use std::io::IsTerminal;
 use std::process::ExitCode;
+use std::time::Duration;
 
 use clap::{CommandFactory, Parser, error::ErrorKind};
 
@@ -83,7 +84,8 @@ fn main() -> ExitCode {
     // the default of 5.
     check_interval("interval", cli.interval);
     check_interval("pss-interval", cli.pss_interval);
-    let (interval, pss_interval) = heft::proc::clamp_intervals(cli.interval, cli.pss_interval);
+    let interval = Duration::from_secs_f64(cli.interval);
+    let pss_interval = Duration::from_secs_f64(cli.pss_interval).max(interval);
     // A saved view is a human's TUI preference. `--json` is a documented
     // contract, so only an explicit flag reshapes it.
     let mut view = if cli.json {

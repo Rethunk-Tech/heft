@@ -20,8 +20,8 @@ cargo binstall cargo-deny cargo-machete   # pre-push; do not sudo
 ```
 
 Pre-commit runs `cargo fmt --check` and `cargo clippy --locked --all-targets -- -D warnings`
-when Rust or Cargo.toml is staged. Pre-push runs `cargo test --locked`, `cargo deny --locked check`,
-and `cargo machete`.
+when Rust or Cargo.toml is staged. Pre-push runs `gate`, which is every command below plus
+`cargo build --locked` and actionlint.
 
 ## Gates
 
@@ -31,7 +31,8 @@ Run before a commit that touches code:
 cargo fmt --check
 cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked
-cargo deny --locked check
+cargo deny --locked check bans licenses sources
+cargo deny --locked check advisories
 cargo machete
 ```
 

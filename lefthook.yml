@@ -4,7 +4,8 @@
 # cargo fmt --check does not rewrite the tree.
 #
 # Pre-push is bare `gate`, which detects this project's gates rather than
-# listing them here: build, clippy, fmt, test, deny, machete and actionlint.
+# listing them here: build, clippy, fmt, test, deny, vuln, machete and
+# actionlint.
 # The flavours this project runs -- --locked everywhere, -D warnings on clippy
 # -- live in .gate.toml, so the hook and `gate --list` cannot drift apart.
 #

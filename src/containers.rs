@@ -38,9 +38,9 @@ fn id_key(s: &str) -> Option<String> {
     Some(id)
 }
 
-/// Both index builders look an inspect up by this normalized id, in one place
-/// so neither can key differently from the other: a raw `item.id` misses
-/// whenever the daemon reports it in any case but the one the map was built in.
+/// The inspect map is keyed by the normalized id, so the lookup must be too: a
+/// raw `item.id` misses whenever the daemon reports it in any case but the one
+/// the map was built in.
 fn inspect_for<'a>(item: &ListItem, inspects: &'a HashMap<String, Inspect>) -> Option<&'a Inspect> {
     normalized_id(&item.id).and_then(|id| inspects.get(&id))
 }

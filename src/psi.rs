@@ -113,24 +113,24 @@ struct Apply<'a> {
 }
 
 impl<'a> Apply<'a> {
+    /// One pid buffer for the whole pass: each instance's processes are walked
+    /// once, its row judged on its own slice and the identity on all of them.
     fn bill(&self, idents: &mut [IdentNode]) {
+        let mut pids = Vec::new();
         for ident in idents {
-            let pids: Vec<u32> = ident
-                .instances
-                .iter()
-                .flat_map(|i| i.processes.iter())
-                .flat_map(collect_pids)
-                .collect();
-            self.set_row(&mut ident.metrics, &pids);
+            pids.clear();
             for inst in &mut ident.instances {
-                let pids: Vec<u32> = inst.processes.iter().flat_map(collect_pids).collect();
-                self.set_row(&mut inst.metrics, &pids);
+                let start = pids.len();
+                push_pids(&inst.processes, &mut pids);
+                self.set_row(&mut inst.metrics, &pids[start..]);
                 for p in &mut inst.processes {
                     self.set_process(p);
                 }
             }
+            self.set_row(&mut ident.metrics, &pids);
             for member in &mut ident.containers {
-                let pids: Vec<u32> = member.processes.iter().flat_map(collect_pids).collect();
+                pids.clear();
+                push_pids(&member.processes, &mut pids);
                 self.set_row(&mut member.metrics, &pids);
                 for p in &mut member.processes {
                     self.set_process(p);
@@ -201,12 +201,11 @@ const fn write(m: &mut Metrics, s: Option<&Stall>) {
     m.mem_stall_pct = Some(s.mem);
 }
 
-fn collect_pids(node: &crate::types::ProcNode) -> Vec<u32> {
-    let mut out = vec![node.pid];
-    for c in &node.children {
-        out.extend(collect_pids(c));
+fn push_pids(nodes: &[crate::types::ProcNode], out: &mut Vec<u32>) {
+    for node in nodes {
+        out.push(node.pid);
+        push_pids(&node.children, out);
     }
-    out
 }
 
 /// `0::/user.slice/...` to `/user.slice/...`, and `None` for the root cgroup

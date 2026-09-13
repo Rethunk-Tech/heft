@@ -280,8 +280,8 @@ compiled shape is what makes that affordable: a `Vec<String>` per test with a
 `windows` scan cost 750 ns per process, and equality bucketed by byte length
 with a first-byte scan for contains cost 415 to 450.
 
-`build_tree` measures 149 to 152 µs on the gui fixture and 463 to 479 µs on a 324-process
-`--fixture` dump, and the four stages 433 to 438 ns per process on facts built by
+`build_tree` measures 163 to 174 µs on the 102-process gui fixture and 577 to 584 µs on a
+323-process `--fixture` dump, and the four stages 368 to 396 ns per process on facts built by
 `group::facts_of`. The budget is 20% and 500 ns, measured on a quiet machine:
 `cargo test --release --test grouping -- --ignored --nocapture
 build_tree_timing` and `cargo test --release --lib -- --ignored --nocapture

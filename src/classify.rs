@@ -27,8 +27,11 @@ pub(crate) fn name_ref(p: &Process) -> &str {
     &p.comm
 }
 
-fn norm(s: &str) -> String {
-    s.to_ascii_lowercase()
+/// `s` without `suffix`, compared ASCII case-insensitively. A cut that lands
+/// inside a multibyte character is a miss, not a panic.
+fn strip_suffix_ignore_ascii_case<'a>(s: &'a str, suffix: &str) -> Option<&'a str> {
+    let (stem, tail) = s.split_at_checked(s.len().checked_sub(suffix.len())?)?;
+    tail.eq_ignore_ascii_case(suffix).then_some(stem)
 }
 
 /// Firefox/Chromium crash helper whose parent is often user systemd.
@@ -81,8 +84,11 @@ fn is_temp_unpack_root(lower: &str) -> bool {
 }
 
 fn is_ephemeral_mount_dir(owner: &str) -> bool {
-    let n = norm(owner);
-    n == "mount" || n.starts_with(".mount") || n == "appimage"
+    owner.eq_ignore_ascii_case("mount")
+        || owner.eq_ignore_ascii_case("appimage")
+        || owner
+            .get(..".mount".len())
+            .is_some_and(|head| head.eq_ignore_ascii_case(".mount"))
 }
 
 /// Interpreters fold into Electron/browser parents, never into a shell or systemd.
@@ -128,17 +134,15 @@ pub(crate) const fn is_foldable_helper(classes: Classes) -> bool {
 }
 
 pub(crate) fn launcher_payload_hint(p: &Process, rules: &Rules) -> Option<String> {
-    let named = name_of(p);
     // Case-folded the way the `launchers` class rule folds it: real AppImages ship as
-    // `Cursor-x86_64.AppImage`, and `name_of` does not lowercase. A launcher
+    // `Cursor-x86_64.AppImage`, and `name_ref` does not lowercase. A launcher
     // that yields no hint falls through to `user_place` and takes the
     // top-level row launchers are not supposed to have. The stem keeps its
     // own casing because it becomes the displayed identity.
-    if norm(&named).ends_with(".appimage") {
-        let stem = &named[..named.len() - ".appimage".len()];
-        if !stem.is_empty() {
-            return Some(stem.to_string());
-        }
+    if let Some(stem) = strip_suffix_ignore_ascii_case(name_ref(p), ".appimage")
+        && !stem.is_empty()
+    {
+        return Some(stem.to_string());
     }
     if let Some(i) = p.cmdline.iter().rposition(|a| a == "--") {
         for arg in &p.cmdline[i + 1..] {
@@ -227,6 +231,20 @@ mod tests {
             Some("Cursor-x86_64"),
             "a launcher with no hint takes a top-level row of its own"
         );
+        let named = |name: &str| Process {
+            comm: name.into(),
+            exe: Some(format!("/opt/{name}")),
+            ..Process::default()
+        };
+        assert_eq!(
+            launcher_payload_hint(&named("Curseé.AppImage"), &Rules::builtin()).as_deref(),
+            Some("Curseé")
+        );
+        assert_eq!(
+            launcher_payload_hint(&named("éAppImage"), &Rules::builtin()),
+            None,
+            "a suffix cut inside a multibyte character is a miss"
+        );
     }
 
     #[test]
@@ -302,6 +320,22 @@ mod tests {
                 "a temp mount directory is not an app identity: {temp}"
             );
         }
+        let multibyte = "/tmp/mounté/chrome_crashpad_handler";
+        assert_eq!(
+            crash_helper_app(
+                &Process {
+                    comm: "chrome_crashpad_handler".into(),
+                    exe: Some(multibyte.into()),
+                    cmdline: vec![multibyte.into()],
+                    ..Process::default()
+                },
+                helper,
+                &rules
+            )
+            .as_deref(),
+            Some("mounté"),
+            "a prefix cut inside a multibyte character is a miss"
+        );
         assert_eq!(
             crash_helper_app(
                 &Process {

@@ -45,6 +45,25 @@ fn header_rows(tree: &HostTree) -> u16 {
     HEADER_ROWS + u16::from(tree.swap_total_bytes > 0)
 }
 
+/// What covers the table. One at a time, so opening one closes the other.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Overlay {
+    None,
+    /// `?`: the keys and the bar swatches.
+    Help,
+    /// `i`. Holds no data of its own: it is drawn from the selected row of the
+    /// current frame, so it follows a re-sort or a new sample the way the
+    /// highlight does rather than freezing a stale snapshot.
+    Detail,
+}
+
+impl Overlay {
+    /// `this`, or nothing if `this` is already open.
+    fn toggled(self, this: Self) -> Self {
+        if self == this { Self::None } else { this }
+    }
+}
+
 struct App {
     tree: HostTree,
     cursor: usize,
@@ -68,11 +87,7 @@ struct App {
     filter_ok: bool,
     col_off: u16,
     status: String,
-    help: bool,
-    /// The `i` overlay. Holds no data of its own: it is drawn from the selected
-    /// row of the current frame, so it follows a re-sort or a new sample the
-    /// way the highlight does rather than freezing a stale snapshot.
-    detail: bool,
+    overlay: Overlay,
     /// When `p` froze the table, or `None` when it is live. Sampling carries on
     /// underneath, so unpausing shows the current machine rather than replaying
     /// a backlog; this only stops the swap into `tree`. Sorting, filtering,
@@ -204,8 +219,7 @@ fn run_loop(
         filter_ok,
         col_off: 0,
         status: String::new(),
-        help: false,
-        detail: false,
+        overlay: Overlay::None,
         paused: None,
         history: HashMap::new(),
         kgp: (trend == Trend::Kitty).then(kgp::Kgp::new),
@@ -597,6 +611,33 @@ fn push_procs(
     }
 }
 
+/// A key while `/` is open: it edits the pattern, and nothing else binds.
+fn edit_filter(app: &mut App, code: KeyCode) {
+    let before = app.view.filter.clone();
+    match code {
+        KeyCode::Esc => {
+            app.filter_edit = false;
+            app.view.filter.clear();
+        }
+        KeyCode::Enter => app.filter_edit = false,
+        KeyCode::Backspace => {
+            app.view.filter.pop();
+        }
+        KeyCode::Char(c) => {
+            app.view.filter.push(c);
+        }
+        _ => {}
+    }
+    // Only replace it when the new text compiles; `App::filter_re` says why.
+    if app.view.filter != before {
+        let compiled = Filter::new(&app.view.filter);
+        app.filter_ok = compiled.is_some();
+        if let Some(f) = compiled {
+            app.filter_re = Some(f);
+        }
+    }
+}
+
 fn handle_key(
     app: &mut App,
     code: KeyCode,
@@ -614,37 +655,19 @@ fn handle_key(
         return Ok(mods.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('c'));
     }
     if app.filter_edit {
-        let before = app.view.filter.clone();
-        match code {
-            KeyCode::Esc => {
-                app.filter_edit = false;
-                app.view.filter.clear();
-            }
-            KeyCode::Enter => app.filter_edit = false,
-            KeyCode::Backspace => {
-                app.view.filter.pop();
-            }
-            KeyCode::Char(c) => {
-                app.view.filter.push(c);
-            }
-            _ => {}
-        }
-        // Only replace it when the new text compiles; `App::filter_re` says why.
-        if app.view.filter != before {
-            let compiled = Filter::new(&app.view.filter);
-            app.filter_ok = compiled.is_some();
-            if let Some(f) = compiled {
-                app.filter_re = Some(f);
-            }
-        }
+        edit_filter(app, code);
         return Ok(false);
     }
     if matches!(code, KeyCode::Char('?') | KeyCode::F(1)) {
-        app.help = !app.help;
+        app.overlay = app.overlay.toggled(Overlay::Help);
         return Ok(false);
     }
-    if app.help && code == KeyCode::Esc {
-        app.help = false;
+    if code == KeyCode::Char('i') {
+        app.overlay = app.overlay.toggled(Overlay::Detail);
+        return Ok(false);
+    }
+    if app.overlay != Overlay::None && code == KeyCode::Esc {
+        app.overlay = Overlay::None;
         return Ok(false);
     }
     if code == KeyCode::Char('p') {
@@ -652,17 +675,6 @@ fn handle_key(
             Some(_) => None,
             None => Some(Instant::now()),
         };
-        return Ok(false);
-    }
-    if code == KeyCode::Char('i') {
-        app.detail = !app.detail;
-        // Only one overlay is drawn, so leaving help armed underneath would
-        // make the next `?` look like it did nothing.
-        app.help = false;
-        return Ok(false);
-    }
-    if app.detail && code == KeyCode::Esc {
-        app.detail = false;
         return Ok(false);
     }
     match code {
@@ -897,36 +909,32 @@ fn send_trend(app: &mut App, rows: &[Flat], start: usize, end: usize, full: f64)
     k.send(&mut io::stdout(), &img, cols, rows_tall).is_ok()
 }
 
-fn draw(f: &mut ratatui::Frame<'_>, app: &mut App, rows: &[Flat]) {
-    let chunks = Layout::vertical([
-        Constraint::Length(header_rows(&app.tree)),
-        Constraint::Length(1),
-        Constraint::Min(4),
-        Constraint::Length(1),
-        Constraint::Length(1),
-    ])
-    .split(f.area());
-    draw_header(f, chunks[0], app);
-    render_rule(f, chunks[1]);
-
+/// The columns drawn at `app.col_off` in a table pane `width` cells wide, the
+/// cells NAME grows by, and TREND's width when it is one of them. Trims
+/// `history` to that width, since it is also how many samples a row keeps.
+fn layout_columns(
+    app: &mut App,
+    rows: &[Flat],
+    width: u16,
+) -> (Vec<&'static Column>, u16, Option<u16>) {
     // Once every remaining column fits, another `→` would only trade a figure
     // for blank space, so the offset walks back to the last one that scrolled
     // something into view. That also undoes presses past the end.
     let fits = |off: u16| {
         let s = scrolled(&app.cols, usize::from(off));
-        columns_that_fit(&s, chunks[2].width).0 == s.len()
+        columns_that_fit(&s, width).0 == s.len()
     };
     while app.col_off > 0 && fits(app.col_off - 1) {
         app.col_off -= 1;
     }
     let mut shown = scrolled(&app.cols, usize::from(app.col_off));
-    let (fit, used) = columns_that_fit(&shown, chunks[2].width);
+    let (fit, used) = columns_that_fit(&shown, width);
     shown.truncate(fit);
     // NAME first grows to the longest row title in the tree, so a deep or long
     // name is not cut to feed TREND; what slack is left widens TREND, one more
     // sample per cell. Every row rather than the visible ones, so the split
     // moves when the tree does and not on every scroll.
-    let slack = chunks[2].width.saturating_sub(used);
+    let slack = width.saturating_sub(used);
     let name_need = rows
         .iter()
         .map(|r| 2 * usize::from(r.depth) + 2 + r.name.width())
@@ -955,6 +963,34 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &mut App, rows: &[Flat]) {
         }
         app.trend_w = w;
     }
+    (shown, name_extra, trend_cells)
+}
+
+/// The constraint each column `layout_columns` kept is drawn at.
+fn column_widths(shown: &[&Column], name_extra: u16, trend_cells: Option<u16>) -> Vec<Constraint> {
+    shown
+        .iter()
+        .map(|c| match (c.label, trend_cells) {
+            ("spark", Some(w)) => Constraint::Length(w),
+            // Min, so whatever TREND_MAX leaves over lands on the name.
+            ("name", _) => Constraint::Min(c.width + name_extra),
+            _ => Constraint::Length(c.width),
+        })
+        .collect()
+}
+
+fn draw(f: &mut ratatui::Frame<'_>, app: &mut App, rows: &[Flat]) {
+    let chunks = Layout::vertical([
+        Constraint::Length(header_rows(&app.tree)),
+        Constraint::Length(1),
+        Constraint::Min(4),
+        Constraint::Length(1),
+        Constraint::Length(1),
+    ])
+    .split(f.area());
+    draw_header(f, chunks[0], app);
+    render_rule(f, chunks[1]);
+    let (shown, name_extra, trend_cells) = layout_columns(app, rows, chunks[2].width);
     let start = app.row_off.min(rows.len());
     let end = start.saturating_add(app.row_vis.max(1)).min(rows.len());
     // Only when the column is actually on screen: an image nothing references
@@ -1042,15 +1078,7 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &mut App, rows: &[Flat]) {
             row
         });
     }
-    let widths: Vec<Constraint> = shown
-        .iter()
-        .map(|c| match (c.label, trend_cells) {
-            ("spark", Some(w)) => Constraint::Length(w),
-            // Min, so whatever TREND_MAX leaves over lands on the name.
-            ("name", _) => Constraint::Min(c.width + name_extra),
-            _ => Constraint::Length(c.width),
-        })
-        .collect();
+    let widths = column_widths(&shown, name_extra, trend_cells);
     let table =
         Table::new(table_rows, widths).header(sort_header(shown.iter().copied(), &app.view.sort));
     f.render_widget(table, chunks[2]);
@@ -1058,23 +1086,34 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &mut App, rows: &[Flat]) {
     // buffer; written to the terminal only after ratatui flushes, since sixel
     // paints over cells rather than into them.
     app.sixel_out = None;
-    if app.trend == Trend::Sixel
-        && trend_img
-        && let Some(img) = trend_pixels
+    if let Some(img) = trend_pixels
         && let Some((x, y)) = marked_corner(f.buffer_mut(), chunks[2])
     {
         app.sixel_out = Some(sixel::at(y, x, &sixel::encode(&img, trend_colour())));
     }
-    if app.help {
+    draw_overlay(f, chunks[2], app.overlay, rows.get(app.cursor));
+    draw_footer(f, chunks[3], chunks[4], app);
+}
+
+/// The open overlay, if any, over the table `pane`; `selected` is the row `i`
+/// describes.
+fn draw_overlay(f: &mut ratatui::Frame<'_>, pane: Rect, overlay: Overlay, selected: Option<&Flat>) {
+    match overlay {
         // Over the whole frame, not the table pane: on a short terminal the
         // pane cut the list off after `i`, taking `?` itself and the bar
         // swatches with it.
-        let full = f.area();
-        draw_help(f, full);
-    } else if app.detail {
-        draw_detail(f, chunks[2], rows.get(app.cursor));
+        Overlay::Help => {
+            let full = f.area();
+            draw_help(f, full);
+        }
+        Overlay::Detail => draw_detail(f, pane, selected),
+        Overlay::None => {}
     }
+}
 
+/// Key hints, sort, pause age, coverage, filter and status under a rule, and
+/// the build label where they leave room.
+fn draw_footer(f: &mut ratatui::Frame<'_>, rule: Rect, area: Rect, app: &App) {
     // `?` says the text on screen is not a usable pattern yet, so what is on
     // the table is still the last one that compiled.
     let stale = if app.filter_ok { "" } else { " ?" };
@@ -1100,14 +1139,14 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &mut App, rows: &[Flat]) {
         filter,
         app.status
     );
-    render_rule(f, chunks[3]);
+    render_rule(f, rule);
     // Drawn only into space the footer leaves, so a bug report's screenshot
     // names its build without ever costing a key hint or the filter text.
     let label = concat!("heft ", env!("HEFT_VERSION"), " ");
-    let fits = Line::from(footer.as_str()).width() + label.len() < chunks[4].width as usize;
-    f.render_widget(Paragraph::new(footer), chunks[4]);
+    let fits = Line::from(footer.as_str()).width() + label.len() < area.width as usize;
+    f.render_widget(Paragraph::new(footer), area);
     if fits {
-        f.render_widget(Line::from(label).right_aligned(), chunks[4]);
+        f.render_widget(Line::from(label).right_aligned(), area);
     }
 }
 
@@ -2555,8 +2594,7 @@ mod tests {
             filter_edit: false,
             col_off: 0,
             status: String::new(),
-            help: false,
-            detail: false,
+            overlay: Overlay::None,
             paused: None,
             history: HashMap::new(),
             kgp: None,

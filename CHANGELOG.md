@@ -2,173 +2,118 @@
 
 ## Unreleased
 
-## 0.10.1 - 2026-09-12
+## 0.10.1 - 2026-09-13
 
 ### Added
 
-- The built-in `10-classes.json` carries `RunC` and `CRun` examples beside
-  `Containerd-Shim-Runc-V2` and `Conmon`, so `--check-rules` proves every
-  container runtime name folds case; the built-in set runs 127 examples.
-- Tests hold rules behaviour grouping.json never had to prove: a user `app`,
-  `session`, `class` or `unit` rule over the GUI fixture; a session rule
-  deciding before the crash-helper check and an app rule after it; a pin
-  listed before a fold hiding the fold; a fold pinning its target in the same
-  rule; `disable: ["40-trinity.json"]` turning a TDE module into an
-  Application; a user file named like a built-in losing its own disabled id;
-  XDG beating `/etc` beating a built-in; and an empty `HEFT_RULES_PATH`
-  loading built-ins only.
-- The leftover-grouping.json test also compares where every live process
-  lands with and without the file, not only the stderr line.
+- `10-classes.json` carries `RunC` and `CRun` examples, so `--check-rules`
+  proves every container runtime name folds case (127 built-in examples).
+- Tests for user `app`, `session`, `class` and `unit` rules, stage and
+  placement order, `disable`, source precedence, an empty `HEFT_RULES_PATH`,
+  and where processes land with a leftover grouping.json present.
 
 ### Changed
 
-- `--check-rules` prints expected and actual values the way a rules file
-  spells them (`expected folder user_services, got applications`,
-  `[lying, service]`) rather than as Rust debug values.
-- Grouping borrows each process's basename and display name instead of
-  copying them, and the AppImage suffix and `.mount` prefix checks compare
-  ASCII case in place rather than lowercasing a copy, so a sample allocates
-  less per process. A name with a multibyte character at the cut is a miss,
-  never a panic.
-- Container ids are normalised (hex check, then lowercase) by one function at
-  every index insert and lookup.
-- `--explain`'s per-stage trace builds its facts with the same function
-  grouping uses, so the trace cannot disagree with the tree about a process's
-  display name.
-- The `rules_timing` bench runs from the library tests on those same facts:
-  `cargo test --release --lib -- --ignored --nocapture rules_timing`. On a
-  quiet machine the four stages cost 433 to 438 ns per process against a
-  500 ns budget.
-- The pre-push `gate` builds with `--locked`, so a push cannot rewrite
-  `Cargo.lock` first, and scans RustSec advisories once: the `vuln` gate runs
-  `cargo deny --locked check advisories` and the `deny` gate checks bans,
-  licenses and sources, whether or not cargo-audit is installed.
+- `--check-rules` prints values the way a rules file spells them
+  (`expected folder user_services, got applications`).
+- Grouping allocates less per process: names are borrowed and the AppImage
+  and `.mount` checks compare case in place. A multibyte character at the cut
+  is a miss, never a panic.
+- One function normalises container ids at every index insert and lookup.
+- `--explain` builds its trace facts with the grouping code's own function,
+  so the two cannot disagree on a display name.
+- `rules_timing` runs from the library tests: 433 to 438 ns per process
+  against a 500 ns budget.
+- The pre-push gate builds with `--locked` and scans RustSec advisories once
+  through `cargo deny`.
 
 ### Removed
 
-- Library items only heft's own tests used: `Rules::check`,
-  `Rules::examples_total`, `Rules::count`, `Classes::contains`,
-  `rules::OwnedFacts`, `rules::STAGES` and the `heft::identity_user_unit`
-  re-export. `Rules::report` answers what `check` did.
+- Test-only library items: `Rules::check`, `Rules::examples_total`,
+  `Rules::count`, `Classes::contains`, `rules::OwnedFacts`, `rules::STAGES`
+  and the `heft::identity_user_unit` re-export.
 
 ### Documentation
 
-- HUMANS.md says why heft leaves the GPU memory of drm clients inside
-  root-owned containers unread: reading it means running a command inside each
-  container, which is a POST, and heft's container client only sends GET.
-- HUMANS.md and AGENTS.md state each measurement once: the kitty inline and
-  sixel transport costs (with the 24-row terminal of 10x20-pixel cells
-  they were measured on) and the GTT gap live in HUMANS.md, and AGENTS.md points there.
-- The `--check-rules` sample in HUMANS.md matches the output.
-- AGENTS.md records why the leftover grouping.json warning stays, states the
-  clippy lint contract without the stale 216/87 count, and names the bench
-  commands for `build_tree_timing` and `rules_timing`.
-- CONTRIBUTING.md lists the split cargo-deny gates.
+- HUMANS.md explains why GPU memory of drm clients in root-owned containers
+  stays unread (reading it needs a POST), and states each measurement once;
+  AGENTS.md points there.
+- AGENTS.md records why the grouping.json warning stays, the clippy lint
+  contract, and the bench commands. CONTRIBUTING.md lists the cargo-deny gates.
 
-## 0.10.0 - 2026-09-12
+## 0.10.0 - 2026-09-13
 
 ### Added
 
-- Grouping and classification rules are JSON files. The built-in set is
-  compiled in from `05-units.json`, `10-classes.json`, `20-session-bus.json`,
-  `25-a11y-input.json`, `30-gnome.json`, `40-trinity.json`, `50-plasma.json`,
-  `55-kwin.json`, `60-flatpak-portals.json`, `65-pim-audio.json`,
-  `70-editors.json` and `80-apps.json`. Files in
-  `$XDG_CONFIG_HOME/heft/rules.d/`, `/etc/heft/rules.d/` or the directories
-  `HEFT_RULES_PATH` lists add rules ahead of it, or `disable` a built-in file
-  or rule by those names.
-- `--check-rules` runs the examples in every loaded rules file and exits 1 on
-  a failure or a file that did not load.
-- `--explain` prints the rule each stage matched for the process.
+- Grouping and classification rules are JSON files in `rules.d`, compiled in
+  as built-ins. `$XDG_CONFIG_HOME/heft/rules.d/`, `/etc/heft/rules.d/` or
+  `HEFT_RULES_PATH` add rules ahead of them, or `disable` a built-in file or
+  rule.
+- `--check-rules` runs every rules file's examples; exits 1 on a failure or a
+  file that did not load.
+- `--explain` prints the rule each stage matched.
 
 ### Changed
 
-- Grouping name, path, argument and unit comparisons ignore ASCII case
-  everywhere. `--type=`, the editor install paths, the anonymous script names
-  and grouping.json keys were case-sensitive before.
+- Every grouping comparison ignores ASCII case.
 
 ### Removed
 
-- `grouping.json` is no longer read. This is a breaking change: each of its
-  keys is now a placement rule, mapped in HUMANS.md under Rules, and heft
-  warns once on stderr while the file is still there.
+- **Breaking:** `grouping.json` is no longer read. Each key maps to a
+  placement rule (HUMANS.md, Rules); heft warns while the file exists.
 
 ## 0.9.0 - 2026-09-12
 
 ### Added
 
-- `--fixture` prints the exe, cgroup, parent and command line of every
-  process as the fixture the grouping tests load, for attaching to a report of
-  a row in the wrong place.
+- `--fixture` dumps what grouping reads, in the test fixture shape, for bug
+  reports.
 
 ### Changed
 
-- Binaries shipped in a VS Code, VS Code Insiders or Cursor install or
-  extension tree (`codex`, `language_server_linux_x64`, `vscode-tailscale`,
-  `code-tunnel`) bill to that editor instead of taking their own rows.
-- `deskflow-core` bills to `deskflow`.
-- Trinity (TDE): apps tdeinit launches (konsole, kate, konqueror) get their
-  own rows instead of all merging into `tdeinit`, and the session itself
-  (twin, kicker, kdesktop, kded, artsd, tdeio slaves, tray helpers) is one
-  `tdeinit` row under User Services.
+- Binaries inside a VS Code, VS Code Insiders or Cursor install or extension
+  tree bill to that editor; `deskflow-core` bills to `deskflow`.
+- Trinity (TDE): apps tdeinit launches get their own rows, and the session
+  itself is one `tdeinit` row under User Services.
 
 ## 0.8.1 - 2026-09-12
 
 ### Changed
 
-- TREND stops at 30 cells; spare width past that widens NAME instead.
+- TREND stops at 30 cells; spare width goes to NAME.
 
 ## 0.8.0 - 2026-09-12
 
 ### Added
 
-- The version carries the commit, `0.7.0~1a2b3c4`, on `--version`, the man
-  page, and bottom-right of the TUI footer when the footer leaves room for it.
-  Tag tarballs carry it too, through `.git-sha`.
+- The version carries the commit (`0.7.0~1a2b3c4`) on `--version`, the man
+  page, and the TUI footer. Tag tarballs carry it through `.git-sha`.
 
 ### Changed
 
-- TUI keys: Enter and Space alone expand and collapse; `←` `→` (and `h` `l`)
-  scroll columns, replacing `[` `]` and `<` `>`; `Shift-←` `Shift-→` step the
-  sort column back and forward, replacing `c`.
-- NAME stays on screen while `←` `→` scroll the other columns, and scrolling
-  stops once the last column is on screen.
-- Spare table width widens NAME until the longest name fits, then TREND, one
-  more sample per cell; NAME used to absorb all of it.
-- The header bars have no legend; `?` shows a coloured swatch for every
-  segment. Segments use fixed xterm-256 colours, which a terminal theme cannot
-  redefine, and full-height fills rather than `▀▄` half blocks.
-- The MEM bar itemises `used` as vram, gtt, zram, shm, kernel (unreclaimable
-  slab, page tables, kernel stacks), anon (`AnonPages`) and other (the
-  unitemised rest), then draws reclaimable cache, slab and buffers after it.
-  `gtt` and unified `vram` read the kernel's `mem_info_*_used` where the
-  driver publishes it rather than summing the drm clients heft can see: 49.6
-  GiB of GTT against 19.9 GiB on a 125 GiB APU, where the gap had read as
-  anon. The JSON host carries `gtt_used_bytes`, `mem_anon_bytes`,
-  `mem_kernel_bytes` and `mem_sreclaimable_bytes`.
-- CPU ST, IO ST and MEM ST are hidden unless `view.json` holds a
-  `hide_columns` list without them (`u` then `s` brings them back), and
-  `--hide` adds to the saved list rather than replacing it.
+- TUI keys: Enter and Space expand and collapse; `←` `→` (`h` `l`) scroll
+  columns, replacing `[` `]` and `<` `>`; `Shift-←` `Shift-→` change the sort,
+  replacing `c`.
+- NAME stays put while columns scroll. Spare width widens NAME until the
+  longest name fits, then TREND.
+- The header bars have no legend; `?` shows a swatch per segment. Segments use
+  fixed xterm-256 colours and full-height fills.
+- The MEM bar itemises `used` as vram, gtt, zram, shm, kernel, anon and other,
+  then draws reclaimable cache, slab and buffers. `gtt` and unified `vram`
+  read the kernel's `mem_info_*_used` where published. New JSON host fields:
+  `gtt_used_bytes`, `mem_anon_bytes`, `mem_kernel_bytes`,
+  `mem_sreclaimable_bytes`, `mem_shmem_bytes`, `zram_used_bytes`.
+- CPU ST, IO ST and MEM ST are hidden by default; `--hide` adds to the saved
+  list instead of replacing it.
 
 ### Fixed
 
-- The `i` detail pane no longer ends a column at its labels when that
-  column's figures are blank, and its grid no longer overruns the pane by two
-  columns and wraps. A blank figure there is drawn as `-`, and TREND, which
-  has no history to draw there, is no longer listed.
-- The header rows stop a column short of the terminal's right edge, so the
-  last figure is not clipped where a terminal's padding overlaps that cell.
-- The `?` overlay covers the whole screen and lays the keys in two columns
-  where the terminal is wide enough; on a short terminal it was cut off after
-  `i`, hiding `?`/`F1` and the bar swatches. Its longest key descriptions are
-  shorter, in the man page's KEYS section too.
-- The MEM bar painted all of `Cached` and `Buffers` inside `used`, which
-  already excludes reclaimable cache, so it drew anon at about 14 GiB on a
-  host with 23.7 GiB of `AnonPages`. It now paints `shm`, the cache that is in
-  `used`.
-- On a zram host the compressed swap store is its own `zram` segment of the
-  MEM bar rather than unlabelled remainder: it is RAM that no process's PSS
-  holds. The JSON host carries `mem_shmem_bytes` and `zram_used_bytes`.
+- `i` detail pane: blank figures draw as `-`, the grid no longer overruns
+  and wraps, and TREND is not listed.
+- The header rows stop a column short of the right edge.
+- The `?` overlay covers the screen, uses two columns when wide, and no
+  longer cuts off on a short terminal.
+- The MEM bar drew `Cached` and `Buffers` inside `used`, understating anon.
 
 ### Removed
 
@@ -178,649 +123,192 @@
 
 ### Added
 
-- `--trend kitty` draws TREND as a kitty-graphics-protocol image rather than
-  nine block characters, as a line joined sample to sample rather than a
-  filled bar: pixel resolution instead of eight quantised steps,
-  and no dependence on the font at all. One image covers the whole column —
-  the protocol's row diacritics index into it — so a frame is one escape
-  rather than one per row. Where the terminal is local the pixels travel
-  through POSIX shared memory and the escape carries only its name; over ssh
-  they go inline, which measured about 146 KB a sample on a 24-row terminal —
-  the reason `--trend auto`, below, prefers sixel over ssh.
-
-- `--trend auto` is now the default: heft asks the terminal whether it has the
-  kitty graphics protocol or sixel and draws the trend as an image when it
-  does. It is asked rather than guessed, because `TERM` names a terminal and
-  not what it implements, and a multiplexer or an ssh hop can take a
-  capability away underneath it. The device-attributes reply ends the
-  exchange — every terminal sends one, and sends it last — so on anything that
-  answers it costs about a millisecond; a terminal that answers neither query
-  delays the first frame by 400ms and then draws characters. Where both are on
-  offer, the kitty protocol wins locally, since its image is tied to the cell
-  grid and its pixels go through shared memory, and sixel wins over ssh, where
-  the other transport would send every pixel inline.
-
-- `--trend sixel` draws the trend image for the terminals the kitty protocol
-  does not reach: xterm, foot, wezterm, konsole 22.04+, iTerm2 and Windows
-  Terminal 1.22+. It is also the cheaper of the two over a network — a line is
-  mostly empty background and sixel run-length-encodes it, so an 18-row column
-  measured 559 bytes a frame against about 146 KB a sample for the kitty
-  protocol's inline transport. It is repainted each frame because sixel paints
-  over cells rather than into them, and positioned by reading the column's
-  rectangle back out of the rendered frame rather than by re-deriving the
-  layout.
-
-- `--explain <PID>` says where a process landed in the tree, what identity it
-  resolved to, and the `grouping.json` snippet that moves it. The override
-  file is keyed on identities, and nothing showed you one: the `i` pane has a
-  process's cgroup, exe and cmdline but never what they resolved to, and a
-  wrong key is silent, since an identity matching nothing is never consulted.
-  On a container or a kernel thread it says no override can reach the row.
-
-- Both config files take `//` and `/* */` comments. `s` now writes `view.json`
-  with a header above it explaining every key and listing the column labels,
-  generated from the binary so it cannot go stale — the file explains itself
-  rather than sending you to the man page. A save still rewrites the file
-  whole, so `grouping.json`, which heft never writes, is the one that keeps
-  comments of your own.
+- `--trend kitty` draws TREND as one kitty-graphics-protocol image, a line
+  per row, via shared memory locally and inline over ssh.
+- `--trend sixel` draws the same image for xterm, foot, wezterm, konsole
+  22.04+, iTerm2 and Windows Terminal 1.22+. About 559 bytes a frame, against
+  about 146 KB for kitty's inline transport.
+- `--trend auto` (default) asks the terminal which protocol it has: kitty
+  locally, sixel over ssh, characters otherwise. A terminal that answers
+  neither query delays the first frame by 400 ms.
+- `--explain <PID>` shows where a process landed, its identity, and the
+  override that moves it.
+- `view.json` and `grouping.json` accept `//` and `/* */` comments; `s`
+  writes `view.json` with a header documenting every key.
 
 ### Fixed
 
-- `--glyphs ascii` now reaches the detail pane and `--explain`. A command line
-  cut at 240 characters ended in `…` rather than `~`, the one non-ASCII
-  character left on a screen that had asked for none.
-
-- A name cut to fit its column no longer ends on half an emoji. Truncation
-  counted each character's width on its own, so a zero-width joiner could fit
-  where its partner did not, leaving the name ending on a joiner that pointed
-  at a character already dropped. It now cuts whole grapheme clusters.
-
-- On a machine with swap, the MEM and CPU bars were half the width they
-  should be. Swap shared the MEMORY row, and that row was split equally
-  between its tanks, so SWAP took half of it; because the CPU bar is sized to
-  match MEM's, it was halved along with it. On a 120-column terminal, 84
-  columns of bar became 24. Swap now has a header row of its own — its
-  figures need the same couple of dozen columns however wide the terminal is,
-  so there was nothing for it to give back — and the MEM and CPU bars are the
-  width they would be on a machine with no swap at all. A swapless host draws
-  the same two-row header it always did.
-
-- The header bars all open in the same column. `SWAP` and `VRAM` are a
-  character longer than `CPU` and `MEM`, so their bars started one column
-  further along, which reads as a different scale. The labels are
-  right-aligned now — but only to the longest label actually on screen, so a
-  machine with neither swap nor a discrete card, which is the ordinary case,
-  draws exactly the header it drew before either was supported rather than
-  paying a column to pad a label it never shows. The closing brackets already
-  lined up.
-
-- Discrete VRAM, which does still share the MEMORY row because it is the
-  memory MEM is being compared against, now takes a fixed slice of it rather
-  than half, so MEM grows with the window while the VRAM tank stays put. On a
-  terminal too narrow for that the split falls back to even rather than
-  leaving MEM with a bar and no room for it.
-
-- Host, the User rows and the folder headers have no TREND. They are sums,
-  and the scale the trend is drawn against is built from the entries, so a
-  sum has no figure on it: drawn anyway they sat pinned to the ceiling saying
-  only that they were the total, which the header already draws to scale.
-
-- TREND is drawn against one scale for the whole frame rather than against
-  each row's own peak: a percentage is full at 100, and everything else scales
-  to the heaviest row that is an entry rather than a sum. Against its own peak
-  a row sitting flat at 2% had every sample equal to its own maximum, so it
-  drew nine full-height marks — "flat and idle" and "flat and busy" were
-  opposites, most of the column was a solid block, and no two rows could be
-  compared at all. It still follows the sort column and still clears when that
-  changes.
+- `--glyphs ascii` reaches the detail pane and `--explain`.
+- Truncation cuts whole grapheme clusters, not half an emoji.
+- Swap has its own header row instead of halving the MEM and CPU bars.
+- Header labels right-align to the longest one shown, so every bar opens in
+  one column.
+- Discrete VRAM takes a fixed slice of the MEMORY row instead of half.
+- Host, User and folder rows have no TREND.
+- TREND uses one scale per frame (100 for percentages, else the heaviest
+  entry) instead of each row's own peak.
 
 ## 0.6.2 - 2026-09-12
 
 ### Added
 
-- `--glyphs legacy`, for a font that draws the header bars but not the
-  sparkline. TREND's ramp needs eight rising steps and six of them — every
-  one but `▄` and `█` — are absent from fonts that carry `█▓▒░` perfectly
-  well, so the trend column came up as boxes on a screen that was otherwise
-  correct. The new set keeps every Unicode character and swaps only the ramp
-  for `_.,:-=+#`; `--glyphs ascii` would have answered one column by giving
-  up the whole header. `auto` never picks it, because a locale says what the
-  terminal can encode and nothing says what the font can draw.
+- `--glyphs legacy`: Unicode bars with an ASCII TREND ramp, for fonts that
+  have `█▓▒░` but not `▁▂▃▅▆▇`. `auto` never picks it.
 
 ### Fixed
 
-- The VRAM and GTT segments of the MEMORY bar were the quadrant characters
-  `▚` and `▙`, and the collapsed-row marker was `▶` (U+25B6). Both sit
-  outside what a font carrying the shade ramp necessarily has, so a reader
-  whose `█▓▒` bars and `▼` markers drew correctly still got tofu for exactly
-  those three. They are now the half blocks `▀` and `▄` and the pointer `►`
-  (U+25BA), which look the same and live in the same repertoire as the ramp.
-  U+25B6 was the worse of the two for a second reason: it is the base of the
-  play-button emoji, so a terminal that resolves emoji presentation drew it
-  double-width in a table whose every column is exact.
+- VRAM and GTT segments and the collapsed marker use glyphs a legacy font
+  has (`▀`, `▄`, `►`). `▶` could also render double-width as an emoji.
 
 ## 0.6.1 - 2026-09-12
 
+### Added
+
+- AUR packages `heft`, `heft-bin` and `heft-git`.
+
 ### Fixed
 
-- VRAM and GTT were blank on an amdgpu older than its switch to
-  `drm_show_memory_stats`, while gfx% and compute% beside them worked. Those
-  kernels publish the region sizes as `drm-memory-vram` and `drm-memory-gtt`,
-  the driver's own pre-standard pair, and heft matched only the standardised
-  `drm-resident-*`. It now takes the first tier a client publishes —
-  `drm-resident-*`, then `drm-total-*`, then `drm-memory-*` — so a current
-  kernel still reports what the region is actually holding rather than what
-  may be evicted, and an older one reports what it has. Measured on a
-  4750G. `drm-total-*` had been documented as the fallback and was never
-  matched either.
+- VRAM and GTT were blank on older amdgpu kernels that only publish
+  `drm-memory-*`. heft now takes the first of `drm-resident-*`,
+  `drm-total-*`, `drm-memory-*`.
 
 ## 0.6.0 - 2026-09-09
 
 ### Added
 
-- A cell whose figure says the row is in trouble is drawn in red, or in
-  reverse video where there is no colour: `D` above zero, and a stall column
-  at or over 20% of an interval. `D` exists because `%CORE` reads an
-  uninterruptible process as idle, but a `3` there had looked exactly like a
-  `0` among nineteen other numbers.
-
-- heft says when it cannot account for the machine: `seeing 1% of 4557
-  threads`, in the TUI footer and on a `WARN` line under the `--once` host
-  line, whenever the tree covers under 90% of the kernel's own thread count.
-  On a `hidepid` mount or inside a PID namespace the tree was simply small,
-  with nothing to say why.
-
-- `--proc-root DIR` reads `/proc` and `/sys` under `DIR` instead of `/`, for
-  another mount namespace's procfs or a tree captured off a machine heft
-  cannot run on. A directory with no `proc` in it is a usage error.
-
-- `--json` process nodes carry `cmdline`. A reader could not tell four
-  identically-named workers apart without going back to `/proc`, which for a
-  `--follow` stream means racing a pid that may already be gone or reused.
-
-- A `TREND` column draws the last nine samples of the sort metric as rising
-  blocks, scaled to each row's own peak. Every other column is the current
-  interval, so a process that spiked to 400% and went quiet was indistinguish-
-  able from one that had been idle the whole time. TUI only — `--once` and
-  `--json` take two walks and have no history to draw. `--hide` and `--order`
-  take it; `--sort` and `c` do not, since a trend has no ordering.
-
-- `p` pauses the TUI. The table freezes so a row can be read without the
-  numbers moving under it, while sampling continues underneath so unpausing
-  shows the current machine. The footer says how long the view has been held.
-
-- `man heft` gained KEYS, FILES and ENVIRONMENT. heft's default mode is the
-  TUI and the generated page documented every flag and not one keystroke. The
-  key list now lives in `src/keys.rs`, which both the man page and the `?`
-  overlay read, so they cannot drift the way they had when `i` was added.
-
-- Virtual machines and systemd-nspawn containers (`machine.slice`) are
-  Containers rows named after the machine, on Host → Containers. They matched
-  no bucket rule, so a libvirt VM appeared as a `qemu-system-x86_64` row under
-  root's Applications and an nspawn container as one Applications row per
-  process inside it.
-
+- A stall figure at or over 20%, or `D` above zero, draws red (reverse video
+  without colour).
+- heft says when it sees under 90% of the kernel's thread count (`seeing 1%
+  of 4557 threads`), in the TUI footer and under the `--once` host line.
+- `--proc-root DIR` reads `/proc` and `/sys` under `DIR`.
+- `--json` process nodes carry `cmdline`, and documents carry
+  `host.sampled_at`.
+- TREND column: recent history of the sort metric. TUI only.
+- `p` pauses the TUI; the footer shows how long.
+- `man heft` has KEYS, FILES and ENVIRONMENT, from the same key list as `?`.
+- `machine.slice` VMs and nspawn containers are Containers rows named after
+  the machine.
 - Rootful Podman's `/run/podman/podman.sock` is tried after the rootless one.
-  On a RHEL or Fedora server every container rendered `docker-<12hex>` with no
-  owner and a blank NETNS, which is what heft shows when it finds no socket at
-  all, so the miss was indistinguishable from having no runtime.
-
-- `i` in the TUI opens a detail pane for the selected row: every column,
-  including hidden ones and those off the side of a narrow terminal, and for a
-  single process the pid, ppid, state, uid, `exe`, cgroup and full command
-  line. The tree shows four rows called `cursor`; only the command line says
-  which is which. Read from `/proc` on the keypress, so it costs nothing until
-  it is opened.
-
-- `--filter` and the TUI's `/` search each row's name **and** the argv of every
-  process under it. A row title is an exe basename, so four identical workers
-  could not be told apart by the `--port` they hold. The argv is matched on
-  collapsed rows too, and is assembled only for a tick that has a filter.
-
-- `--json` documents carry `host.sampled_at`, the unix second the sample was
-  taken. A `--json --follow` stream is one document per line with no other
-  clock in it, so two records could not be placed in time relative to each
-  other — an interval stretched by a PSS pass was invisible to a reader.
+- `i` opens a detail pane: every column, plus pid, ppid, state, uid, `exe`,
+  cgroup and command line for a process.
+- `--filter` and `/` also search the argv of every process under a row.
 
 ### Fixed
 
-- `--interval` below the documented 0.05s floor was accepted and silently
-  raised to it, so a caller asking for 0.001 computed rates against a cadence
-  heft was not using. It is now a usage error naming the floor, the same split
-  as a mistyped `--sort`. `nan`, which parses as a float and would have
-  panicked in `Duration::from_secs_f64`, is refused too.
-
-- The TUI clipped a column that did not fit, so a 50-column terminal drew
-  `20.1G` as `2` and `548.5` as `5` with nothing to say they had been cut.
-  A column is now drawn at its full width or left off, which is what `[` and
-  `]` already existed to reach. A wrong figure is the one thing every other
-  rule in heft — `SwapPss` over `Swap`, `some` over `full`, blanks on
-  multi-cgroup rows — exists to avoid.
-
-- On a cgroup v1 host `identity::user_unit` read the leaf of the whole
-  multi-line `/proc/<pid>/cgroup`, which is the empty `0::/` that file ends
-  with, so every user unit came back blank. The Applications versus User
-  Services split needs a unit name, so User Services was permanently empty and
-  every user process filed as an application. It now reads the `0::` line, or
-  `1:name=systemd:` where there is none.
-
-- The `i` detail pane stacked its twenty metrics one per line, so a two-line
-  column of short values sat beside an empty half-screen and pushed `EXE`,
-  `CGROUP` and `CMDLINE` off the bottom of the pane, where they were silently
-  cut — the three facts the pane exists to show. They now lay out across the
-  pane's width, long values wrap instead of being clipped at the frame, and a
-  command line is capped at 240 characters so one Chromium `--enable-features=`
-  list cannot crowd out everything else.
+- `--interval` below the 0.05 s floor, or `nan`, is a usage error instead of
+  being silently raised.
+- A column that does not fit is dropped rather than clipped (`20.1G` drew as
+  `2`).
+- cgroup v1 hosts read the right cgroup line, so User Services is no longer
+  empty.
+- The detail pane lays metrics across the width and caps the command line at
+  240 characters, so `EXE`, `CGROUP` and `CMDLINE` stay visible.
 
 ### Documentation
 
-- HUMANS.md records that there is deliberately no crates.io package: the
-  release binaries are static musl, so installing costs no toolchain and no
-  compile. `cargo install --git` is noted for anyone who would rather build.
-
-- HUMANS.md states that the GPU columns read DRM fdinfo from `amdgpu`, `i915`
-  and `xe` only, so `nvidia-drm`, `nouveau` and the ARM SoC drivers leave VRAM,
-  GTT, gfx% and compute% blank on a machine with a working GPU.
+- No crates.io package, deliberately; `cargo install --git` works.
+- GPU columns read only `amdgpu`, `i915` and `xe`.
 
 ## 0.5.0 - 2026-09-08
 
-### Fixed
-
-- The TUI highlight followed a raw index into the flattened list, so a new
-  sample (PSS descending by default), a sort, a filter, `--top`, or expanding
-  a neighbour moved the cursor onto a different identity. It now tracks the
-  row's id, and lands on the nearest remaining parent when that row is gone.
-
-- The `/proc` walk spawned a `thread::scope` every sample, and glibc created
-  new malloc arenas for those threads. RSS climbed ~15 MiB every 5s PSS tick
-  to ~488 MiB. The same `available_parallelism` workers now live on the
-  Sampler for as long as it does. `MALLOC_ARENA_MAX=2` plateaued at 39 MiB;
-  pooling is the product fix, not that knob.
-
-- PSS/`--once` GPU collection slurped every fdinfo when no fd name contained
-  dri/drm, including a 16,038,344-byte `anon_inode:[fanotify]` dump on
-  `localsearch-3` with no `drm-client-id`. Files above 64 KiB are not read
-  (real drm fdinfo on this host topped out at 14 KiB).
-
-- An AppImage Chromium crash helper reparented to user systemd
-  (`chrome_crashpad_handler` under `/tmp/.mount_…/usr/share/cursor/`) took its
-  own Applications row instead of billing to the app. The mount directory is
-  still refused; a stable directory nested under it is the same owner an
-  `/opt/cursor/…` path already named.
-
-- An empty folder in the default expand set (your user's Containers, with no
-  containers) drew the expanded marker over a blank gap. Folders with no
-  identities are not expandable; the id stays in the set so the first row
-  that appears still opens.
-
-- A crash helper that was a launcher's only child took an application row of
-  its own, titled `crashhelper`, instead of billing to the app its own path
-  names. The sandbox fallback in the grouping walk now reaches the same verdict
-  every other placement site does, so a container or kernel row is possible
-  there too.
-
-- The `--once` table counted characters where it meant terminal columns, so a
-  process named in CJK or carrying an emoji pushed every column to its right
-  out by one per wide character. `trunc` and the row layout measure columns
-  now, which is what the exact-width claim always said they did.
-
-- The key-help overlay drew its cursor keys as literal arrow characters
-  regardless of `--glyphs`, so the one screen explaining the keys rendered as
-  tofu on the bare console that flag exists for.
-
-- An AppImage launcher whose filename is not all lowercase took a top-level row
-  of its own, titled with the full `Cursor-x86_64.AppImage` filename, instead of
-  billing to its payload. The suffix is now matched case-insensitively wherever
-  it is matched at all; shipping AppImages are mixed case.
-
 ### Added
 
-- `NO_COLOR` is honoured. Presence and non-emptiness decide, not the value, so
-  `NO_COLOR=0` disables hue as well, which is what no-color.org specifies. The
-  bars lose nothing by it: each segment's fill character already carried the
-  distinction, which is why the variable could be answered by dropping styling
-  rather than by adding a second render path.
-
-- `--order` / `column_order` in `view.json`: left-to-right column order,
-  repeatable, overwriting a saved list the way `--hide` does. Unlisted columns
-  keep compiled order after the named ones; `name` stays first unless the
-  list includes it. `--json` refuses the flag.
-
-- `H` hides the current sort column and `u` puts the last hidden one back;
-  `--hide` does the same on `--once` (repeatable) and overwrites a saved list.
-  `hide_columns` in `view.json` was already the store; it was only writable by
-  hand. `name` is refused. `--json` refuses the flag, the same contract as
-  `--filter`.
-
-- Plasma session helpers merge under `plasmashell` and kwin helpers under
-  `kwin`, from those RPMs' shipped binaries rather than a `plasma-` prefix.
-  `krunner` and `plasma-discover` stay independent apps.
-
-- The TUI reverses the header of the column `c` is sorting by. The rest of
-  the header row stays bold; `--once` is unchanged, because that table is a
-  fixed-width contract other tools slice. Reverse rather than a colour, so
-  `NO_COLOR` still marks the column.
-
-- A `D` column counting the processes on a row in uninterruptible sleep. The
-  stall columns answer "was this row waiting", but only on the ~82% of rows
-  that resolve to one cgroup, and never on a folder, User or Host row, because
-  a percentage of an interval cannot be summed. `D` is a count, so it adds up
-  the tree and carries a figure exactly where those blanks are. It reads field
-  3 of the `/proc/<pid>/stat` line heft already parses for CPU and `THR`, so it
-  costs no extra read, and `0` is a figure rather than a blank.
+- `NO_COLOR` is honoured.
+- `--order` and `column_order` set column order.
+- `H` hides the sort column, `u` restores the last hidden; `--hide` does the
+  same for `--once`.
+- Plasma session helpers merge under `plasmashell`, kwin helpers under `kwin`.
+- The TUI reverses the sort column's header.
+- A `D` column counts processes in uninterruptible sleep.
 
 ### Changed
 
-- Idle interactive shells fold into their terminal (Ghostty and the other
-  names in `TERMINALS`). A shell that launched a single real app still bills
-  to that app, the same unique-payload walk launchers use. They are no longer
-  their own Applications row.
+- Idle interactive shells fold into their terminal.
+- Folder headings count their identities; User rows show the login name only.
+- `D` sits left of `%CORE`; disk rates sit after CMP.
+- The CPU and MEMORY bars share one width, and the TUI header drops the host
+  `psi` tail (still on `--once` and `--json`).
+- Clap help and errors are uncoloured.
 
-- `--once` and PSS ticks no longer walk every fdinfo when the dri/drm name
-  prefilter is empty. That walk was ~318 ms of ~760 ms serial PSS-tick kernel
-  work on 308 pids with no dri/drm fd. GPU clients whose fd names omit
-  dri/drm stay blank.
+### Fixed
 
-- Folder headings (Applications, User Services, Containers, System) show how
-  many identities sit under them, including zero. User rows are the login name
-  only: the uid in parentheses looked like a count.
-
-- `D` sits left of `%CORE`, and `DISK R` / `DISK W` sit after `CMP`. `%CORE`
-  reads D-state as idle, so the count belongs beside it; disk rates belong
-  with the other per-interval costs, after GPU engine percentages.
-
-- The two header bars are drawn to one width, so the CPU and MEMORY brackets
-  stack instead of each row sizing its bar around its own text. The MEM group
-  spends more of its row on `] used/total` and a fourth legend label, so it
-  sets the width and the CPU row pads on the right; where the MEMORY row splits
-  into tanks it is the first tank that is matched.
-
-- The TUI header no longer prints the host `psi` tail; the figures are
-  unchanged on `--once` and in `--json`, where nothing is drawn to scale.
-  Measured on a 175-column terminal: that tail was cancelling most of the
-  suffix difference above by accident, so removing it on its own took the two
-  brackets from 4 columns apart to 14. The shared bar width is what closes
-  them.
-
-- Clap help and usage errors are uncolored. The TUI already honours `NO_COLOR`;
-  clap's default `color` feature was pulling `anstream` for stderr heft does
-  not paint.
+- The TUI cursor stays on the same row when the list reorders.
+- The `/proc` walk reuses its threads; RSS had climbed to ~488 MiB from glibc
+  arenas.
+- GPU collection no longer walks every fdinfo when no fd names dri/drm, and
+  skips files over 64 KiB.
+- AppImage crash helpers bill to their app, including a launcher's only child.
+- Empty folders are not expandable.
+- `--once` measures width in terminal columns, so CJK and emoji names align.
+- The help overlay's arrows follow `--glyphs`.
+- A mixed-case `.AppImage` launcher bills to its payload.
 
 ## 0.4.0 - 2026-09-07
 
-### Fixed
-
-- Every `Ctrl-` key ran its unmodified binding. Raw mode turns `ISIG` off, so
-  the terminal never raises `SIGINT` and heft has to answer `Ctrl-C` itself; it
-  did not. Reproduced in a pty against the release binary: one `Ctrl-C` moved
-  the sort from `pss` to `rss` and a second to `swap`, exactly as pressing `c`
-  twice; `Ctrl-D` flipped the sort direction; and `Ctrl-S` wrote `view.json`
-  with no `s` ever pressed. `Ctrl-C` now quits, from the filter editor as well
-  as the table, and every other `CONTROL`, `ALT` or `SUPER` combination is
-  dropped. `SHIFT` still reaches the bindings, since a capital is how you type
-  one.
-
-- The terminal is put back when heft does not exit through `run()`. The release
-  profile is `panic = abort`, so a panic never unwinds and no teardown ran, and
-  `SIGTERM`/`SIGHUP`/`SIGQUIT` terminated outright — leaving the shell in raw
-  mode inside the alternate screen with no echo. Measured in a pty before and
-  after: without the guard all three signals left canonical mode and echo off
-  and the alternate screen active; with it, all three restore and exit
-  `128 +` the signal.
-
-- `systemd_unescape` pushed each decoded byte as a `char`, reading systemd's
-  byte-at-a-time escapes as Latin-1, so `\xc3\xa9` rendered `Ã©` rather than `é`
-  and any unit or scope name that was not pure ASCII appeared as mojibake.
-
 ### Added
 
-- `CPU ST` / `IO ST` / `MEM ST`, per-cgroup stall percentages from the kernel's
-  pressure stall information, plus a `psi` figure on the host header. `%CORE`
-  says a row used the processor and `PSS` says it holds memory; neither can
-  tell an application halfway through its work from one blocked on the disk,
-  because both look idle. The columns are Δ`some ... total=` over wall clock so
-  they share a time base with `%CORE` and the disk rates beside them, while the
-  header uses the kernel's own `avg10`, where a machine-wide trend reads better
-  smoothed — the same deliberate split `gfx%`/`compute%` already carries.
-
-  A row carries a figure only when it *is* one non-root cgroup. A stall is a
-  percentage of an interval and not a quantity, so two cgroups cannot be added,
-  and `Metrics::accumulate` leaves the trio out exactly as it leaves out the
-  netns pair. That excludes more than it first appears: `user-<uid>.slice` is
-  not heft's User row, because a rootful container lives in `system.slice` and
-  is still billed to its owner, and `system.slice` is not the System row,
-  because kernel threads sit in the root cgroup. A row resolving to the root
-  cgroup is blank because that pressure is the machine's — the rule that
-  already blanks a `--network=host` container. A process row is blank unless
-  its cgroup holds only that pid, since a cgroup's stall is not one process's.
-  Measured, 67% of user identity rows carry a figure on one desktop, and
-  sampling costs about 5 ms a tick.
-
-- `--follow`, so heft keeps sampling instead of exiting after one. `--json
-  --follow` emits one compact document per line (NDJSON, so a reader takes a
-  line at a time without a streaming parser) and `--once --follow` reprints the
-  table each interval, each sample carrying its own header. It honours
-  `--pss-interval` where the one-shot forms force PSS, because reading
-  `smaps_rollup` for every process once a second forever is the cost that flag
-  exists to avoid. No `--count`: heft already exits quietly on `EPIPE`.
-
-- `--top N`, keeping the N heaviest rows under each parent at every depth, with
-  the subtree of a cut row going with it. It never trims Host, a User or a
-  folder header: the sort does not order those at all, so a "top two" of them
-  cuts arbitrarily — caught in testing, where `--top 2` on a two-user machine
-  silently dropped the entire System section. Row-level rather than tree-level,
-  so a surviving parent still shows the total it was built with; trimming the
-  tree instead made `Host` report 85 processes on a machine running 813.
-
-- `--desc` and `--asc`. `--sort age` alone meant whichever direction the saved
-  view happened to hold, so the same command printed differently on two
-  machines.
-
-- `--glyphs auto|unicode|ascii`. Bars, rules, expand markers and the table's
-  truncation ellipsis were all block or box-drawing characters, which render as
-  tofu on a bare console or a container stripped to a few fonts — worse since
-  glyphs became the primary channel for telling bar segments apart. `auto`
-  reads `LC_ALL`, `LC_CTYPE` then `LANG`; no locale set at all resolves to
-  ASCII, since that is the C locale and the machine most likely to lack the
-  fonts. Every substitute is one column, because the header lines land on an
-  exact width and the table truncates to an exact column count.
-
-- `--user <NAME|UID>`, repeatable, cutting the tree to one owner's branch.
-  System and Host-level Containers survive it, since they are the machine's
-  cost and belong to nobody and a tree without them stops explaining the header
-  above it. It applies to `--json` too, unlike `--filter`, because the JSON
-  tree does have User nodes for a prune to mean something. It is never written
-  to `view.json`: a saved user cut would hide most of the machine on every
-  later run for a reason held by the file rather than the command line.
+- `CPU ST`, `IO ST`, `MEM ST`: per-cgroup pressure stall percentages, plus a
+  host `psi` figure. Blank unless a row is exactly one non-root cgroup.
+- `--follow` keeps sampling; `--json --follow` is NDJSON.
+- `--top N` keeps the N heaviest rows under each parent.
+- `--desc` and `--asc`.
+- `--glyphs auto|unicode|ascii`.
+- `--user <NAME|UID>`, repeatable, including with `--json`. Never saved.
 
 ### Changed
 
-- `--filter` and the `/` key take a **regex** rather than a substring, so
-  `^(code|claude)$` picks exactly two rows where a substring also dragged in
-  every helper process beside them. Case-insensitive unless the pattern says
-  otherwise, so every filter anyone had saved keeps behaving as it did.
-  `regex-lite`, not `regex`: measured, the full engine takes the stripped
-  binary from 1.53 MB to 2.93 MB and pulls four more crates in for a SIMD
-  literal search that matches a few hundred process names once a tick, against
-  70 KB and one crate for the same syntax minus Unicode character classes. A
-  pattern that does not compile is a usage error when typed, a
-  warning-and-ignore from a saved `view.json`, and in the TUI a `?` in the
-  footer while the last working pattern keeps filtering.
+- `--filter` and `/` take a case-insensitive regex (`regex-lite`).
+- The `/proc` walk runs across threads: an ordinary tick went from 120 ms to
+  20 ms on a 777-process host.
+- Bar segments carry a distinct fill glyph as well as a colour.
+- Releases add `aarch64` binaries and signed build provenance.
 
-- The `/proc` walk is split across threads. Almost all of its wall clock was
-  this process waiting on the kernel to build one small file at a time, so the
-  pid list now goes to a `thread::scope`. Ten interleaved runs of
-  `--once --interval 0.05` on a 777-pid host: 1.02s to 0.41s. The gain is not
-  uniform — an ordinary tick goes 120ms to 20ms, which is what makes the
-  documented 0.05s `--interval` floor reachable rather than aspirational, while
-  a PSS tick only goes 850ms to 340ms and still stretches its interval, because
-  `smaps_rollup` makes the kernel walk page tables and that is memory-bound.
+### Fixed
 
-- Every bar segment now carries its own fill glyph as well as its own colour,
-  and the legend prints that glyph beside the label (`█usr/▓sys/▒wait`). Hue
-  alone could not carry the distinction: cyan against magenta is the pair
-  deuteranopia collapses, and a piped or recorded frame keeps the characters
-  while losing the styling. Unconditional rather than gated on `NO_COLOR`, so
-  there is one render path instead of two that drift, and nobody needs to know
-  an environment variable to read a bar.
-
-- Releases now carry `aarch64` binaries beside `x86_64`, each in a `musl` and a
-  `gnu` build, and every release binary carries a signed build provenance
-  statement (`gh attestation verify`). A published `.sha256` proves a download
-  arrived intact; provenance proves which workflow at which commit produced it.
+- `Ctrl-` keys no longer run their unmodified binding; `Ctrl-C` quits.
+- The terminal is restored on panic and on `SIGTERM`, `SIGHUP` and `SIGQUIT`.
+- Non-ASCII systemd unit names no longer render as mojibake.
 
 ## 0.3.0 - 2026-09-06
 
 ### Added
 
-- `--sort <column>` and `--filter <text>`, so a script gets the top rows
-  without piping through `sort` and losing the indentation that makes the tree
-  readable. `--sort` takes the same labels the `c` key cycles and `view.json`
-  saves, so all three name a column the same way, and an unknown one is a usage
-  error rather than a fallback: a stale saved view must not stop the monitor,
-  but a name just typed can still be corrected. `--filter` is the `/` key and
-  runs through the same `keep_matches`, so it keeps the ancestors of a match —
-  a filter that dropped them would print an orphaned tree — and those ancestors
-  keep the totals they were built with rather than the totals of what survived.
-  An explicit flag beats a saved `view.json`. `--once` otherwise starts from
-  that saved view; `--json` never reads it, because its shape is a documented
-  contract and a human's TUI preference is not part of it, and `--filter` is
-  refused with `--json` since the JSON tree has no folder rows for "keep the
-  ancestors" to mean anything there.
-
-- `hide_columns` in `view.json`: a list of column labels the table leaves out.
-  Seventeen columns no longer fit a terminal, which is why `[` and `]` exist,
-  and scrolling past a column every tick is not the same as never wanting it.
-  It is a hide list rather than a show list because heft keeps growing columns
-  and a show list would silently withhold every one added after the file was
-  written. It sits in `view.json` beside the sort and filter the `s` key
-  already saves, not in `grouping.json`, which is read-only and about identity
-  rather than presentation. Absent file or absent key renders exactly as
-  before. `name` is refused, since a table of numbers with no labels is
-  unreadable, and an unknown label warns on stderr and is ignored the way a
-  malformed `grouping.json` does — not `Sort::from_label`'s silent fallback,
-  because a mistyped sort still prints a usable table while a mistyped hide
-  entry would do nothing and say nothing. Hiding reaches presentation only:
-  the same `/proc` files are read either way, so every roll-up invariant still
-  holds, the `c` cycle skips what it cannot show rather than moving the sort
-  somewhere invisible, and `--json` ignores the list entirely — a consumer
-  parsing the tree did not ask for a human's column preference.
-
-- `THR` and `AGE` columns, both from the `/proc/<pid>/stat` heft already parses
-  for CPU, so neither adds a per-tick read. `N` counts processes, so a thread
-  leak was invisible: one process holding 4000 threads rendered identically to
-  one holding none. Threads sum up the tree the way `N` does. `AGE` is
-  `now - (btime + starttime / CLK_TCK)`, shown in the largest unit that fits
-  (`45s`, `12m`, `3h`, `9d`) rather than raw seconds or a start timestamp that
-  would leave the reader to do the subtraction. On a row covering several
-  processes it is the oldest of them, which is when the thing on that row first
-  appeared; it is deliberately not a sum, since summed durations mean nothing,
-  and a maximum cannot be misread as a total. `btime` is read from `/proc/stat`
-  once per run and pinned, so an NTP step cannot walk ages heft has already
-  printed.
-
-- A `SWAP` column and a host swap tank on the MEMORY header row. Both come from
-  files heft already opens — `SwapPss:` from the `smaps_rollup` it reads for
-  PSS, and `SwapTotal`/`SwapFree` from the `/proc/meminfo` it reads for the MEM
-  bar — so neither costs a tick any extra I/O, and per-process swap arrives on
-  the existing `--pss-interval` cadence. The column is `SwapPss` rather than
-  `Swap` for the reason PSS is the memory column: `Swap` bills a shared
-  swapped-out page to every process mapping it, which a summed tree then
-  reports several times over. Swap is a tank of its own and never a segment of
-  the MEM bar, because swapped pages are not in RAM. A machine with
-  `SwapTotal: 0` renders exactly as before: no tank, no swap field on the
-  `--once` host line, and blank `SWAP` cells rather than a column of zeros,
-  since with no swap configured there is no figure to report. Until now a
-  process with gigabytes paged out showed only its small resident RSS and PSS,
-  and heft's memory picture was actively misleading on any host that swaps.
-
-- `NETNS RX` / `NETNS TX` on container rows, from the non-`lo` interfaces of
-  `/proc/<pid>/net/dev`. Every other row is blank, and the columns are named
-  for the network namespace rather than the resource because that is what the
-  counter belongs to: a container gets a figure by owning a namespace, and
-  nothing else in the tree owns one. Per-process network I/O is not deferred,
-  it is unavailable without CAP_NET_RAW, CAP_BPF or ptrace — see
-  [CONTRIBUTING.md](CONTRIBUTING.md) for what was measured. A
-  `--network=host` container stays blank, since its counters are the
-  machine's, and a restart drops one interval instead of reporting a negative
-  rate.
+- `--sort <column>` and `--filter <text>`. Flags beat `view.json`; `--json`
+  never reads it, and refuses `--filter`.
+- `hide_columns` in `view.json`.
+- `THR` and `AGE` columns.
+- `SWAP` column (`SwapPss`) and a host swap tank.
+- `NETNS RX` / `NETNS TX` on container rows.
 
 ### Changed
 
-- Running the TUI without a terminal on stdout now says so and names `--once`
-  and `--json`, instead of `No such device or address (os error 6)`. The check
-  runs before the first `/proc` walk, since surfacing it afterwards would burn
-  a whole `--interval` first. Still non-zero — it is a usage error — and
-  deliberately not a quiet fall back to `--once`, which would surprise anyone
-  piping heft expecting a TUI.
+- The TUI without a terminal says so and names `--once` and `--json`.
 
 ### Fixed
 
-- `heft --once | head` and `heft --json | head` exit quietly instead of
-  reporting a broken pipe. `--json` previously panicked outright, which the
-  `panic = abort` release profile turns into an abort. A genuine write failure
-  such as a full disk is still reported.
+- `heft --once | head` and `heft --json | head` exit quietly.
 
 ## 0.2.0 - 2026-09-06
 
 ### Added
 
-- Prebuilt binaries on every `v*` tag, so installing no longer needs a Rust
-  toolchain. Each release carries `x86_64-unknown-linux-gnu` and a static
-  `x86_64-unknown-linux-musl` build that runs on any glibc, plus a `.sha256`
-  beside each one.
-
-- Shell completions (bash, zsh, fish) and a `heft.1` man page, generated at
-  build time from the same clap definition the binary parses, so they cannot
-  drift from the real flags. `clap_complete` and `clap_mangen` are
-  build-dependencies only; the shipped binary gains nothing. Install paths:
-  [HUMANS.md](HUMANS.md).
-
-- Optional grouping overrides in `$XDG_CONFIG_HOME/heft/grouping.json`, so a
-  local daemon, worker, or container no longer needs a patch to heft's compiled
-  tables. `applications` / `user_services` pin an identity to a folder, `fold`
-  bills one identity to another, and `container_owners` pins a container to a
-  uid. Heft only reads the file; with none present grouping is unchanged. An
-  override beats every built-in table but cannot move a container or a kernel
-  thread, and a malformed file warns on stderr instead of stopping the monitor.
-
-- Intel GPUs report VRAM/GTT and gfx%/compute% instead of blank columns. The
-  driver gate accepted only `amdgpu`, so i915 and xe users saw nothing; their
-  fdinfo region and engine names now map onto the same counters. NVIDIA still
-  needs NVML and stays out.
-
-- Intel Xe/Arc reports gfx% and compute%. xe publishes engine busy as GPU
-  cycles against `drm-total-cycles-*` rather than nanoseconds, so those columns
-  were blank; they now come from that cycle ratio, divided by
-  `drm-engine-capacity-*` where a class has several engine instances. amdgpu
-  and i915 keep the nanoseconds-over-wall-clock rate unchanged.
-
-- Discrete GPUs get a VRAM bar measured against the card's own
-  `mem_info_vram_total`. It shares the MEMORY header row with the MEM bar
-  rather than adding a third row, so a desktop-GPU user no longer sees VRAM
-  silently dropped from the header.
-
-- GTT now paints in the MEM bar on a discrete card, and on any GPU heft has no
-  `mem_info_vram_total` for. Splitting VRAM into its own tank had dropped GTT
-  from the header entirely, even though GTT is system RAM pinned for the GPU
-  and is already inside `used`. The figure sums `drm-resident-gtt` over the drm
-  clients heft can see, not the sysfs `mem_info_gtt_total` capacity.
+- Prebuilt `x86_64` gnu and static musl binaries on every tag, with `.sha256`.
+- Shell completions (bash, zsh, fish) and a man page, generated from the clap
+  definition.
+- `--version`.
+- Optional grouping overrides in `$XDG_CONFIG_HOME/heft/grouping.json`.
+- Intel i915 and xe GPU memory and engine percentages.
+- Discrete GPUs get a VRAM tank against `mem_info_vram_total`; GTT stays in
+  the MEM bar.
 
 ### Changed
 
-- Container ownership comes from bind-mount sources: a container with no
-  workdir label now bills to the first non-root uid owning one of its
-  `Mounts` bind sources. Named volumes are skipped (root-owned under
-  `/var/lib/docker/volumes`), and a container that mounts only root-owned
-  paths still sits on Host → Containers, so any tool laying out per-user bind
-  mounts is attributed rather than only one vendor's.
+- A container with no workdir label bills to the first non-root uid owning
+  one of its bind mounts.
 
 ### Fixed
 
-- A crash helper unpacked under a temp root no longer invents an Applications
-  row from the mount directory (`/tmp/mount` rendered as a row literally
-  titled `mount`). AppImages mount at a per-run path, so that name was never
-  an app identity; the helper now bills to the ancestor that launched it.
+- A crash helper under a temp mount no longer becomes a row titled `mount`.
 
 ## 0.1.0 - 2026-09-06
 
@@ -828,20 +316,14 @@ First release.
 
 ### Added
 
-- Fullscreen TUI, plus `--once` and `--json` for one sample, over the tree
+- Fullscreen TUI, plus `--once` and `--json`, over the tree
   Host → User (Applications | User Services | Containers) → System.
 - Per-row `%core` / `%machine`, PSS, RSS, disk read/write rates, and amdgpu
-  VRAM / GTT / gfx% / compute% from fdinfo.
-- Read-only Docker and Podman attribution: `GET` only, containers billed to
-  their workload rather than to `dockerd` or `containerd`.
-- `--interval` catch-all sampling (default 1s, floor 0.05s) and TUI-only
-  `--pss-interval` (default 5s). Between PSS reads heft reuses the last
-  per-PID value; `--once` / `--json` always read PSS on the published sample.
-- Sort and filter across every level of the tree, saved to
-  `$XDG_CONFIG_HOME/heft/view.json` with `s`. Default is PSS descending, and a
-  metric heft cannot read sorts last rather than as a zero.
-- User Services logical groups (GNOME Settings Daemon plugins, GVFS, Flatpak
-  session helper/portal, xdg-desktop-portal family, evolution-data-server)
-  merge by unit/package/D-Bus family, not by comm prefix.
-- `$XDG_CONFIG_HOME/heft` is the only directory heft creates, and only when
-  you save a view. No state or cache tree.
+  VRAM / GTT / gfx% / compute%.
+- Read-only Docker and Podman attribution: containers billed to their
+  workload, not `dockerd` or `containerd`.
+- `--interval` (default 1 s, floor 0.05 s) and TUI-only `--pss-interval`
+  (default 5 s).
+- Sort and filter at every tree level, saved to `view.json` with `s`.
+- User Services merge by unit, package or D-Bus family.
+- `$XDG_CONFIG_HOME/heft` is the only directory heft creates.

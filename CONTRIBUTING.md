@@ -23,6 +23,18 @@ Pre-commit runs `cargo fmt --check` and `cargo clippy --locked --all-targets -- 
 when Rust or Cargo.toml is staged. Pre-push runs `gate`, which is every command below plus
 `cargo build --locked` and actionlint.
 
+A local build writes completions and the man page under a hashed `OUT_DIR`.
+Take the newest `heft.1`: an older build leaves stale directories in `target/`.
+
+```sh
+man=$(find target/release/build -name heft.1 -printf '%T@ %p\n' | sort -rn | head -1 | cut -d' ' -f2-)
+assets=$(dirname "$man")
+install -Dm644 "$assets/heft.bash" ~/.local/share/bash-completion/completions/heft
+install -Dm644 "$assets/_heft"     ~/.local/share/zsh/site-functions/_heft
+install -Dm644 "$assets/heft.fish" ~/.config/fish/completions/heft.fish
+install -Dm644 "$assets/heft.1"    ~/.local/share/man/man1/heft.1
+```
+
 ## Gates
 
 Run before a commit that touches code:
@@ -77,15 +89,13 @@ No snapshot libraries. A new test must hit a branch nothing else hits.
 ## Scope
 
 Heft stays observe-only toward the OS. Do not add kill, nice, ptrace, `/proc`
-writes, or mutating Docker/Podman calls. The GPU columns read DRM fdinfo from
-`amdgpu`, `i915` and `xe` only: another driver's region and engine keys are
-refused rather than guessed at, so NVIDIA and the ARM SoC drivers render
-blank.
+writes, or mutating Docker/Podman calls. Do not read another GPU driver's
+fdinfo keys by guessing their names; the supported set is in
+[HUMANS.md](HUMANS.md#what-the-tree-means).
 
 Per-process network I/O is not a missing feature, it is unavailable: measured,
 `/proc/<pid>/net/dev` is per network namespace and byte-identical across
 unrelated pids, socket `fdinfo` carries no byte counter, `/proc/net/tcp`
 queues are depths rather than totals, `rchar`/`wchar` miss `send`/`recv`, and
 cgroup v2 has no network controller. Every remaining route needs CAP_NET_RAW,
-CAP_BPF or ptrace. Containers get NETNS RX/TX because a container owns a
-namespace; nothing else does.
+CAP_BPF or ptrace.

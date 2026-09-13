@@ -9,11 +9,10 @@ curl -fsSLO https://github.com/Rethunk-Tech/heft/releases/latest/download/heft-x
 install -Dm755 heft-x86_64-unknown-linux-musl ~/.local/bin/heft
 ```
 
-Every release carries four binaries — `x86_64` and `aarch64`, each in a `musl`
-and a `gnu` build — with a `.sha256` beside each
+Every release carries four binaries (`x86_64` and `aarch64`, each a `musl`
+and a `gnu` build) with a `.sha256` beside each
 (`sha256sum -c heft-<target>.sha256`). Completions (bash, zsh, fish) and a
-man page are `heft-completions-man.tar.gz` on that same release, generated from
-the same clap definition the binary parses:
+man page are `heft-completions-man.tar.gz` on the same release:
 
 ```sh
 curl -fsSLO https://github.com/Rethunk-Tech/heft/releases/latest/download/heft-completions-man.tar.gz
@@ -27,9 +26,8 @@ install -Dm644 /tmp/heft-assets/heft.fish ~/.config/fish/completions/heft.fish
 install -Dm644 /tmp/heft-assets/heft.1    ~/.local/share/man/man1/heft.1
 ```
 
-The checksum proves the download arrived intact. To also prove it is the
-binary this repository built, every release binary carries a signed provenance
-statement:
+To prove a release binary is the one this repository built, verify its signed
+provenance statement:
 
 ```sh
 gh attestation verify heft-x86_64-unknown-linux-musl --repo Rethunk-Tech/heft
@@ -44,9 +42,8 @@ paru -S heft-git   # built from main
 ```
 
 All three install the completions and the man page, and all three `provide`
-and `conflict` with `heft`, so only one is ever on a machine. `heft-bin` is
-the one to pick unless you want the compile: it is the same static binary this
-page starts with, so its package has no dependencies at all.
+and `conflict` with `heft`. `heft-bin` has no dependencies; pick it unless you
+want the compile.
 
 Or build it:
 
@@ -56,28 +53,13 @@ cargo build --release
 install -Dm755 target/release/heft ~/.local/bin/heft
 ```
 
-There is no crates.io package, deliberately: `cargo install heft` would put a
-Rust toolchain and a two-minute compile between you and a monitor you want
-running now, and the musl binary above is static, so it needs neither. If you
-would rather build than download, `cargo install --git
-https://github.com/Rethunk-Tech/heft` does the same as the clone above.
+There is no crates.io package, since the static binary needs no toolchain;
+`cargo install --git https://github.com/Rethunk-Tech/heft` does the same as
+the clone above. Installing completions from a local build:
+[CONTRIBUTING.md](CONTRIBUTING.md#setup).
 
-A local `cargo build` writes the same four files under a hashed `OUT_DIR`.
-Take the newest `heft.1`, not the first directory named `assets`: an earlier
-crate build leaves its hashed dir in `target/`, and `head -1` can install
-stale completions that predate `src/cli.rs`.
-
-```sh
-man=$(find target/release/build -name heft.1 -printf '%T@ %p\n' | sort -rn | head -1 | cut -d' ' -f2-)
-assets=$(dirname "$man")
-install -Dm644 "$assets/heft.bash" ~/.local/share/bash-completion/completions/heft
-install -Dm644 "$assets/_heft"     ~/.local/share/zsh/site-functions/_heft
-install -Dm644 "$assets/heft.fish" ~/.config/fish/completions/heft.fish
-install -Dm644 "$assets/heft.1"    ~/.local/share/man/man1/heft.1
-```
-
-Linux only. The binary reads `/proc`, `/sys/class/drm`, and (when reachable)
-the Docker or Podman API over a unix socket. It never uses `sudo`.
+Linux only. heft reads `/proc`, `/sys/class/drm`, and (when reachable) the
+Docker or Podman API over a unix socket. It never uses `sudo`.
 
 ## Run
 
@@ -106,171 +88,73 @@ heft --check-rules        # run the examples in every rules.d file
 heft --fixture > heft-fixture.json  # what grouping reads, for a bug report
 ```
 
-The TUI needs a terminal. `heft > file`, or heft in a script, says so and
-exits non-zero rather than falling back to `--once` behind your back.
+The TUI needs a terminal: with stdout redirected it exits non-zero rather than
+falling back to `--once`.
 
-`q`, `Esc` and `Ctrl-C` all quit. Every other `Ctrl-` or `Alt-` combination is
-ignored rather than running the unmodified key's binding. If heft is killed —
-`SIGTERM`, a closed terminal emulator, a logout, or a panic — it puts the
-terminal back before it goes, and exits `128 +` the signal, so you are never
-left at a shell with no echo.
+`q`, `Esc` and `Ctrl-C` quit; every other `Ctrl-` or `Alt-` combination is
+ignored. On `SIGTERM`, a closed terminal emulator, a logout or a panic, heft
+restores the terminal and exits `128 +` the signal.
 
-A value below the 0.05s floor is a usage error rather than being quietly
-raised to it: heft would have run at 0.05 either way, and you would have been
-computing rates against a cadence it was never using. Same rule as a mistyped
-`--sort`.
+`--interval` (default 1s) is the catch-all: `/proc` walk, RSS, io, GPU,
+grouping, and CPU/disk/GPU rates. The TUI sleeps `--interval` minus sample
+time; a PSS pass may stretch that tick. `--pss-interval` (default 5s, at least
+`--interval`) sets how often the TUI and `--follow` read `smaps_rollup`;
+between reads heft reuses each PID's last PSS, and a new PID shows a blank PSS
+until the next read. A value below the 0.05s floor is a usage error.
 
-`--interval` is the catch-all (default 1s, floor 0.05s): `/proc` walk, RSS,
-io, GPU, grouping, and CPU/disk/GPU rates. The TUI sleeps `--interval` minus
-sample time; a PSS pass may stretch that tick.
+A one-shot `--once` or `--json` takes two `/proc` walks `--interval` apart so
+rates exist, and always reads PSS.
 
-The walk is split across as many threads as the machine has cores, since
-almost all of its time is spent waiting on the kernel to produce one small
-`/proc` file at a time. On a 777-process host that takes an ordinary tick from
-about 120ms to about 20ms, which is what makes the 0.05s floor usable. A PSS
-tick gains less — roughly 850ms to 340ms — because `smaps_rollup` makes the
-kernel walk each process's page tables, so it still stretches its interval.
-This is also why heft shows itself holding more than one thread.
+`--follow` keeps sampling and needs `--once` or `--json`. `--json --follow`
+writes one compact document per line (NDJSON); `--once --follow` reprints the
+table with its header each interval, separated by a blank line. The first
+sample always reads PSS. Closing the reader ends it quietly, so
+`heft --json --follow | head -5` exits 0. Every JSON document carries
+`host.sampled_at`, the unix second the sample was taken.
 
-`--pss-interval` (default 5s, at least `--interval`) applies to the TUI and `--follow`; between
-those reads heft reuses last per-PID PSS (vanished PIDs drop). New PIDs show a
-blank PSS until the next rollup.
+`--sort` takes a column label other than `spark` ([Columns](#columns)); an
+unknown label is a usage error. `--desc` and `--asc` set the direction the `d`
+key toggles.
 
-A one-shot `--json` / `--once` takes two `/proc` walks separated by
-`--interval` so rates exist, and always reads PSS on the published sample
-(`--pss-interval` is ignored). Adding `--follow` makes it a continuous mode
-instead, and there `--pss-interval` applies.
+`--filter` is the `/` key. The pattern is a regex, case-insensitive unless
+`(?-i)` turns that off; Unicode classes (`\p{Greek}`) are not supported. It
+matches a row's name and the argv of every process under it, expanded or not,
+one process per line, so `^` and `$` anchor to one process's argv. Matching
+rows are kept with their parents, and a parent keeps its full total. `--once`
+rows stop at identities and their containers while the TUI also has instance
+and process rows, so `/` can match rows `--filter` never sees. A pattern that
+does not compile is a usage error on the command line, a warning from
+`view.json`, and a `?` in the TUI footer while the last compiling pattern stays
+live.
 
-`--sort` takes the labels `Shift-←` `Shift-→` cycle and `view.json` saves (listed
-under [Columns](#columns)); a name that is not one of them is a
-usage error, so a typo is told to you rather than quietly sorting by PSS the
-way a stale saved view does. `--filter` is the `/` key: it keeps matching rows
-**and their parents**, so the tree stays a tree, and a parent still shows the
-total it always did rather than the total of what survived.
+`--top N` keeps the N heaviest rows under each parent at every depth, applied
+after `--filter`. Cutting a row cuts its subtree. Host, User and folder rows
+are never trimmed, and a surviving parent keeps its full total.
 
-The two do not search the same rows, because the two surfaces do not have the
-same rows. `--once` prints down to an identity and its containers; the TUI also
-has an instance row under an identity, and the individual processes under that
-once you expand them. So `/firefox` in the TUI can match a row that
-`--filter firefox` never sees, and the flag is the narrower of the two.
+`--user` takes a login name or a uid, repeatable. Other User nodes drop; System
+and Host-level Containers stay. A bare number is accepted as a uid even with no
+`/etc/passwd` entry; an unknown name is a usage error. Unlike `--filter`, the
+Host row totals only what survived. It works with `--json` and is never saved.
 
-What it searches is the row's name **and the argv of every process under it**.
-A row title is an exe basename, so four `python3` workers look identical until
-you can ask which one holds `--port 8080`; `--filter 'port 8080'` keeps that
-one and its parents. The argv is matched whether or not the row is expanded, so
-`/` in the TUI finds a collapsed identity by an argument of a process you
-cannot see yet. It costs nothing on a tick with no filter, since the argv is
-only assembled for a tick that searches it.
+Flags beat a saved `view.json`. `--once` starts from the saved view; `--json`
+never reads it. `--filter`, `--top`, `--hide` and `--order` are refused with
+`--json` (slice the tree with `jq`), and `--trend` with `--once` and `--json`.
 
-The pattern is a regex, so `--filter '^(code|claude)$'` picks exactly two rows
-where a substring would also drag in every `code-helper` beside them — though
-`^` and `$` anchor to one process's argv rather than to the row name, since
-each process's argv is its own line in what the pattern searches. It is
-case-insensitive unless you say otherwise — a bare `firefox` matches `Firefox`
-the way it always did, and `(?-i)` turns that off. Unicode character classes
-(`\p{Greek}`) are the one thing the engine leaves out. A pattern that does not
-compile is a usage error on the command line, a warning-and-ignore from a saved
-`view.json`, and in the TUI just a `?` in the footer: `/` recompiles as you
-type and keeps filtering with the last pattern that worked, rather than
-flashing the whole tree back between two keystrokes.
+`--glyphs auto` (the default) uses block characters only when `LC_ALL`,
+`LC_CTYPE` or `LANG` names a UTF-8 charmap, and one-column ASCII substitutes
+otherwise. `unicode` and `ascii` force either. `legacy` draws everything in
+Unicode except the TREND ramp, which becomes `_.,:-=+#`: use it when a font
+has `█▓▒░` and `▼►` but TREND shows boxes for `▁▂▃▅▆▇`. `auto` never picks it.
 
-`--user` takes a login name or a uid and can be repeated; other User nodes
-drop, while System and Host-level Containers stay, since those are the
-machine's own cost and belong to nobody. A bare number is always accepted as a
-uid even with no `/etc/passwd` entry, which is the ordinary case inside a
-container; a name nothing answers to is a usage error.
+`NO_COLOR` set to any non-empty value, `0` and `false` included, draws the TUI
+without hue. Bar segments still differ by fill, and `?` shows a swatch of
+each. `--once` and `--json` never emit colour.
 
-Unlike `--filter` it works with `--json`, because the JSON tree does have User
-nodes to prune, and unlike `--filter` the Host row totals what survived rather
-than what it was built with — asking for one user is asking what the top row
-should count.
-
-It is never written to `view.json`, not even by `s`: a saved user cut would
-hide most of the machine on every later run for a reason the file, not the
-command, was keeping.
-
-`--glyphs` chooses the characters the bars, rules and expand markers use.
-`auto`, the default, reads `LC_ALL`, `LC_CTYPE` then `LANG` and uses block
-characters only when one of them names a UTF-8 charmap — a bare console, the C
-locale, or a container with no locale set at all gets one-column ASCII
-substitutes instead of tofu. `unicode` and `ascii` force it either way, for a
-terminal whose environment undersells or oversells what its font has.
-
-`legacy` is for the font in between, and there are many of them: it draws the
-bars, the rules and the tree markers in Unicode, and only TREND in ASCII. A
-font can carry `█▓▒░` and the triangles `▼►` — everything
-the header and the tree are made of — and still not carry `▁▂▃▅▆▇`, which is
-six of the sparkline's eight steps. On such a terminal everything renders
-except one column, and `ascii` would be a heavy answer to that: it would throw
-away a header that was drawing correctly. Nothing heft can read says what a
-font covers, so `auto` never picks this — you ask for it when the trend column
-comes up as boxes and the rest of the screen is fine.
-
-`NO_COLOR` is honoured: set it to anything that is not the empty string and the
-TUI draws without hue. Presence decides, not the value, so `NO_COLOR=0` and
-`NO_COLOR=false` disable colour too — that is the no-color.org rule, and a
-shell that exports one of those meant it. Nothing is lost by it: every bar
-segment's fill differs from its neighbours', and `?` shows a swatch of each,
-so where one segment ends and the next begins is still on the screen. `--once` and `--json` never emitted colour to begin with.
-
-`--follow` keeps sampling instead of exiting after one. `--json --follow`
-emits one compact document per line — NDJSON, so a reader takes a line at a
-time without a streaming parser — and `--once --follow` reprints the table each
-interval, each sample carrying its own header and separated by a blank line, so
-any line of the stream still says which machine state it belongs to. It needs
-`--once` or `--json`; the TUI is already a follow. Closing the reader ends it
-quietly, so `heft --json --follow | head -5` exits 0.
-
-Every JSON document carries `host.sampled_at`, the unix second the sample was
-taken. A stream has no other clock in it, so two lines otherwise say nothing
-about how far apart they were read — an interval the sampler stretched to
-finish a PSS pass is invisible without it. It is on the one-shot `--json` too,
-where it dates the snapshot.
-
-Unlike the one-shot forms, `--follow` honours `--pss-interval`: reading
-`smaps_rollup` for every process once a second forever is the cost that flag
-exists to avoid. The first published sample reads PSS regardless, so the stream
-never opens with a blank memory column.
-
-`--top N` keeps the N heaviest rows under each parent, at every depth. It
-never trims Host, a User, or a folder header: those are the shape of the tree
-rather than entries competing to be heaviest, and neither Users nor the
-host-level folders are ordered by the sort at all, so trimming them would drop
-whichever came last — losing the whole System section on a machine that happens
-to have two users. Cutting a row cuts its subtree with it.
-
-Like `--filter`, a surviving parent still shows the total it was built with,
-so `Host` keeps counting the whole machine, and `--top` applies after
-`--filter`, so `--filter chrome --top 3` is the three heaviest rows that
-match.
-
-Also like `--filter`, it is refused with `--json`: the JSON shape is a
-contract and a row limit is a human's presentation preference — slice it with
-`jq` instead.
-
-`--desc` and `--asc` set the direction the `d` key toggles. Without one,
-`--sort age` meant whichever direction the saved view happened to hold, so the
-same command printed differently on two machines.
-
-Both flags beat a saved `view.json`. `--once` otherwise starts from that saved
-view; `--json` never does — its shape is a contract, so only an explicit flag
-reshapes it, and `--filter` is refused there because the JSON tree has no
-folder rows for "keep the parents" to mean anything (filter it with `jq`).
-
-`--proc-root` points heft at a `/proc` and `/sys` somewhere other than `/`:
-another mount namespace's procfs, or a tree captured off a machine you cannot
-run heft on. A directory with no `proc` in it is a usage error rather than a
-tree of blanks, which would read as a permissions problem.
-
-Three things stay the host's. The container socket is live IPC, not a file in
-that tree, so container rows describe the runtime heft can reach; user names
-come from the host's `/etc/passwd`, so a uid with no entry there shows as a
-number; and `/etc/heft/rules.d` is the host's configuration, read where it
-always is. None of them is guesswork heft could do better.
-
-The header still reads the machine, because a procfs bind-mounted into a PID
-namespace serves the host's own `meminfo` and `stat` — the kernel does not
-virtualise those, so nothing heft could read there would be namespace-local.
+`--proc-root` reads `/proc` and `/sys` under another directory, such as another
+mount namespace's procfs or a tree captured off another machine; a directory
+with no `proc` in it is a usage error. The container socket, `/etc/passwd` and
+`/etc/heft/rules.d` stay the host's, and the header still describes the host,
+because the kernel does not virtualise `meminfo` and `stat` per namespace.
 
 ## TUI keys
 
@@ -291,415 +175,218 @@ virtualise those, so nothing heft could read there would be namespace-local.
 | `s` | save sort, filter, hidden columns, and column order to `$XDG_CONFIG_HOME/heft/view.json` |
 | `?` / `F1` | toggle the key help overlay |
 
-Sorting applies to every level of the tree. The TUI reverses the header of
-the sort column, so the sort is on the table as well as in the
-footer (`S-←→ sort (pss)`). Sort, filter, hidden columns, and column order last
-only for this session until you press `s`; starting heft again loads that file
-if it exists.
+Sorting applies to every level of the tree, and the sort column's header is
+drawn reversed. Sort, filter, hidden columns and column order last for the
+session until `s` saves them; heft loads that file at start.
 
-Default expand: Host, your user, Applications, and that user's Containers.
-Other users, User Services, Host-level Containers, and System start collapsed.
-A folder with nothing in it is not expandable — it does not draw as open over
-an empty gap — and becomes one when a row appears.
+Default expand: Host, your user, Applications, and that user's Containers. An
+empty folder is not expandable until a row appears. The cursor stays on its
+row through new samples, resorts, filtering, `--top` and expand/collapse; if
+the row is gone, the nearest parent still on screen is selected.
 
-The highlight stays on the same row when the list reorders or shrinks — a
-new sample, `Shift-←` `Shift-→`/`d`, `/`, `--top`, or expand/collapse. If that row has gone
-(process exited, filter dropped it), the nearest parent still on screen is
-selected.
+`i` opens a detail pane listing every column for the row, hidden and
+off-screen ones included (`-` is a blank). On a single process it adds pid,
+parent pid, state, owning uid, `exe` path, cgroup line and command line (cut
+at 240 characters), read from `/proc` on the keypress; a field heft cannot
+read is blank.
 
-`i` opens a detail pane for the row under the cursor. It lists **every**
-column for that row — the ones `H` hid and the ones the terminal is too narrow
-to reach included — so you can read the whole row at once rather than scrolling
-it past with `←` and `→`. A `-` there is the blank the table would show: no
-figure exists, which is not a zero. Host never carries a stall or NETNS
-figure, so on Host that whole column is `-`.
-
-When the cursor is on a single process it also prints what that process *is*,
-which no column says: pid, parent pid, state, owning uid, the `exe` path, the
-cgroup line, and the full command line. That last one is usually the answer —
-four helpers named `cursor` differ only in their `--type=`, and the tree shows
-you four rows called `cursor`. Those seven facts are read from `/proc` when you
-press the key rather than carried on every process of every sample, so the pane
-costs nothing until you open it, and a field heft may not read (another user's
-`exe`) is simply blank.
-
-The metrics lay out across the pane rather than down it, so the pane stays a
-few lines tall and the `/proc` facts below them are on screen rather than off
-the bottom. A command line is cut at 240 characters: a Chromium helper's argv
-runs to thousands, and one `--enable-features=` list would push every other
-fact off the pane. The front is the part that says which helper this is.
-
-`p` freezes the table so you can read across a row without the numbers moving
-under you. Sampling carries on underneath, so unpausing shows the machine as it
-is rather than replaying a backlog, and sorting, filtering, expanding and `i`
-all still work on the held tree. The footer reads `PAUSED 8s` while it is
-frozen: a monitor that has stopped updating and does not say so is how a stale
-number gets read as a current one.
+`p` freezes the table while sampling continues underneath, so unpausing shows
+the current machine. Sort, filter, expand and `i` still work on the held tree,
+and the footer reads `PAUSED 8s`.
 
 ## What the tree means
 
-- **Host** is the machine. The header is two unbordered rows: stacked CPU
-  (usr/sys/wait from `/proc/stat`) and a MEMORY row. The bars carry no legend:
-  `?` shows a coloured swatch for every segment. Each segment has its own
-  colour, and a full-height fill (`█`, `▓` or `▒`) that differs from its
-  neighbours', so the boundaries stay readable without colour — piped, recorded, on a monochrome terminal, or to anyone for
-  whom cyan and magenta are the same hue. Where memory is unified, VRAM and
-  GTT are carve-outs of that same pool, not a second tank, so the row is one
-  MEMORY bar whose width is MemTotal. Both header bars are drawn to the same
-  width, so the two `]` line up in one column rather than each row sizing its
-  bar to whatever text happens to sit beside it. With a discrete card the
-  MEMORY row splits in half: MEM against MemTotal, and VRAM against the card's
-  own total, and it is the first of those the CPU bar matches. GTT stays in
-  the MEM bar either way — it is system RAM pinned for the GPU, not card
-  memory. Where the driver publishes its own count (`mem_info_gtt_used` and
-  `mem_info_vram_used`: amdgpu does, i915 and xe do not) those two slices are
-  the kernel's figures. Elsewhere they add up only the drm clients heft can
-  see, the same caveat as the Host row, which sums only visible PIDs and so
-  can sit below the header. How far below is not a rounding error. An
+- **Host** is the machine. The header has a CPU row (usr/sys/wait from
+  `/proc/stat`), a MEMORY row, and a SWAP row when `SwapTotal` is non-zero,
+  all drawn to one width. Bars carry no legend: `?` shows a swatch per
+  segment, and each segment has its own colour and a fill (`█`, `▓`, `▒`)
+  unlike its neighbours'.
+- The MEM bar's `used` is what the kernel cannot hand back. Inside it: `vram`
+  (unified memory only) and `gtt`; `zram`, the RAM compressed swap occupies,
+  which no process's PSS holds; `shm` (tmpfs and shared memory); `kernel`
+  (unreclaimable slab, page tables, kernel stacks); `anon` (`AnonPages`); and
+  `other`. Reclaimable `cache`, `slab` and `buf` follow outside `used`. Where
+  memory is unified the row is one bar of width MemTotal; with a discrete card
+  it splits into MEM and a VRAM tank against the card's total. GTT is pinned
+  system RAM and stays in MEM either way. Swap is its own row, since swapped
+  pages are not in RAM.
+- VRAM and GTT come from the kernel's `mem_info_vram_used` and
+  `mem_info_gtt_used` where the driver has them (amdgpu), else from the drm
+  clients heft can see. The Host row sums only visible PIDs, and an
   unprivileged reader cannot open `/proc/<pid>/fdinfo` for a process it does
-  not own, so every drm client inside a root-owned container is invisible:
-  measured on one desktop with a single such container running, the kernel
-  reported 45.7 GiB of GTT in use while heft's Host row accounted for 18.1 GiB
-  of it. The only way to read those clients is to run a command inside each
-  container (`docker exec`), which is a POST, and heft's container client only
-  ever sends GET requests. The MEM bar's `used` is what the kernel cannot hand back, so page
-  cache is not in it. Inside it: `shm` is tmpfs and shared memory; on a zram
-  host `zram` is the RAM its compressed swap occupies, which no process's PSS
-  holds and is why such a machine's `used` can sit gigabytes above the Host
-  row; `kernel` is unreclaimable slab, page tables and kernel stacks; `anon` is
-  `AnonPages`; and `other` is whatever of `used` none of those name. After
-  `used` come reclaimable `cache`, `slab` and `buf`, so the figure still reads
-  what cannot be handed back. Swap, when the machine has
-  any, gets a third row of its own rather than a segment of MEM: swapped pages
-  are not in RAM. A row rather than a tank beside MEM, because its figures
-  need the same couple of dozen columns however wide the terminal is — sharing
-  the MEMORY row, it took half of that row, and since the CPU bar is drawn to
-  match MEM's, both headline bars halved to make room for it. All three bars
-  are still drawn to one width, so the brackets stack in a single column. A machine with `SwapTotal: 0` gets no swap row and no
-  `SWAP` figures at all, and draws the two-row header it always did.
-
+  not own, so drm clients in a root-owned container are invisible. Measured on
+  one desktop with one such container: the kernel reported 45.7 GiB of GTT,
+  the Host row 18.1 GiB. Reading them would need `docker exec`, a POST heft
+  never sends.
 - **User** is a unix uid, shown by login name. Terminals and the compositor
-  live under that user — not as Host. An idle interactive shell folds into
-  that terminal; a shell that launched an app bills to the app.
-- Folder headings — Applications, User Services, Containers, System — carry
-  the count of identities under them, including zero. That count is the
-  entries, not `N` (processes).
+  live under that user. An idle interactive shell folds into its terminal; a
+  shell that launched an app bills to the app.
+- Folder headings (Applications, User Services, Containers, System) carry the
+  count of identities under them, including zero, not `N` (processes).
 - **Applications** vs **User Services**: a user-instance `*.service` whose name
   does not start with `app-` is a user service (`syncthing.service`,
   `org.gnome.Shell@user.service`). Known compositors and session plumbing sit
-  in User Services even when D-Bus used an `app-` or `dbus:` unit. Everything
-  else under the user is an application. Merge identities:
-  [AGENTS.md](AGENTS.md). Plasma workspace session processes merge as
-  `plasmashell`, and kwin plus its helpers as `kwin`. A Trinity (TDE)
-  session (tdeinit, twin, kicker, kdesktop, artsd, its tdeio slaves and tray
-  helpers) merges as `tdeinit`, while konsole, kate and the other apps tdeinit
-  launches keep their own rows. A sway session still
-  lands in the right buckets but merges more coarsely under User Services.
+  in User Services even under an `app-` or `dbus:` unit. Everything else under
+  the user is an application. Merge identities: [AGENTS.md](AGENTS.md). Plasma
+  session processes merge as `plasmashell`, kwin and its helpers as `kwin`. A
+  Trinity (TDE) session (tdeinit, twin, kicker, kdesktop, artsd, its tdeio
+  slaves and tray helpers) merges as `tdeinit`, while apps tdeinit launches
+  keep their own rows. A sway session lands in the right buckets but merges
+  more coarsely under User Services.
 - **Containers** under a user are workloads heft can attribute: the owner of
-  the container's workdir label, else the owner of the first bind mount it
-  has under a user's paths. Unattributed running containers sit on
-  Host → Containers.
+  the container's workdir label, else the owner of its first bind mount under a
+  user's paths. Unattributed running containers sit on Host → Containers.
 - **System** is kernel threads and leftover `system.slice` (including
   `dockerd` / `containerd`). Container scopes never go here.
-- A **virtual machine or nspawn container** — anything systemd put in
-  `machine.slice` — is a Containers row named after the machine. libvirt calls
-  a domain's scope `machine-qemu\x2d3\x2dfedora.scope`, and the counter in
-  there is libvirt's own, so the row reads `fedora`. These sit on Host →
-  Containers: there is no Docker or Podman API to ask who owns one, and the
-  uid running it is a service account rather than a person. Rootful Podman
-  shares that slice but is a `libpod-` scope, so it is still a container row
-  with its real name and owner.
+- A **virtual machine or nspawn container** (anything in `machine.slice`) is a
+  Host → Containers row named after the machine: libvirt's
+  `machine-qemu\x2d3\x2dfedora.scope` reads `fedora`. Rootful Podman shares
+  that slice but is a `libpod-` scope, so it keeps its real name and owner.
 
-The GPU columns read DRM fdinfo, and only from `amdgpu`, `i915` and `xe` — the
-three drivers whose region and engine key names heft knows. Every other driver
-is refused rather than guessed at, so `nvidia-drm`, `nouveau`, and the ARM SoC
-drivers (`panfrost`, `v3d`, `msm`) leave VRAM, GTT, GFX and CMP blank on
-a machine that has a working GPU. That blank is the ordinary blank contract:
-no figure exists, because reading a key by the name another driver happens to
-use is how you print a confident wrong number.
+The GPU columns (VRAM, GTT, GFX, CMP) read DRM fdinfo from `amdgpu`, `i915`
+and `xe` only. Other drivers (`nvidia-drm`, `nouveau`, `panfrost`, `v3d`,
+`msm`) are refused rather than guessed at, so those columns stay blank there.
 
-Other uids appear as extra User nodes when `/proc` lists them. Metrics heft
-cannot read (`smaps_rollup`, `io`, fdinfo, `exe`) render as a blank cell. A
-blank is not a zero: those rows sort last whichever way the sort runs.
+Other uids appear as extra User nodes when `/proc` lists them. A metric heft
+cannot read (`smaps_rollup`, `io`, fdinfo, `exe`) or that does not exist for a
+row renders as a blank cell. **A blank is not a zero**: no figure exists, and
+blank rows sort last in either direction.
 
 ## TREND
 
-`TREND` (`spark`) draws the recent history of whatever column you are
-sorting by, one sample per cell, as rising blocks. It is nine cells at its
-narrowest. Spare width goes to NAME first, until the longest name in the tree
-fits, then to TREND up to 30 cells, and anything past that back to NAME. Every other column is the current interval only,
-so a process that spiked to 400% and went quiet looked exactly like one that
-was idle throughout — by the time you read the row, the spike had already been
-overwritten.
+`TREND` (`spark`) draws the recent history of the sort column, one sample per
+cell, as a line joined sample to sample. It is at least nine cells: spare width
+goes to NAME until the longest name fits, then to TREND up to 30 cells, then
+back to NAME. Changing the sort column clears it.
 
-Every row in a frame is drawn against one scale, so the column reads down the
-table as well as across a row. Where the metric has a full scale of its own —
-`%CORE`, `%MACH`, `GFX`, `CMP` and the three stall columns are all
-percentages — that is 100, and a row above it pins to the top rather than
-rescaling every row beside it. For bytes, counts and rates there is no such
-number, so the scale is the heaviest row on screen that is an *entry*: Host,
-the User rows and the folder headers are sums, and scaling against a sum would
-draw everything real flat along the bottom. It is the same "is this an entry"
-test `--top` uses.
+Every row in a frame shares one scale. For percentages (`%CORE`, `%MACH`,
+`GFX`, `CMP` and the stall columns) it is 100, and a row above it pins to the
+top. Otherwise it is the heaviest entry row on screen. Host, User and folder
+rows are sums: they draw no trend and are left out of the scale, the same
+entry test `--top` uses. A row flat at zero draws a flat line; a row that has
+just appeared is blank. If TREND alone shows boxes, use `--glyphs legacy`.
 
-Those rows get no trend at all — Host, the Users and the folder headers are
-blank there, which is heft's ordinary blank: no figure exists, because the
-scale is built out of the entries and a sum is not one of them. Drawn against
-it, Host sat pinned to the ceiling saying only that it was the total, which
-the header already draws to scale and in more detail.
+`--trend` chooses characters or an image. `auto` (the default) asks the
+terminal before the first frame, with a kitty graphics query and a
+device-attributes request, and uses the image protocol it reports: kitty when
+local, sixel over ssh. A terminal that answers neither delays the first frame
+by 400ms and gets characters. `--trend kitty`, `sixel` and `chars` force one
+and ask nothing. A terminal that does not report its cell size in pixels gets
+characters. TREND is TUI only: `--order spark` in `--once` leaves an empty
+column, and the JSON never carries it.
 
-A row that has been flat at zero draws a flat line along the bottom, because
-that is a history and it is flat. A row that has only just appeared is blank —
-heft's usual blank, no figure yet.
+The kitty protocol (kitty, ghostty) sends pixels through shared memory
+locally, costing tens of bytes a sample. Over ssh they go inline as base64:
+measured on a 24-row terminal with 10x20-pixel cells, 19 rows showing and TREND
+nine cells wide, about 146 KB per sample, a bit over a megabit a second, and
+proportionally more for a wider TREND. It is sent once per sample, not per
+frame. On a slow link without sixel, use `--trend chars`.
 
-Scaling against each row's own peak is what this did first, and it was wrong
-in a way that made the column useless: a row sitting flat at 2% had every
-sample equal to its own maximum, so it drew nine full-height marks. "Flat and
-idle" and "flat and busy" came out as opposites, most of the column was a
-solid block, and no two rows could be compared at all.
-
-Changing the sort column clears it. The buffer would otherwise hold two
-different metrics in two different units and draw them as one picture.
-
-If TREND is the one column that comes up as boxes while the header bars draw
-correctly, the font is missing `▁▂▃▅▆▇`: `--glyphs legacy` swaps the ramp for
-`_.,:-=+#` and leaves everything else alone.
-
-`--trend` decides whether TREND is drawn as characters or as a real image.
-`auto`, the default, asks the terminal and uses whichever image protocol it
-says it has. You get pixel resolution instead of eight quantised steps, and
-immunity to the font gap `--glyphs legacy` exists for, without having to know
-what your terminal implements.
-
-It really is asked, not guessed. `TERM` names a terminal and not its
-capabilities, and a multiplexer or an ssh hop can take one away underneath it,
-so heft sends two queries before the first frame: the kitty graphics
-protocol's own (`a=q`), which a terminal that has it answers `OK` and one that
-does not silently discards, and a device-attributes request, whose reply lists
-`4` where sixel is available. The attributes reply is what ends the wait —
-every terminal sends one, and sends it last — so on anything that answers, the
-whole exchange costs about a millisecond. A terminal that answers neither
-query delays the first frame by 400ms and then draws characters; that is the
-only case that waits, and `--trend chars` skips the question entirely.
-
-Where a terminal offers both, heft picks by where it is. Locally the kitty
-protocol wins: its image is tied to the cell grid, so it survives scrolling
-without being repainted, and its pixels go through shared memory. Over ssh
-that same transport has to send every pixel inline, so sixel wins there — see
-the measurement below. `--trend kitty`, `--trend sixel` and `--trend chars`
-force one and ask nothing.
-
-It is a line, not a filled bar: the shape is the whole point of the column, and
-ink underneath the shape carries none of it. Marks are joined to the one before
-them, so nine samples read as one line moving rather than nine unrelated
-dashes.
-
-Where the terminal is on this machine the pixels go through shared memory and
-the escape carries only a name, so the column costs tens of bytes a sample.
-Over ssh they have to go inline, base64, and that is not free: measured on a
-24-row terminal with 10x20-pixel cells, 19 rows showing and TREND nine cells
-wide, about 146 KB
-per sample, or a bit over a megabit a second, and a wider TREND costs
-proportionally more. It is sent once per sample rather than once per frame, so
-holding a key down does not multiply it — but on a slow link, `--trend chars`
-is the flag you want.
-
-`--trend sixel` draws the same picture for the terminals the kitty protocol
-does not reach: xterm (sixel is on by default there since patch #359), foot,
+`--trend sixel` works in xterm (on by default since patch #359), foot,
 wezterm, konsole 22.04 and later, iTerm2, and Windows Terminal 1.22 and later.
-kitty, ghostty and alacritty have no sixel — the first two have their own
-protocol, alacritty's maintainers declined it — and GNOME Terminal has a
-setting for it that does nothing, because VTE strips sixel out of every stable
-release.
-
-It is the cheaper of the two over a network, which is the opposite of what you
-might expect from the older format. A trend is a line on an empty background,
-sixel run-length-encodes the empty part, and measured on an 18-row column the
-whole image came to **559 bytes** a frame, against the kitty protocol's inline
-transport above, which sends every pixel. So over ssh,
-`--trend sixel` is the one to reach for if your terminal has it.
-
-The reason it is not simply the default anywhere is that sixel has no way to
-tie an image to the cell grid: it paints wherever the cursor is, and a cell
-redrawn over it erases the pixels. heft repaints it every frame for that
-reason, which is affordable only because of the size above.
-
-If the terminal does not report its cell size in pixels, an image cannot be
-sized for it and TREND quietly stays characters. Nothing is lost: it is the
-same column either way.
-
-It is TUI only. `--once` and `--json` take two `/proc` walks and have no
-history to draw, so `--order spark` there leaves an empty column rather than a
-misleading one, and the JSON never carries it.
+kitty, ghostty and alacritty have no sixel, and GNOME Terminal's sixel setting
+does nothing because VTE strips sixel from every stable release. Sixel is
+repainted every frame, but run-length encoding keeps it small: measured on an
+18-row column, **559 bytes** a frame. Over ssh it is the cheaper choice.
 
 ## How much heft can see
 
-heft can only bill a process it can walk, so where `/proc` hides pids — a
-`hidepid` mount, a PID namespace, another user's processes on a locked-down
-host — the tree is quietly smaller than the machine. The kernel publishes its
-own thread count in `/proc/loadavg`, and that is a global counter rather than a
-walk, so it still answers where the walk has gone blind.
-
-When heft can account for less than 90% of those threads it says so:
-`seeing 1% of 4557 threads`, in the TUI footer and on a `WARN` line under the
-`--once` host line. Above that the gap is ordinary skew — threads are created
-and reaped while the walk runs — and heft stays quiet. On an unrestricted host
-the two agree exactly.
-
-This is the same blind spot the GTT note above measures: every drm client
-inside a root-owned container is unreadable, so the kernel's GTT figure runs
-well past what the Host row can account for.
+Where `/proc` hides pids (a `hidepid` mount, a PID namespace, another user's
+processes on a locked-down host) the tree is smaller than the machine. heft
+compares its summed threads with the kernel's global count in `/proc/loadavg`;
+below 90% it says so, `seeing 1% of 4557 threads`, in the TUI footer and on a
+`WARN` line under the `--once` host line. The invisible drm clients under
+[What the tree means](#what-the-tree-means) are the same blind spot.
 
 ## SWAP
 
-`SWAP` is `SwapPss` from `/proc/<pid>/smaps_rollup`, the file heft already
-reads for PSS, so it arrives on the same `--pss-interval` cadence and costs no
-extra read. It is `SwapPss` and not `Swap` for the reason PSS is the memory
-column: a swapped-out page shared by four processes is one page of swap, and
-`Swap` bills it to all four, so a summed tree would report it four times.
-
-The column is blank on a machine with no swap configured. That is the blank
-contract, not a zero: with `SwapTotal: 0` there is no swap for a process to be
-paged out to, so no figure exists. On a machine that does swap, `0` means that
-process has nothing paged out.
+`SWAP` is `SwapPss` from `/proc/<pid>/smaps_rollup`, read with PSS on the same
+cadence. `SwapPss` rather than `Swap`, so a swapped page shared by four
+processes is counted once in a summed tree. Blank when `SwapTotal` is 0; `0`
+means that process has nothing paged out.
 
 ## THR / AGE
 
-`THR` is the thread count (`num_threads` from `/proc/<pid>/stat`), and it sums
-up the tree the way `N` does. `N` counts processes, so before this a browser
-with 40 processes holding 1400 threads looked the same as one holding 40.
+`THR` is the thread count (`num_threads` from `/proc/<pid>/stat`). `THR` sums
+like `N`.
 
-`AGE` is how long ago the process started, in the largest unit that fits: `45s`,
-`12m`, `3h`, `9d`. On a row that covers several processes it is the *oldest* of
-them — when the thing on that row first appeared — never a sum. Both come from
-the `/proc/<pid>/stat` heft already reads for CPU, so neither costs a read.
+`AGE` is time since the process started, in the largest unit that fits: `45s`,
+`12m`, `3h`, `9d`. On a row covering several processes it is the oldest of
+them, never a sum.
 
 ## CPU ST / IO ST / MEM ST
 
-Hidden until you ask for them: `u` brings the last one back and `s` keeps it,
-or write a `hide_columns` list in `view.json` that leaves them out. They answer
-a diagnostic question most sessions never ask, and three more columns crowd out
-the ones every session reads.
+Hidden by default: `u` brings the last hidden column back, or leave them out of
+a `hide_columns` list in `view.json`.
 
-The stall columns say whether a row was *waiting* rather than working. `%CORE`
-says a row used the processor and `PSS` says it holds memory, but neither can
-tell an application that is busy from one that is stuck: both look idle in
-`%CORE` while one is halfway through its work and the other has been blocked on
-the disk for a second. The kernel accounts exactly that, per cgroup, in
-`cpu.pressure`, `io.pressure` and `memory.pressure`, and heft reads those the
-way it reads everything else — no root, no tracing.
+Each figure is the percentage of the last interval during which at least one
+task in the row's cgroup was stalled on that resource, from `cpu.pressure`,
+`io.pressure` and `memory.pressure`: the kernel's `some` number, not `full`. A
+stalled row can look idle in `%CORE`.
 
-Each figure is the percentage of the last interval during which **at least one**
-task in that cgroup was stalled on the resource. That is the kernel's `some`
-number, not `full`; `full` means every task was stalled at once, which on the
-single-process cgroups most of a tree is made of prints the same value twice.
+A row carries a figure only when it is exactly one non-root cgroup; measured on
+one desktop, 82% of rows do. Blank:
 
-The columns are blank on any row that is not exactly one cgroup, and that blank
-means what every other blank in heft means: no figure exists, not zero.
+- a row whose processes span several cgroups, since percentages of an interval
+  cannot be summed;
+- folder, User and Host rows (`user-1000.slice` is not the User row, and
+  `system.slice` is not the System row);
+- a row in the root cgroup, whose pressure is the machine's;
+- a process row that shares its cgroup with other processes.
 
-- A row whose processes span several cgroups is blank. A stall is a percentage
-  of an interval, not a quantity, so two cgroups' figures cannot be added — a
-  browser folding a dozen scopes has no single number to show. Measured on one
-  desktop, 82% of rows do resolve to one cgroup and carry a figure.
-- Folder rows — Applications, User Services, Containers — and the User and Host
-  rows are blank for the same reason. `user-1000.slice` is *not* heft's User
-  row: a rootful container lives in `system.slice` and heft still bills it to
-  its owner. `system.slice` is not the System row either, since kernel threads
-  sit in the root cgroup.
-- A row that resolves to the root cgroup is blank, because the root cgroup's
-  pressure is the machine's. Printing it on a kernel-thread row would read as
-  that row's own cost — the same reason a `--network=host` container gets no
-  NETNS figure.
-- A process row is blank unless that process is the only one in its cgroup. A
-  cgroup's stall belongs to the cgroup; showing it beside four sibling pids
-  would invite reading it as four separate costs.
-
-The `psi` figures on the `--once` and `--json` host line are a different
-measurement of the same thing: those are the kernel's own 10-second averages
-for the whole machine, in cpu/io/memory order, which is where a smoothed trend
-reads better than an instant. The columns are per-interval deltas so they sit
-on the same time base as `%CORE` and the disk rates beside them. The TUI header
-leaves them out — that row exists to draw a bar to scale, and a text tail on
-it made the CPU bar shorter than the MEMORY bar beside it. A machine whose
-kernel was built without `CONFIG_PSI`, or booted `psi=0`, gets no host figures
-and no columns at all.
-
-A figure at or over 20% of an interval is drawn in red — reverse video where
-there is no colour, so it survives `NO_COLOR`, a pipe and a monochrome
-terminal — since that is where a cgroup is contending for a resource rather
-than merely using it. Nothing else in the table is marked: a large `%CORE` is a
-machine doing work, which is not trouble.
+A figure at or over 20% is drawn red, or reverse video without colour. The
+`psi` figures on the `--once` and `--json` host line are the kernel's
+machine-wide 10-second averages, in cpu/io/memory order. A kernel built
+without `CONFIG_PSI`, or booted `psi=0`, gets no host figures and no columns.
 
 ## NETNS RX / NETNS TX
 
-Network I/O is counted per network *namespace*, never per process. A container
-gets a figure because it owns a namespace; nothing else in the tree owns one,
-so every other row — process, application, user service, folder, User, Host —
-is blank there. That blank means heft cannot know, not that the process moved
-no bytes. Linux publishes no per-process byte counter that heft could read
-without CAP_NET_RAW, CAP_BPF or ptrace, all of which are outside what heft
-does; htop and btop leave the column out for the same reason.
+Network bytes are counted per network namespace, so only a container row
+carries them. Every other row is blank: Linux has no per-process byte counter
+heft can read without CAP_NET_RAW, CAP_BPF or ptrace. They are the last
+columns; `→` scrolls to them on a narrow terminal.
 
-The columns are last in the table, so `→` scrolls to them on a narrow
-terminal. What they sum:
-
-- The container's own interfaces except `lo`. Loopback traffic never left the
-  namespace, and counting it can multiply the figure severalfold.
-- A `--network=host` container is blank: it shares the machine's namespace, so
-  the only number available is the host's own lifetime traffic. `docker stats`
-  reports `0B / 0B` for the same containers.
-- One row per container; a compose or Supabase project row sums its
-  containers.
-- A restart resets the counters, so heft drops that one interval rather than
-  showing a negative rate. The next sample resumes.
-- Without a reachable Docker or Podman socket heft cannot tell a host-network
-  container from a bridged one, so every container is blank.
+- They sum the container's interfaces except `lo`.
+- A `--network=host` container is blank, since it shares the machine's
+  namespace.
+- A compose or Supabase project row sums its containers.
+- A restart resets the counters, and heft drops that one interval.
+- Without a reachable Docker or Podman socket every container is blank.
 
 ## Docker / Podman
 
 Heft `GET`s `/containers/json` and inspect on the first of these it finds:
 `$DOCKER_HOST` when it is a unix socket, `/var/run/docker.sock`,
 `/run/user/<uid>/podman/podman.sock` (rootless Podman), then
-`/run/podman/podman.sock` (rootful Podman, the default on RHEL and Fedora
-servers). Rootless comes first because that socket belongs to the user heft is
-running as, and a rootful one may not be readable. It never POSTs, never kills,
-never creates. Without a reachable socket, a
-container title is `docker-<12hex>`. Stopped containers (no PID) do not appear.
+`/run/podman/podman.sock` (rootful Podman). It never POSTs, kills or creates.
+Without a reachable socket a container title is `docker-<12hex>`. Stopped
+containers (no PID) do not appear.
 
 ## XDG
 
 | tree | path | what |
 | --- | --- | --- |
-| config | `$XDG_CONFIG_HOME/heft/view.json` (default `~/.config/heft/view.json`) | saved sort, direction, filter, hidden columns, and column order (after `s`). `--user` and `--top` are deliberately never saved |
+| config | `$XDG_CONFIG_HOME/heft/view.json` (default `~/.config/heft/view.json`) | saved sort, direction, filter, hidden columns, and column order (after `s`). `--user` and `--top` are never saved |
 | config | `$XDG_CONFIG_HOME/heft/rules.d/*.json` | your grouping rules, if you write any ([Rules](#rules)) |
 | config | `/etc/heft/rules.d/*.json` | the administrator's grouping rules, read after yours |
 
-v1 creates no `$XDG_STATE_HOME/heft` or `$XDG_CACHE_HOME/heft`. The only file
-heft writes is that config directory; the only other state it touches is the
-terminal it is drawing on — the alternate screen, and the termios settings it
-restores on the way out. Never `/proc`, sysfs, or cgroup files.
+heft creates no `$XDG_STATE_HOME/heft` or `$XDG_CACHE_HOME/heft`. The only file
+it writes is `view.json`; the only other state it touches is its terminal (the
+alternate screen, and termios restored on exit). Never `/proc`, sysfs, or
+cgroup files.
 
 ### Columns
 
-A column is drawn whole or not at all. Where the terminal cannot hold one at
-its full width it is left off rather than cut short, because a clipped `20.1G`
-reads as `2` and a wrong figure is the one thing heft will not print — the same
-rule as the blank cells. `←` and `→` reach the columns that were left off,
-and NAME stays put while they scroll.
+A column is drawn whole or not at all: one that does not fit is left off
+rather than clipped. `←` and `→` reach the rest while NAME stays put.
 
-The table has twenty-one columns and most terminals cannot hold them. `H` hides
-the column you are sorting by (and moves the sort to the next visible one in
-the order on screen); `u` puts the last hidden column back. `--hide` does the
-same for `--once`, repeatable, and adds to whatever `view.json` hides.
-
-`--order` sets left-to-right order, also repeatable, and also overwrites the
-saved list. Columns you name come first, in that order; anything you leave out
-keeps its default place after them. `name` stays first unless you include it,
-so `--order pss --order rss` is "those two after the tree names" rather than a
-table with no labels on the left. A label listed twice on the command line is a
-usage error; in the file the extra is warned and ignored.
-
-`s` writes both lists.
+There are twenty-one columns. `H` hides the sort column and moves the sort to
+the next visible one; `u` restores the last hidden. `name` cannot be hidden but
+can be moved. `--hide` (repeatable) adds to what `view.json` hides. `--order`
+(repeatable) overwrites the saved order: named columns come first in that
+order, the rest keep their default order after them, and `name` stays first
+unless listed. A label listed twice on the command line is a usage error; in
+the file the extra is warned and ignored. `s` writes both lists.
 
 ```jsonc
 {
@@ -711,36 +398,27 @@ usage error; in the file the extra is warned and ignored.
 }
 ```
 
-`s` writes this file with a header above it explaining every key and listing
-the column labels, so you do not have to come back here to edit it by hand.
-The label list is generated from the binary, so it cannot drift from the
-columns heft actually has. A save rewrites the whole file, header included, so
-comments you add elsewhere in it do not survive one. A rules.d file, which
-heft only ever reads, keeps yours forever.
+`s` writes this file with a header explaining every key and listing the
+column labels. A save rewrites the whole file, so comments you add do not
+survive one; rules.d files, which heft never writes, keep theirs.
 
 Labels are `name`, `spark`, `nproc`, `threads`, `age`, `core`,
 `machine`, `pss`, `rss`, `swap`, `vram`, `gtt`, `gfx`, `compute`, `diskr`,
 `diskw`, `cpustall`, `iostall`, `memstall`, `netns_rx`, `netns_tx`. `--sort`
-and `Shift-←` `Shift-→` take all of them except `spark`, which draws a trend rather than a
-number and so has no ordering; `--hide` and `--order` take it like any other,
-since hiding and moving a column are presentation. No file, or no
-`hide_columns` key, hides `cpustall`, `iostall` and `memstall` and shows the
-rest in compiled order. An unknown label in the file warns on stderr and is
-ignored; on `--hide` or `--order` it is a usage error, the same split as
-`--sort`. `name` cannot be hidden — a table of numbers with no labels is
-unreadable — but it can be moved.
-
-Hiding and order are presentation only: heft reads the same `/proc` files
-either way, the sort keys skip over what they cannot show, and `--json` ignores both lists
-entirely. Both flags are refused with `--json`.
+and `Shift-←` `Shift-→` take all of them except `spark`; `--hide` and
+`--order` take all of them. With no file or no `hide_columns` key, `cpustall`,
+`iostall` and `memstall` are hidden and the rest show in compiled order. An
+unknown label in the file warns on stderr and is ignored; on `--hide` or
+`--order` it is a usage error. Hiding and order are presentation only: heft
+reads the same `/proc` files either way.
 
 ## Rules
 
 Grouping is decided by rule files. The built-in set is the repository's
-`rules.d/`, compiled into the binary, so a downloaded heft needs nothing
-installed beside it. heft also reads `$XDG_CONFIG_HOME/heft/rules.d/` and then
-`/etc/heft/rules.d/`, both ahead of the built-ins. It never writes or creates
-either directory, and with neither present it groups exactly as it ships.
+`rules.d/`, compiled into the binary. heft also reads
+`$XDG_CONFIG_HOME/heft/rules.d/` and then `/etc/heft/rules.d/`, both ahead of
+the built-ins. It never writes or creates either directory, and with neither
+present it groups exactly as it ships.
 
 `HEFT_RULES_PATH` replaces those two directories with its own colon-separated
 list, earlier entries winning. Set but empty, only the built-ins load.
@@ -802,8 +480,7 @@ file after a built-in: its `disable` of that name applies to your file too.
 
 A file that does not parse, or breaks one of the rules above (a duplicate id,
 an empty pattern, an output its stage does not take), is skipped whole with one
-warning naming it, and the rest still load. A monitor that stopped over a typo
-in a config file would be worse than one ignoring the file.
+warning naming it, and the rest still load.
 
 `examples` are what the file says its rules do: a `--fixture` process row, or
 `{"unit": ...}`, `{"identity": ...}` or `{"container": ...}`, with an `expect`
@@ -820,7 +497,7 @@ $ heft --check-rules
 
 It exits 1 on a failed example or a file that did not load. A built-in example
 your rules decide differently is reported as `overridden by` or `disabled by`
-rather than failed, since that difference is what you wrote the file for.
+rather than failed.
 
 Keys are the identities the tree shows you, not pids or comms. `heft --explain
 <PID>` tells you what a process resolved to, and what each stage made of it:
@@ -844,14 +521,12 @@ pid 156859
   "cursor" is the placement key for this row.
 ```
 
-A wrong key is silent, since an identity that matches nothing is simply never
-consulted, so reading the real one off a running heft is the difference
-between writing the file and guessing at it. The stage lines say what each
-stage makes of the process on its own; `placed` is the tree's verdict, which
-also depends on the process's parents.
+A wrong key is silent: an identity that matches nothing is never consulted.
+The stage lines say what each stage makes of the process on its own; `placed`
+is the tree's verdict, which also depends on the process's parents.
 
-`grouping.json` is no longer read. heft says so once on stderr while the file
-is there. Each of its keys is a placement rule:
+`grouping.json` is not read. heft says so once on stderr while the file is
+there. Each of its keys is a placement rule:
 
 | grouping.json | rule |
 | --- | --- |
@@ -860,12 +535,11 @@ is there. Each of its keys is a placement rule:
 | `"fold": { "a": "b" }` | `{ "id": "fold-a", "match": { "identity": "a" }, "fold_to": "b" }`, listed before the pins |
 | `"container_owners": { "c": 1000 }` | `{ "id": "own-c", "match": { "container": "c" }, "owner_uid": 1000 }` |
 
-If the built-in grouping is what is wrong, attach `heft --fixture >
-heft-fixture.json` to a bug report. It is every process's exe, cgroup, parent
-and command line, in the exact shape heft's grouping tests load, so your
-machine becomes the test that proves the fix. Nothing is sent anywhere. Your
-home directory is written as `~`, but command lines are kept whole, so read the
-file before you post it.
+If the built-in grouping is wrong, attach `heft --fixture > heft-fixture.json`
+to a bug report. It is every process's exe, cgroup, parent and command line,
+in the shape heft's grouping tests load, so your machine becomes the test for
+the fix. Nothing is sent anywhere. Your home directory is written as `~`, but
+command lines are kept whole, so read the file before you post it.
 
 ## Verify
 
@@ -874,12 +548,12 @@ heft --once
 ```
 
 `--once` should list your terminal and each running desktop app as its own
-Applications row — idle shells in that terminal fold into it, and a shell
-that launched an app (claude, …) bills to that app. An Electron app appears
-once, not once per helper process. User Services should hold your compositor
-and any user `*.service` units. Containers should sum a compose project under
-one row and bill `containerd-shim` / `conmon` / `runc` to their container,
-never to `dockerd`.
+Applications row: idle shells in that terminal fold into it, and a shell that
+launched an app (claude, …) bills to that app. An Electron app appears once,
+not once per helper process. User Services should hold your compositor and any
+user `*.service` units. Containers should sum a compose project under one row
+and bill `containerd-shim` / `conmon` / `runc` to their container, never to
+`dockerd`.
 
 Contributor gates live in [CONTRIBUTING.md](CONTRIBUTING.md).
 

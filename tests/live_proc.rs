@@ -787,3 +787,19 @@ fn explain_names_the_placement_rule_for_its_identity() {
         "{second}"
     );
 }
+
+/// `--glyphs` reaches `--explain`: the tree path is the one line of it drawn
+/// with a glyph, and a console without the fonts asked for ASCII.
+#[test]
+fn explain_draws_its_path_in_the_glyph_set_asked_for() {
+    let me = std::process::id().to_string();
+    let out = heft(&["--glyphs", "ascii", "--explain", &me, "--interval", FAST])
+        .output()
+        .expect("run heft --explain");
+    let out = String::from_utf8_lossy(&out.stdout);
+    let placed = out
+        .lines()
+        .find(|l| l.trim_start().starts_with("placed"))
+        .unwrap_or_else(|| panic!("--explain printed no placed line: {out}"));
+    assert!(placed.contains("Host") && placed.is_ascii(), "{placed}");
+}

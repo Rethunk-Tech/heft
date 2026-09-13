@@ -995,7 +995,7 @@ fn judge(ex: &Example, hits: &[&Compiled], file: &str) -> Vec<String> {
 }
 
 /// A folder as a rules file spells it, for messages a user reads.
-const fn folder_name(f: Folder) -> &'static str {
+pub(crate) const fn folder_name(f: Folder) -> &'static str {
     match f {
         Folder::Applications => "applications",
         Folder::UserServices => "user_services",

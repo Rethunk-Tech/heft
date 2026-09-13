@@ -124,8 +124,9 @@ pub(crate) fn ellipsis() -> char {
     if ascii() { '~' } else { '…' }
 }
 
-/// The four cursor keys, for the help overlay. One column each, so the
-/// overlay's key column keeps its width under either set.
+/// The four cursor keys, for the help overlay, and the right arrow `--explain`
+/// joins its tree path with. One column each, so the overlay's key column
+/// keeps its width under either set.
 pub(crate) fn arrows() -> (char, char, char, char) {
     if ascii() {
         ('^', 'v', '<', '>')

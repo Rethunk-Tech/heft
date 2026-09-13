@@ -13,8 +13,9 @@
 
 use std::time::Duration;
 
+use crate::glyph;
 use crate::proc;
-use crate::rules::{Facts, Rules, Stage};
+use crate::rules::{Facts, Rules, Stage, folder_name};
 use crate::types::{Error, Folder, HostTree, IdentNode, ProcNode, Process};
 
 /// Where in the tree a pid turned up.
@@ -55,40 +56,30 @@ fn find_in(idents: &[IdentNode], pid: u32) -> Option<(&IdentNode, String, usize)
 }
 
 fn locate(tree: &HostTree, pid: u32) -> Option<Found> {
-    let hit = |idents: &[IdentNode], parent: &str, folder: Folder, pinnable| {
+    let arrow = glyph::arrows().3;
+    let hit = |idents: &[IdentNode], parent: &str, folder: Folder| {
         find_in(idents, pid).map(|(id, instance, siblings)| Found {
-            path: format!("{parent} → {}", folder.title()),
+            path: format!("{parent} {arrow} {}", folder.title()),
             ident: id.title.clone(),
-            pinnable,
+            // A container or System row ignores every placement rule, the same
+            // rule the grouping code applies: `override_place` cannot move one.
+            pinnable: matches!(folder, Folder::Applications | Folder::UserServices)
+                .then_some(folder_name(folder)),
             instance,
             siblings,
         })
     };
     for u in &tree.users {
-        let who = format!("Host → {} ({})", u.name, u.uid);
-        if let Some(f) = hit(
-            &u.applications,
-            &who,
-            Folder::Applications,
-            Some("applications"),
-        )
-        .or_else(|| {
-            hit(
-                &u.user_services,
-                &who,
-                Folder::UserServices,
-                Some("user_services"),
-            )
-        })
-        // A container row ignores every placement rule, the same rule the
-        // grouping code applies: `override_place` cannot move one.
-        .or_else(|| hit(&u.containers, &who, Folder::Containers, None))
+        let who = format!("Host {arrow} {} ({})", u.name, u.uid);
+        if let Some(f) = hit(&u.applications, &who, Folder::Applications)
+            .or_else(|| hit(&u.user_services, &who, Folder::UserServices))
+            .or_else(|| hit(&u.containers, &who, Folder::Containers))
         {
             return Some(f);
         }
     }
-    hit(&tree.containers, "Host", Folder::Containers, None)
-        .or_else(|| hit(&tree.system, "Host", Folder::System, None))
+    hit(&tree.containers, "Host", Folder::Containers)
+        .or_else(|| hit(&tree.system, "Host", Folder::System))
 }
 
 /// One line per stage naming the rule that decided it, `no match`, or `none`

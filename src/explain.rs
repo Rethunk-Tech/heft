@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use crate::proc;
 use crate::rules::{Facts, Rules, Stage};
-use crate::types::{Error, HostTree, IdentNode, ProcNode, Process};
+use crate::types::{Error, Folder, HostTree, IdentNode, ProcNode, Process};
 
 /// Where in the tree a pid turned up.
 struct Found {
@@ -55,9 +55,9 @@ fn find_in(idents: &[IdentNode], pid: u32) -> Option<(&IdentNode, String, usize)
 }
 
 fn locate(tree: &HostTree, pid: u32) -> Option<Found> {
-    let hit = |idents: &[IdentNode], path: String, pinnable| {
+    let hit = |idents: &[IdentNode], parent: &str, folder: Folder, pinnable| {
         find_in(idents, pid).map(|(id, instance, siblings)| Found {
-            path,
+            path: format!("{parent} → {}", folder.title()),
             ident: id.title.clone(),
             pinnable,
             instance,
@@ -65,28 +65,30 @@ fn locate(tree: &HostTree, pid: u32) -> Option<Found> {
         })
     };
     for u in &tree.users {
-        let who = format!("{} ({})", u.name, u.uid);
+        let who = format!("Host → {} ({})", u.name, u.uid);
         if let Some(f) = hit(
             &u.applications,
-            format!("Host → {who} → Applications"),
+            &who,
+            Folder::Applications,
             Some("applications"),
         )
         .or_else(|| {
             hit(
                 &u.user_services,
-                format!("Host → {who} → User Services"),
+                &who,
+                Folder::UserServices,
                 Some("user_services"),
             )
         })
         // A container row ignores every placement rule, the same rule the
         // grouping code applies: `override_place` cannot move one.
-        .or_else(|| hit(&u.containers, format!("Host → {who} → Containers"), None))
+        .or_else(|| hit(&u.containers, &who, Folder::Containers, None))
         {
             return Some(f);
         }
     }
-    hit(&tree.containers, "Host → Containers".into(), None)
-        .or_else(|| hit(&tree.system, "Host → System".into(), None))
+    hit(&tree.containers, "Host", Folder::Containers, None)
+        .or_else(|| hit(&tree.system, "Host", Folder::System, None))
 }
 
 /// One line per stage naming the rule that decided it, `no match`, or `none`

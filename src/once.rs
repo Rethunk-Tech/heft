@@ -7,7 +7,7 @@ use unicode_width::UnicodeWidthStr;
 use crate::config::{self, View};
 use crate::proc;
 use crate::types::{
-    Error, HostTree, IdentNode, Metrics, ProcNode, folder_nproc, host_metrics, sum_idents,
+    Error, Folder, HostTree, IdentNode, Metrics, ProcNode, folder_nproc, host_metrics, sum_idents,
     tree_host_nproc, user_metrics, user_nproc,
 };
 
@@ -768,19 +768,31 @@ fn table_rows(tree: &HostTree, deep: bool) -> Vec<TableRow> {
             trimmable: false,
             search: None,
         });
-        push_folder(&mut rows, 2, "Applications", &user.applications, deep);
-        push_folder(&mut rows, 2, "User Services", &user.user_services, deep);
-        push_folder(&mut rows, 2, "Containers", &user.containers, deep);
+        push_folder(&mut rows, 2, Folder::Applications, &user.applications, deep);
+        push_folder(
+            &mut rows,
+            2,
+            Folder::UserServices,
+            &user.user_services,
+            deep,
+        );
+        push_folder(&mut rows, 2, Folder::Containers, &user.containers, deep);
     }
-    push_folder(&mut rows, 1, "Containers", &tree.containers, deep);
-    push_folder(&mut rows, 1, "System", &tree.system, deep);
+    push_folder(&mut rows, 1, Folder::Containers, &tree.containers, deep);
+    push_folder(&mut rows, 1, Folder::System, &tree.system, deep);
     rows
 }
 
-fn push_folder(rows: &mut Vec<TableRow>, depth: u16, name: &str, idents: &[IdentNode], deep: bool) {
+fn push_folder(
+    rows: &mut Vec<TableRow>,
+    depth: u16,
+    folder: Folder,
+    idents: &[IdentNode],
+    deep: bool,
+) {
     rows.push(TableRow {
         depth,
-        name: format!("{name} ({})", idents.len()),
+        name: format!("{} ({})", folder.title(), idents.len()),
         nproc: folder_nproc(idents),
         metrics: sum_idents(idents),
         trimmable: false,
@@ -1630,7 +1642,7 @@ mod tests {
         push_folder(
             &mut rows,
             1,
-            "Applications",
+            Folder::Applications,
             &[sample_ident(disk_r_bps)],
             false,
         );

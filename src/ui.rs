@@ -32,7 +32,7 @@ use crate::once::{
 use crate::proc;
 use crate::sixel;
 use crate::types::{
-    Error, HostTree, IdentNode, Metrics, ProcNode, folder_nproc, host_metrics, sum_idents,
+    Error, Folder, HostTree, IdentNode, Metrics, ProcNode, folder_nproc, host_metrics, sum_idents,
     tree_host_nproc, user_metrics, user_nproc,
 };
 
@@ -363,9 +363,13 @@ fn flatten(
             });
             if expand.contains(&id) {
                 for (slug, title, idents) in [
-                    ("apps", "Applications", &user.applications),
-                    ("services", "User Services", &user.user_services),
-                    ("containers", "Containers", &user.containers),
+                    ("apps", Folder::Applications.title(), &user.applications),
+                    (
+                        "services",
+                        Folder::UserServices.title(),
+                        &user.user_services,
+                    ),
+                    ("containers", Folder::Containers.title(), &user.containers),
                 ] {
                     push_folder(
                         &mut rows,
@@ -380,8 +384,12 @@ fn flatten(
             }
         }
         for (id, title, idents) in [
-            ("host/containers", "Containers", &tree.containers),
-            ("host/system", "System", &tree.system),
+            (
+                "host/containers",
+                Folder::Containers.title(),
+                &tree.containers,
+            ),
+            ("host/system", Folder::System.title(), &tree.system),
         ] {
             push_folder(&mut rows, expand, 1, id, title, idents, deep);
         }

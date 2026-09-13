@@ -175,6 +175,19 @@ pub enum Folder {
     System,
 }
 
+impl Folder {
+    /// The heading every surface draws for this folder.
+    #[must_use]
+    pub const fn title(self) -> &'static str {
+        match self {
+            Self::Applications => "Applications",
+            Self::UserServices => "User Services",
+            Self::Containers => "Containers",
+            Self::System => "System",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct HostTree {
     /// When this sample was taken, unix seconds. A `--json --follow` stream is

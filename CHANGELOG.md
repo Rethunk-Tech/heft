@@ -30,8 +30,15 @@
 - **Breaking:** a rules.d example carrying `kthread`, `utime` or `stime`
   fails its file. heft never read them, and `--fixture` rows do not carry
   them.
-- The warning about a leftover `grouping.json`, and the HUMANS.md table that
-  maps its keys to placement rules. 0.10.0 names the mapping.
+- The warning about a leftover `grouping.json`. Each of its keys is a
+  placement rule in a rules.d file:
+
+  | grouping.json | rule |
+  | --- | --- |
+  | `"applications": ["x"]` | `{ "id": "pin-x", "match": { "identity": "x" }, "folder": "applications" }` |
+  | `"user_services": ["x"]` | the same, with `"folder": "user_services"` |
+  | `"fold": { "a": "b" }` | `{ "id": "fold-a", "match": { "identity": "a" }, "fold_to": "b" }`, listed before the pins |
+  | `"container_owners": { "c": 1000 }` | `{ "id": "own-c", "match": { "container": "c" }, "owner_uid": 1000 }` |
 
 ### Fixed
 
@@ -111,7 +118,8 @@
 ### Removed
 
 - **Breaking:** `grouping.json` is no longer read. Each key maps to a
-  placement rule (HUMANS.md, Rules); heft warns while the file exists.
+  placement rule (the table under 0.11.0, Removed); heft warns while the
+  file exists.
 
 ## 0.9.0 - 2026-09-12
 

@@ -178,6 +178,9 @@ fn bit_names(bits: u16, names: &[&'static str]) -> Vec<&'static str> {
 }
 
 /// Example: the flat `--fixture` row plus the unit/identity/container subjects.
+/// Judging reads none of `pid`, `ppid`, `pgrp` and `uid`; they are accepted
+/// because `--fixture` writes them, so a pasted row passes
+/// `deny_unknown_fields`.
 #[derive(Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct Example {
@@ -189,12 +192,6 @@ pub struct Example {
     pub pgrp: i32,
     #[serde(default)]
     pub uid: u32,
-    #[serde(default)]
-    pub kthread: bool,
-    #[serde(default)]
-    pub utime: u64,
-    #[serde(default)]
-    pub stime: u64,
     #[serde(default)]
     pub comm: Option<String>,
     #[serde(default)]
@@ -1459,7 +1456,7 @@ mod tests {
             "90-a.json",
             r#"{"stage":"unit","rules":[{"id":"svc","match":{"unit":"a.service"},"flags":["service"]}],
                "examples":[{"pid":1,"ppid":0,"pgrp":1,"uid":1000,"comm":"x","exe":"/usr/bin/x",
-                 "cmdline":["x"],"kthread":false,"utime":1,"stime":2,
+                 "cmdline":["x"],
                  "cgroup":"0::/user.slice/user-1000.slice/user@1000.service/app.slice/b.service",
                  "unit":"a.service","expect":{"flags":["service"]}}]}"#,
         )]);

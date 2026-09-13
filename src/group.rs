@@ -612,6 +612,20 @@ fn sum_metrics(pids: &[u32], metrics: &HashMap<u32, Metrics>) -> Metrics {
     m
 }
 
+/// The deepest a `ProcNode` nests, a root being depth 1. A node at depth
+/// `MAX_PROC_DEPTH - 1` takes every descendant as a flat child in pid order, so
+/// no process is dropped and no walker over `children` recurses further than
+/// this: an unprivileged fork chain thousands deep would otherwise overflow the
+/// sampler thread's stack, which aborts rather than panics.
+///
+/// The bound is `--json`, parsed back by `serde_json`, which refuses the 128th
+/// nested array or object. A `ProcNode` at depth `d` sits `8 + 2d` levels in
+/// (`{` document, `host`, `users[`, user, `applications[`, identity,
+/// `instances[`, instance, `processes[`, then an object and a `children[` per
+/// level; a member container's `containers[`/`processes[` is the same depth),
+/// and the deepest node has no `children` array. 8 + 2 × 48 = 104 of 127.
+const MAX_PROC_DEPTH: usize = 48;
+
 fn proc_forest(pids: &[u32], curr: &Procs, metrics: &HashMap<u32, Metrics>) -> Vec<ProcNode> {
     let set: HashSet<u32> = pids.iter().copied().collect();
     let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
@@ -627,12 +641,13 @@ fn proc_forest(pids: &[u32], curr: &Procs, metrics: &HashMap<u32, Metrics>) -> V
     roots.sort_unstable();
     roots
         .into_iter()
-        .map(|pid| proc_node(pid, &children, curr, metrics))
+        .map(|pid| proc_node(pid, 1, &children, curr, metrics))
         .collect()
 }
 
 fn proc_node(
     pid: u32,
+    depth: usize,
     children: &HashMap<u32, Vec<u32>>,
     curr: &Procs,
     metrics: &HashMap<u32, Metrics>,
@@ -642,7 +657,11 @@ fn proc_node(
         .get(&pid)
         .map(|p| p.cmdline.join(" "))
         .unwrap_or_default();
-    let mut kids = children.get(&pid).cloned().unwrap_or_default();
+    let mut kids = match (depth + 1).cmp(&MAX_PROC_DEPTH) {
+        std::cmp::Ordering::Less => children.get(&pid).cloned().unwrap_or_default(),
+        std::cmp::Ordering::Equal => descendants(pid, children),
+        std::cmp::Ordering::Greater => Vec::new(),
+    };
     kids.sort_unstable();
     ProcNode {
         pid,
@@ -651,9 +670,24 @@ fn proc_node(
         metrics: metrics.get(&pid).cloned().unwrap_or_default(),
         children: kids
             .into_iter()
-            .map(|c| proc_node(c, children, curr, metrics))
+            .map(|c| proc_node(c, depth + 1, children, curr, metrics))
             .collect(),
     }
+}
+
+/// Every descendant of `pid`, walked with an explicit stack so a chain of any
+/// depth costs heap rather than stack. Each pid has one parent, so no pid
+/// reachable from a root is visited twice.
+fn descendants(pid: u32, children: &HashMap<u32, Vec<u32>>) -> Vec<u32> {
+    let mut out = Vec::new();
+    let mut stack = children.get(&pid).cloned().unwrap_or_default();
+    while let Some(c) = stack.pop() {
+        out.push(c);
+        if let Some(k) = children.get(&c) {
+            stack.extend_from_slice(k);
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -713,5 +747,63 @@ mod tests {
         // The slice alone is not a machine: a stray process directly in
         // machine.slice has no scope to name and must not become a row.
         assert_ne!(place("0::/machine.slice", 0).folder, Folder::Containers);
+    }
+    #[test]
+    fn a_deep_process_chain_is_capped_without_losing_a_process() {
+        use crate::types::{HostHeader, HostTree, ProcNode};
+
+        fn walk(nodes: &[ProcNode], depth: usize, max: &mut usize, count: &mut u64, rss: &mut u64) {
+            for n in nodes {
+                *max = (*max).max(depth);
+                *count += 1;
+                *rss += n.metrics.rss_bytes.unwrap_or(0);
+                walk(&n.children, depth + 1, max, count, rss);
+            }
+        }
+
+        const N: u32 = 10_000;
+        let curr: HashMap<u32, Process> = (1..=N)
+            .map(|pid| {
+                let p = Process {
+                    pid,
+                    ppid: pid - 1,
+                    pgrp: 1,
+                    uid: 1000,
+                    comm: "chain".into(),
+                    exe: Some("/usr/bin/chain".into()),
+                    cgroup: "0::/user.slice/user-1000.slice/user@1000.service/app.slice".into(),
+                    rss_pages: Some(1),
+                    ..Process::default()
+                };
+                (pid, p)
+            })
+            .collect();
+        let consts = HostHeader {
+            nproc: 1,
+            clk_tck: 100,
+            page_size: 4096,
+        };
+        let tree = super::build_tree(
+            &HashMap::new(),
+            &curr,
+            std::time::Duration::from_secs(1),
+            &consts,
+            HostTree::default(),
+            &ContainerIndex::default(),
+            &Rules::builtin(),
+        );
+
+        let ident = &tree.users[0].applications[0];
+        assert_eq!(ident.nproc, N);
+        let (mut max, mut count, mut rss) = (0, 0, 0);
+        for inst in &ident.instances {
+            walk(&inst.processes, 1, &mut max, &mut count, &mut rss);
+        }
+        assert_eq!(max, super::MAX_PROC_DEPTH);
+        assert_eq!(count, u64::from(N));
+        assert_eq!(Some(rss), ident.metrics.rss_bytes);
+
+        let text = serde_json::to_string(&serde_json::json!({ "host": tree })).unwrap();
+        serde_json::from_str::<serde_json::Value>(&text).unwrap();
     }
 }

@@ -50,11 +50,11 @@ clap_complete = "4.6.9"
 clap_mangen = "0.3.3"
 
 # Clippy runs at its default level in CI and the pre-commit hook, plus the
-# denials below. The pedantic, nursery and cargo groups are measured and
-# refused wholesale: most of what they report is `redundant_pub_crate` against
-# a visibility style this crate keeps on purpose, and `too_many_lines` over
-# render functions that are one piece by design. The measurement is in
-# AGENTS.md, Gates.
+# denials below. The nursery and cargo groups are measured and refused
+# wholesale: most of what they report is `redundant_pub_crate` against a
+# visibility style this crate keeps on purpose. Pedantic stops at one warning,
+# `struct_excessive_bools` on the clap `Cli`, so it is not enabled either. The
+# measurement is in AGENTS.md, Gates.
 #
 # Each lint listed here found something real and is at zero, so denying it
 # costs nothing and stops it coming back. The four cast lints make every cast

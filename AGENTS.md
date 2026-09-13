@@ -403,23 +403,28 @@ default level plus the `[lints.clippy]` list in `Cargo.toml`.
 
 The wider groups are measured, not assumed, and the measurement is against that same
 `--all-targets` gate: with the list below in place, `pedantic` + `nursery` +
-`cargo` report 235 warnings across 23 lints, counted as clippy emits them for
-every target. 134 of those are the one nursery lint `redundant_pub_crate`
-objecting to a visibility style this crate keeps deliberately; most of the
-rest is `too_long_first_doc_paragraph`, `option_if_let_else`, `too_many_lines`
-over render functions that are one piece on purpose, and
+`cargo` report 182 warnings across 8 lints, counted as clippy emits them for
+every target.
+
+`pedantic` is one warning short of enabling: `struct_excessive_bools` on
+`cli::Cli`, whose seven bools are clap flags that `--help`, the man page and
+the completions each list on their own line. Folding them into enums changes
+all three, so it is refused, and the group stays off the gate rather than
+carrying an `#[expect]`.
+
+Of the rest, 134 are the nursery lint `redundant_pub_crate` objecting to a
+visibility style this crate keeps deliberately; the others are
+`too_long_first_doc_paragraph`, `option_if_let_else`, `single_option_map`, and
 `multiple_crate_versions` for the two `hashbrown` and two `syn` majors the
-dependencies pull. Adopting those wholesale is a mechanical rewrite buying style,
-and is refused. Re-measure before quoting a number here: the counts move with
-every clippy release and every change to this code.
+dependencies pull. Adopting those is a mechanical rewrite buying style, and is
+refused. Re-measure before quoting a number here: the counts move with every
+clippy release and every change to this code.
 
 Nothing in the wider groups is a latent bug, which is what makes the refusal
 safe rather than lucky: every lint that looked like one is a false positive.
 `literal_string_with_formatting_args` fires eight times on the `{up}`/`{down}`
-KEYS placeholders, which are literal on purpose; `match_same_arms` wants
-`gpu.rs`'s explicit `KiB` list folded into its own catch-all; `float_cmp`
-points into rustc's `assert!` expansion; `suboptimal_flops` wants `mul_add` in
-three test assertions.
+KEYS placeholders, which are literal on purpose; `suboptimal_flops` wants
+`mul_add` in three test assertions.
 
 Twelve lints are denied in `Cargo.toml`'s `[lints]` because each found
 something real. `needless_pass_by_ref_mut`, `assigning_clones`,

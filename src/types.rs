@@ -24,6 +24,10 @@ pub struct Process {
     /// `SwapPss:` from the same `smaps_rollup` read as `pss_kb`, so it costs no
     /// extra file and arrives on the same `--pss-interval` cadence.
     pub swap_pss_kb: Option<u64>,
+    /// `rss_pages` when `smaps_rollup` was last actually read, and how many PSS
+    /// periods ago that was: what `proc::rollup_holds` weighs to skip a read.
+    pub rollup_rss_pages: Option<u64>,
+    pub rollup_periods: u32,
     pub read_bytes: Option<u64>,
     pub write_bytes: Option<u64>,
     pub gpu: GpuCounters,

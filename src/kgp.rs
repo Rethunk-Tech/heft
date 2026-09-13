@@ -23,7 +23,7 @@
 //! read the object reports nothing instead of printing an error into the table.
 
 use std::collections::VecDeque;
-use std::ffi::CString;
+use std::ffi::{CString, OsStr};
 use std::io::{self, Write};
 
 /// Image id, carried in the placeholder's foreground colour. `0x686566` is
@@ -113,7 +113,26 @@ pub(crate) enum Transport {
 /// so their presence is the question being asked -- not a guess about the
 /// terminal's identity.
 pub(crate) fn is_remote() -> bool {
-    std::env::var_os("SSH_CONNECTION").is_some() || std::env::var_os("SSH_TTY").is_some()
+    remote(
+        std::env::var_os("SSH_CONNECTION").as_deref(),
+        std::env::var_os("SSH_TTY").as_deref(),
+    )
+}
+
+/// `is_remote` over the two variables' values, so the decision is testable
+/// without mutating the environment.
+const fn remote(ssh_connection: Option<&OsStr>, ssh_tty: Option<&OsStr>) -> bool {
+    ssh_connection.is_some() || ssh_tty.is_some()
+}
+
+/// Shared memory the terminal cannot open is not a fallback, it is a blank
+/// column, so a remote session always sends the pixels inline.
+const fn transport(remote: bool) -> Transport {
+    if remote {
+        Transport::Direct
+    } else {
+        Transport::Shm
+    }
 }
 
 /// One painted TREND column: RGBA, one band of `cell_h` pixels per table row.
@@ -272,11 +291,7 @@ pub(crate) struct Kgp {
 
 impl Kgp {
     pub(crate) fn new() -> Self {
-        Self::with_transport(if is_remote() {
-            Transport::Direct
-        } else {
-            Transport::Shm
-        })
+        Self::with_transport(transport(is_remote()))
     }
 
     pub(crate) const fn with_transport(transport: Transport) -> Self {
@@ -479,10 +494,13 @@ mod tests {
 
     #[test]
     fn ssh_forces_the_inline_transport() {
-        // Shared memory the terminal cannot open is not a fallback, it is a
-        // blank column, so the question is asked of the session and not of
-        // `TERM`.
-        assert_eq!(Kgp::new().transport == Transport::Direct, is_remote());
+        assert_eq!(transport(true), Transport::Direct);
+        assert_eq!(transport(false), Transport::Shm);
+        // Either variable alone is sshd's; a local terminal sets neither.
+        let set = Some(OsStr::new("10.0.0.1 22 10.0.0.2 22"));
+        assert!(remote(set, None));
+        assert!(remote(None, Some(OsStr::new("/dev/pts/3"))));
+        assert!(!remote(None, None));
     }
 
     #[test]

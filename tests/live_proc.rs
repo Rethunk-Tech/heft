@@ -20,7 +20,7 @@ use serde_json::Value;
 
 mod common;
 use common::{arr, heft, pids};
-/// The floor `clamp_intervals` allows: the two `/proc` walks this far apart.
+/// The floor `--interval` allows (`proc::MIN_INTERVAL`): the two `/proc` walks this far apart.
 const FAST: &str = "0.05";
 
 /// Keys `Metrics` skips when the value is `None`. A missing key is the blank
@@ -441,6 +441,22 @@ fn an_interval_below_the_floor_is_refused() {
             .output()
             .expect("run heft");
         assert!(out.status.success(), "--interval {ok} was refused");
+    }
+}
+
+/// `1e30` is finite and above the floor, but no `Duration` holds it, and
+/// `Duration::from_secs_f64` aborts on it. A typed value is refused as a usage
+/// error on either flag, never capped, since the caller can correct it.
+#[test]
+fn an_interval_no_duration_holds_is_a_usage_error() {
+    for flag in ["--interval", "--pss-interval"] {
+        let out = heft(&["--once", flag, "1e30"]).output().expect("run heft");
+        assert_eq!(
+            out.status.code(),
+            Some(2),
+            "{flag} 1e30 must be a usage error: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
     }
 }
 

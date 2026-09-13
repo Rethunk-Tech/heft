@@ -82,10 +82,8 @@ fn main() -> ExitCode {
     // floor, not against `--interval`: it is documented as "at least
     // `--interval`", and `--interval 10` alone would otherwise fail against
     // the default of 5.
-    check_interval("interval", cli.interval);
-    check_interval("pss-interval", cli.pss_interval);
-    let interval = Duration::from_secs_f64(cli.interval);
-    let pss_interval = Duration::from_secs_f64(cli.pss_interval).max(interval);
+    let interval = check_interval("interval", cli.interval);
+    let pss_interval = check_interval("pss-interval", cli.pss_interval).max(interval);
     // A saved view is a human's TUI preference. `--json` is a documented
     // contract, so only an explicit flag reshapes it.
     let mut view = if cli.json {
@@ -176,22 +174,29 @@ fn main() -> ExitCode {
     }
 }
 
-/// `is_finite` first, so a NaN is refused rather than slipping past a `<`
-/// comparison: `--interval nan` parses as a float, and
-/// `Duration::from_secs_f64` panics on one.
-fn check_interval(flag: &str, secs: f64) {
-    if !secs.is_finite() || secs < heft::proc::MIN_INTERVAL {
-        Cli::command()
-            .error(
-                ErrorKind::InvalidValue,
-                format!(
-                    "invalid value '{secs}' for '--{flag} <{}>': the floor is {} seconds",
-                    flag.to_uppercase().replace('-', "_"),
-                    heft::proc::MIN_INTERVAL
-                ),
-            )
-            .exit()
-    }
+/// The typed seconds as a `Duration`, or a usage error. `is_finite` first, so a
+/// NaN is refused rather than slipping past a `<` comparison: `--interval nan`
+/// parses as a float. A finite value above the floor can still be too large
+/// for a `Duration` (`1e30`); that is refused too, not capped, because a typed
+/// argument can be corrected.
+fn check_interval(flag: &str, secs: f64) -> Duration {
+    let why = if !secs.is_finite() || secs < heft::proc::MIN_INTERVAL {
+        format!("the floor is {} seconds", heft::proc::MIN_INTERVAL)
+    } else {
+        match Duration::try_from_secs_f64(secs) {
+            Ok(d) => return d,
+            Err(e) => e.to_string(),
+        }
+    };
+    Cli::command()
+        .error(
+            ErrorKind::InvalidValue,
+            format!(
+                "invalid value '{secs}' for '--{flag} <{}>': {why}",
+                flag.to_uppercase().replace('-', "_"),
+            ),
+        )
+        .exit()
 }
 
 /// A typo on the command line is told to the user, where `Sort::from_label`

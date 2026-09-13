@@ -1,6 +1,6 @@
 use crate::classify::{self, script_basename};
 use crate::group::Judged;
-use crate::rules::{Classes, Facts, Rules};
+use crate::rules::{Classes, Facts, Rules, UnitFlags};
 use crate::types::Process;
 
 pub(crate) fn docker_scope_id(cgroup: &str) -> Option<String> {
@@ -157,7 +157,7 @@ pub(crate) const fn is_kernel(p: &Process) -> bool {
 /// script basename alone (`Facts.script` is set nowhere else).
 pub(crate) fn generic_fallback(p: &Process, j: &Judged, rules: &Rules) -> String {
     if let Some(u) = &j.unit
-        && !j.unit_flags.lying()
+        && !j.unit_flags.contains(UnitFlags::LYING)
     {
         let stem = unit_stem(u);
         if !stem.is_empty() && stem != "app" {
@@ -170,7 +170,7 @@ pub(crate) fn generic_fallback(p: &Process, j: &Judged, rules: &Rules) -> String
                 script: Some(&script),
                 ..Facts::default()
             })
-            .has(Classes::ANONYMOUS_SCRIPT);
+            .intersects(Classes::ANONYMOUS_SCRIPT);
         if !anonymous {
             return script;
         }
@@ -185,7 +185,7 @@ pub(crate) fn instance_key(p: &Process, container_id: Option<&str>, j: &Judged) 
         return format!("ctr:{id}");
     }
     if let Some(unit) = &j.unit
-        && !j.unit_flags.lying()
+        && !j.unit_flags.contains(UnitFlags::LYING)
     {
         return unit.clone();
     }

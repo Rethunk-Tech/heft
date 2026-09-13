@@ -81,9 +81,9 @@ fn judge(p: &Process, rules: &Rules) -> Judged {
     if let Some(arg) = p.cmdline.iter().skip(1).find(|a| !a.starts_with('-'))
         && rules
             .classes_of_name(classify::basename(arg))
-            .has(Classes::LAUNCHER)
+            .intersects(Classes::LAUNCHER)
     {
-        classes.0 |= Classes::LAUNCHER;
+        classes |= Classes::LAUNCHER;
     }
     Judged {
         unit,
@@ -169,7 +169,7 @@ fn compute_place(
     }
 
     let classes = ctx.classes(p);
-    if classes.has(Classes::WORKER)
+    if classes.intersects(Classes::WORKER)
         && let Some(parent) = resolve_one(p.ppid, curr, ctx, memo, walking)
         && parent.folder != Folder::System
         // `key` is the ppid's RESOLVED Place identity, not its process name, and
@@ -187,7 +187,7 @@ fn compute_place(
 
     // Pipe helpers under a launcher (flatpak bwrap `cat`) or an app (vivaldi).
     // Immediate parent only — never a sibling identity under a mixed shell.
-    if classes.has(Classes::NOISE)
+    if classes.intersects(Classes::NOISE)
         && let Some(parent) = resolve_one(p.ppid, curr, ctx, memo, walking)
         && parent.folder != Folder::System
     {
@@ -204,7 +204,7 @@ fn compute_place(
                 ..payload
             };
         }
-        if classes.has(Classes::LAUNCHER) {
+        if classes.intersects(Classes::LAUNCHER) {
             if let Some(hint) = classify::launcher_payload_hint(p, ctx.rules) {
                 let mut place = user_place(p, ctx);
                 place.key = hint;
@@ -215,7 +215,7 @@ fn compute_place(
                 && !ctx
                     .rules
                     .classes_of_name(&parent.key)
-                    .has(Classes::LAUNCHER)
+                    .intersects(Classes::LAUNCHER)
             {
                 return Place {
                     instance: ctx.instance(p),
@@ -232,7 +232,7 @@ fn compute_place(
             && ctx
                 .rules
                 .classes_of_name(&parent.key)
-                .has(Classes::TERMINAL)
+                .intersects(Classes::TERMINAL)
         {
             return Place {
                 instance: ctx.instance(p),
@@ -241,7 +241,7 @@ fn compute_place(
         }
     }
 
-    if classes.has(Classes::GENERIC)
+    if classes.intersects(Classes::GENERIC)
         && let Some(owner) = owning_app_ancestor(p.ppid, curr, ctx, memo, walking)
     {
         return Place {
@@ -255,7 +255,7 @@ fn compute_place(
 
 fn container_place(p: &Process, ctx: &Ctx<'_>) -> Option<Place> {
     let containers = ctx.containers;
-    let runtime = ctx.classes(p).has(Classes::CONTAINER_RUNTIME);
+    let runtime = ctx.classes(p).intersects(Classes::CONTAINER_RUNTIME);
     if let Some(info) = containers.lookup_process(p, runtime) {
         return Some(Place {
             folder: Folder::Containers,
@@ -315,8 +315,8 @@ fn system_place(p: &Process, ctx: &Ctx<'_>) -> Place {
 
 fn user_place(p: &Process, ctx: &Ctx<'_>) -> Place {
     let j = ctx.judged(p);
-    let folder = if j.classes.has(Classes::COMPOSITOR)
-        || (j.unit_flags.service() && !j.unit_flags.lying())
+    let folder = if j.classes.intersects(Classes::COMPOSITOR)
+        || (j.unit_flags.contains(UnitFlags::SERVICE) && !j.unit_flags.contains(UnitFlags::LYING))
     {
         Folder::UserServices
     } else {
@@ -325,7 +325,7 @@ fn user_place(p: &Process, ctx: &Ctx<'_>) -> Place {
     Place {
         folder,
         uid: Some(p.uid),
-        key: if j.classes.has(Classes::GENERIC) {
+        key: if j.classes.intersects(Classes::GENERIC) {
             identity::generic_fallback(p, j, ctx.rules)
         } else {
             name_of(p)
@@ -425,7 +425,9 @@ fn owning_app_ancestor(
     for _ in 0..32 {
         let proc = curr.get(&pid)?;
         let classes = ctx.classes(proc);
-        if classes.has(Classes::LAUNCHER | Classes::GENERIC | Classes::SHELL | Classes::NOISE) {
+        if classes
+            .intersects(Classes::LAUNCHER | Classes::GENERIC | Classes::SHELL | Classes::NOISE)
+        {
             pid = proc.ppid;
             continue;
         }
@@ -451,13 +453,13 @@ fn unique_descendant_ident(
     let mut kids = Vec::new();
     for child in curr.values().filter(|c| c.ppid == pid) {
         let classes = ctx.classes(child);
-        if classes.has(Classes::LAUNCHER | Classes::SHELL | Classes::NOISE) {
+        if classes.intersects(Classes::LAUNCHER | Classes::SHELL | Classes::NOISE) {
             if let Some(p) = unique_descendant_ident(child.pid, curr, ctx, memo, walking) {
                 kids.push(p);
             }
             continue;
         }
-        if classes.has(Classes::WORKER) {
+        if classes.intersects(Classes::WORKER) {
             if let Some(p) = unique_descendant_ident(child.pid, curr, ctx, memo, walking) {
                 kids.push(p);
             } else {

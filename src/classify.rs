@@ -38,7 +38,7 @@ fn strip_suffix_ignore_ascii_case<'a>(s: &'a str, suffix: &str) -> Option<&'a st
 /// `classes` is the process's own set; the helper names are the
 /// `crash_helper` class, asked of each path basename through `rules`.
 pub(crate) fn crash_helper_app(p: &Process, classes: Classes, rules: &Rules) -> Option<String> {
-    if !classes.has(Classes::CRASH_HELPER) {
+    if !classes.intersects(Classes::CRASH_HELPER) {
         return None;
     }
     for s in p.exe.iter().chain(p.cmdline.iter()) {
@@ -56,7 +56,7 @@ fn app_from_crash_helper_path(s: &str, rules: &Rules) -> Option<String> {
     }
     if !rules
         .classes_of_name(basename(s))
-        .has(Classes::CRASH_HELPER)
+        .intersects(Classes::CRASH_HELPER)
     {
         return None;
     }
@@ -97,8 +97,8 @@ fn is_ephemeral_mount_dir(owner: &str) -> bool {
 /// that `group::compute_place` tests: this runs before the parent is placed,
 /// so a process whose identity later folds elsewhere is still judged here by
 /// what it actually is.
-pub(crate) const fn absorbs_generic(parent: Classes) -> bool {
-    !parent.has(
+pub(crate) fn absorbs_generic(parent: Classes) -> bool {
+    !parent.intersects(
         Classes::GENERIC
             | Classes::LAUNCHER
             | Classes::SHELL
@@ -109,7 +109,7 @@ pub(crate) const fn absorbs_generic(parent: Classes) -> bool {
 }
 
 pub(crate) fn is_interactive_shell(p: &Process, classes: Classes) -> bool {
-    if !classes.has(Classes::SHELL) {
+    if !classes.intersects(Classes::SHELL) {
         return false;
     }
     let mut has_c = false;
@@ -129,8 +129,8 @@ pub(crate) fn is_interactive_shell(p: &Process, classes: Classes) -> bool {
 /// top-level row when a single child identity exists. Interactive shells
 /// are included so a `bash` that launched `claude` bills there; an idle
 /// leftover folds into the terminal in `group`, not here.
-pub(crate) const fn is_foldable_helper(classes: Classes) -> bool {
-    classes.has(Classes::LAUNCHER | Classes::SHELL)
+pub(crate) fn is_foldable_helper(classes: Classes) -> bool {
+    classes.intersects(Classes::LAUNCHER | Classes::SHELL)
 }
 
 pub(crate) fn launcher_payload_hint(p: &Process, rules: &Rules) -> Option<String> {
@@ -152,7 +152,7 @@ pub(crate) fn launcher_payload_hint(p: &Process, rules: &Rules) -> Option<String
             let b = basename(arg);
             // "child" is a zypak-helper subcommand, not a payload.
             if b.is_empty()
-                || rules.classes_of_name(b).has(Classes::LAUNCHER)
+                || rules.classes_of_name(b).intersects(Classes::LAUNCHER)
                 || b.eq_ignore_ascii_case("child")
             {
                 continue;
@@ -250,7 +250,7 @@ mod tests {
     #[test]
     fn shells_and_crash_helpers() {
         let rules = Rules::builtin();
-        let shell = Classes(Classes::SHELL);
+        let shell = Classes::SHELL;
         assert!(is_interactive_shell(&p("bash", &["-bash"]), shell));
         assert!(
             is_interactive_shell(&p("bash", &["/bin/bash", "--posix"]), shell),
@@ -265,7 +265,7 @@ mod tests {
             &p("bashful", &["bashful"]),
             Classes::default()
         ));
-        let helper = Classes(Classes::CRASH_HELPER | Classes::WORKER);
+        let helper = Classes::CRASH_HELPER | Classes::WORKER;
         assert_eq!(
             crash_helper_app(
                 &Process {

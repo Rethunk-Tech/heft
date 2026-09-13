@@ -133,70 +133,62 @@ pub enum UnitFlag {
     Service,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
-pub struct Classes(pub u16);
-impl Classes {
-    pub const LAUNCHER: u16 = Self::bit(Class::Launcher);
-    pub const GENERIC: u16 = Self::bit(Class::Generic);
-    pub const SHELL: u16 = Self::bit(Class::Shell);
-    pub const TERMINAL: u16 = Self::bit(Class::Terminal);
-    pub const COMPOSITOR: u16 = Self::bit(Class::Compositor);
-    pub const WORKER: u16 = Self::bit(Class::Worker);
-    pub const NOISE: u16 = Self::bit(Class::Noise);
-    pub const CRASH_HELPER: u16 = Self::bit(Class::CrashHelper);
-    pub const NO_ABSORB: u16 = Self::bit(Class::NoAbsorb);
-    pub const ANONYMOUS_SCRIPT: u16 = Self::bit(Class::AnonymousScript);
-    pub const CONTAINER_RUNTIME: u16 = Self::bit(Class::ContainerRuntime);
-    #[must_use]
-    pub const fn bit(c: Class) -> u16 {
-        1 << (c as u16)
+bitflags::bitflags! {
+    /// Bit `Class as u16` is that class, which is what `names` indexes by.
+    #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
+    pub struct Classes: u16 {
+        const LAUNCHER = 1 << Class::Launcher as u16;
+        const GENERIC = 1 << Class::Generic as u16;
+        const SHELL = 1 << Class::Shell as u16;
+        const TERMINAL = 1 << Class::Terminal as u16;
+        const COMPOSITOR = 1 << Class::Compositor as u16;
+        const WORKER = 1 << Class::Worker as u16;
+        const NOISE = 1 << Class::Noise as u16;
+        const CRASH_HELPER = 1 << Class::CrashHelper as u16;
+        const NO_ABSORB = 1 << Class::NoAbsorb as u16;
+        const ANONYMOUS_SCRIPT = 1 << Class::AnonymousScript as u16;
+        const CONTAINER_RUNTIME = 1 << Class::ContainerRuntime as u16;
     }
-    fn of(cs: &[Class]) -> Self {
-        Self(cs.iter().fold(0, |a, c| a | Self::bit(*c)))
-    }
-    #[must_use]
-    pub const fn has(self, bits: u16) -> bool {
-        self.0 & bits != 0
-    }
-    #[must_use]
-    pub fn names(self) -> Vec<&'static str> {
-        (0..CLASS_NAMES.len())
-            .filter(|i| self.0 & (1 << i) != 0)
-            .map(|i| CLASS_NAMES[i])
-            .collect()
+
+    #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
+    pub struct UnitFlags: u8 {
+        const LYING = 1 << UnitFlag::Lying as u8;
+        const SERVICE = 1 << UnitFlag::Service as u8;
     }
 }
-#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
-pub struct UnitFlags(pub u8);
-impl UnitFlags {
-    pub const LYING: u8 = Self::bit(UnitFlag::Lying);
-    pub const SERVICE: u8 = Self::bit(UnitFlag::Service);
-    #[must_use]
-    pub const fn bit(f: UnitFlag) -> u8 {
-        1 << (f as u8)
-    }
-    fn of(fs: &[UnitFlag]) -> Self {
-        Self(fs.iter().fold(0, |a, f| a | Self::bit(*f)))
-    }
-    #[must_use]
-    pub const fn lying(self) -> bool {
-        self.0 & Self::LYING != 0
-    }
-    #[must_use]
-    pub const fn service(self) -> bool {
-        self.0 & Self::SERVICE != 0
+
+impl Classes {
+    fn of(cs: &[Class]) -> Self {
+        cs.iter()
+            .map(|&c| Self::from_bits_retain(1 << c as u16))
+            .collect()
     }
     #[must_use]
     pub fn names(self) -> Vec<&'static str> {
-        let mut v = vec![];
-        if self.lying() {
-            v.push("lying");
-        }
-        if self.service() {
-            v.push("service");
-        }
-        v
+        bit_names(self.bits(), CLASS_NAMES)
     }
+}
+
+impl UnitFlags {
+    fn of(fs: &[UnitFlag]) -> Self {
+        fs.iter()
+            .map(|&f| Self::from_bits_retain(1 << f as u8))
+            .collect()
+    }
+    #[must_use]
+    pub fn names(self) -> Vec<&'static str> {
+        bit_names(self.bits().into(), &["lying", "service"])
+    }
+}
+
+/// The entries of `names` whose index is a set bit.
+fn bit_names(bits: u16, names: &[&'static str]) -> Vec<&'static str> {
+    names
+        .iter()
+        .enumerate()
+        .filter(|&(i, _)| (bits >> i) & 1 != 0)
+        .map(|(_, n)| *n)
+        .collect()
 }
 
 /// Example: the flat `--fixture` row plus the unit/identity/container subjects.
@@ -772,7 +764,7 @@ impl Rules {
         let mut out = UnitFlags::default();
         for r in &self.stages[Stage::Unit as usize] {
             if eval(&r.test, &f) {
-                out.0 |= r.flags.0;
+                out |= r.flags;
             }
         }
         out
@@ -783,7 +775,7 @@ impl Rules {
         let mut out = Classes::default();
         for r in &self.stages[Stage::Class as usize] {
             if eval(&r.test, f) {
-                out.0 |= r.classes.0;
+                out |= r.classes;
             }
         }
         out
@@ -998,9 +990,7 @@ fn judge(ex: &Example, hits: &[&Compiled], file: &str) -> Vec<String> {
     }
     if let Some(cs) = &e.classes {
         let want = Classes::of(cs);
-        let got = hits
-            .iter()
-            .fold(Classes::default(), |a, r| Classes(a.0 | r.classes.0));
+        let got = hits.iter().fold(Classes::default(), |a, r| a | r.classes);
         if want != got {
             fails.push(format!(
                 "expected classes [{}], got [{}]",
@@ -1011,9 +1001,7 @@ fn judge(ex: &Example, hits: &[&Compiled], file: &str) -> Vec<String> {
     }
     if let Some(fl) = &e.flags {
         let want = UnitFlags::of(fl);
-        let got = hits
-            .iter()
-            .fold(UnitFlags::default(), |a, r| UnitFlags(a.0 | r.flags.0));
+        let got = hits.iter().fold(UnitFlags::default(), |a, r| a | r.flags);
         if want != got {
             fails.push(format!(
                 "expected flags [{}], got [{}]",
@@ -1250,7 +1238,7 @@ mod tests {
     fn every_class_name_is_the_name_its_bit_prints() {
         for &name in CLASS_NAMES {
             let c: Class = serde_json::from_value(name.into()).unwrap();
-            assert_eq!(Classes(Classes::bit(c)).names(), [name]);
+            assert_eq!(Classes::of(&[c]).names(), [name]);
         }
     }
 
@@ -1267,7 +1255,7 @@ mod tests {
                 name: hay,
                 ..Facts::default()
             })
-            .has(Classes::NOISE)
+            .intersects(Classes::NOISE)
         };
         assert!(probe("caf\u{e9}x"));
         assert!(!probe("caf"));
@@ -1539,10 +1527,12 @@ mod tests {
         let before = counting::allocations();
         let session = r.session(&f).is_some();
         let app = r.app(&f).is_some();
-        let classes = r.classes(&f).0;
-        let lying = r.unit_flags("app-org.chromium.Chromium-1.scope").lying();
+        let classes = r.classes(&f);
+        let lying = r
+            .unit_flags("app-org.chromium.Chromium-1.scope")
+            .contains(UnitFlags::LYING);
         let allocated = counting::allocations() - before;
-        assert!(session && !app && classes == 0 && lying);
+        assert!(session && !app && classes.is_empty() && lying);
         assert_eq!(allocated, 0);
     }
 
@@ -1574,7 +1564,7 @@ mod tests {
             r#"{"stage":"placement","disable":["10-classes.json:noise","05-units.json","nothing.json"],"rules":[]}"#,
         )]);
         assert!(r.is_empty(Stage::Unit));
-        assert!(!r.classes_of_name("cat").has(Classes::NOISE));
+        assert!(!r.classes_of_name("cat").intersects(Classes::NOISE));
         assert_eq!(r.warnings.len(), 1, "{:?}", r.warnings);
     }
 
@@ -1712,10 +1702,10 @@ mod tests {
                     for (p, unit) in &procs {
                         let f = crate::group::facts_of(p, unit.as_deref());
                         acc += match which {
-                            0 => u64::from(rules.classes(&f).0),
+                            0 => u64::from(rules.classes(&f).bits()),
                             1 => rules.session(&f).map_or(0, |(i, _)| i.len() as u64),
                             2 => rules.app(&f).map_or(0, |i| i.len() as u64),
-                            _ => f.unit.map_or(0, |u| u64::from(rules.unit_flags(u).0)),
+                            _ => f.unit.map_or(0, |u| u64::from(rules.unit_flags(u).bits())),
                         };
                     }
                 }

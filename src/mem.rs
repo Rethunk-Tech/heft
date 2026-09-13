@@ -2,7 +2,7 @@ use std::fs;
 use std::path::Path;
 
 use crate::proc::field_u64;
-use crate::types::HostTree;
+use crate::types::{HostTree, sum_opt};
 
 /// The sysfs GPU memory counters. Not `HostTree` fields alone: `gtt_total` is
 /// read only to decide `is_unified`, and the header never prints it.
@@ -107,12 +107,7 @@ pub(crate) fn read_gpu() -> GpuPool {
     let Ok(entries) = fs::read_dir(crate::root::path("/sys/class/drm")) else {
         return GpuPool::default();
     };
-    let mut vram_used = 0u64;
-    let mut vram_total = 0u64;
-    let mut gtt_total = 0u64;
-    let mut vram_found = false;
-    let mut gtt_found = false;
-    let mut gtt_used: Option<u64> = None;
+    let mut pool = GpuPool::default();
     for ent in entries.flatten() {
         let name = ent.file_name();
         let name = name.to_string_lossy();
@@ -123,24 +118,13 @@ pub(crate) fn read_gpu() -> GpuPool {
         if let Some(t) = read_u64(&dir.join("mem_info_vram_total"))
             && let Some(u) = read_u64(&dir.join("mem_info_vram_used"))
         {
-            vram_total = vram_total.saturating_add(t);
-            vram_used = vram_used.saturating_add(u);
-            vram_found = true;
+            pool.vram_total = sum_opt(pool.vram_total, Some(t));
+            pool.vram_used = sum_opt(pool.vram_used, Some(u));
         }
-        if let Some(t) = read_u64(&dir.join("mem_info_gtt_total")) {
-            gtt_total = gtt_total.saturating_add(t);
-            gtt_found = true;
-        }
-        if let Some(u) = read_u64(&dir.join("mem_info_gtt_used")) {
-            gtt_used = Some(gtt_used.unwrap_or(0).saturating_add(u));
-        }
+        pool.gtt_total = sum_opt(pool.gtt_total, read_u64(&dir.join("mem_info_gtt_total")));
+        pool.gtt_used = sum_opt(pool.gtt_used, read_u64(&dir.join("mem_info_gtt_used")));
     }
-    GpuPool {
-        vram_used: vram_found.then_some(vram_used),
-        vram_total: vram_found.then_some(vram_total),
-        gtt_total: gtt_found.then_some(gtt_total),
-        gtt_used,
-    }
+    pool
 }
 
 fn read_u64(path: &Path) -> Option<u64> {

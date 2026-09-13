@@ -129,28 +129,40 @@ impl Metrics {
         self.swap_bytes = sum_opt(self.swap_bytes, other.swap_bytes);
         self.threads = sum_opt(self.threads, other.threads);
         self.age_secs = self.age_secs.max(other.age_secs);
-        self.disk_r_bps = sum_opt_f(self.disk_r_bps, other.disk_r_bps);
-        self.disk_w_bps = sum_opt_f(self.disk_w_bps, other.disk_w_bps);
+        self.disk_r_bps = sum_opt(self.disk_r_bps, other.disk_r_bps);
+        self.disk_w_bps = sum_opt(self.disk_w_bps, other.disk_w_bps);
         self.vram_bytes = sum_opt(self.vram_bytes, other.vram_bytes);
         self.gtt_bytes = sum_opt(self.gtt_bytes, other.gtt_bytes);
-        self.gfx_pct = sum_opt_f(self.gfx_pct, other.gfx_pct);
-        self.compute_pct = sum_opt_f(self.compute_pct, other.compute_pct);
+        self.gfx_pct = sum_opt(self.gfx_pct, other.gfx_pct);
+        self.compute_pct = sum_opt(self.compute_pct, other.compute_pct);
         // net_rx_bps / net_tx_bps and the three *_stall_pct are not summed;
         // see their field comments.
     }
 }
 
-pub(crate) fn sum_opt(a: Option<u64>, b: Option<u64>) -> Option<u64> {
-    match (a, b) {
-        (None, None) => None,
-        (x, y) => Some(x.unwrap_or(0) + y.unwrap_or(0)),
+/// What `sum_opt` adds. Integers saturate: a wrapped byte or count sum prints
+/// garbage, a saturated one stays monotonic. Floats just add.
+pub(crate) trait Addend: Copy + Default {
+    fn plus(self, other: Self) -> Self;
+}
+
+impl Addend for u64 {
+    fn plus(self, other: Self) -> Self {
+        self.saturating_add(other)
     }
 }
 
-fn sum_opt_f(a: Option<f64>, b: Option<f64>) -> Option<f64> {
+impl Addend for f64 {
+    fn plus(self, other: Self) -> Self {
+        self + other
+    }
+}
+
+/// Blank plus a number is that number; the sum is blank only when both are.
+pub(crate) fn sum_opt<T: Addend>(a: Option<T>, b: Option<T>) -> Option<T> {
     match (a, b) {
         (None, None) => None,
-        (x, y) => Some(x.unwrap_or(0.0) + y.unwrap_or(0.0)),
+        (x, y) => Some(x.unwrap_or_default().plus(y.unwrap_or_default())),
     }
 }
 

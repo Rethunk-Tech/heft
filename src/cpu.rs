@@ -162,22 +162,27 @@ pub(crate) fn process_metrics(
     // Two formulas, because the drivers measure two different things: a
     // duration against the wall clock, and a cycle count against the GPU's own
     // clock. `or_else` keeps a driver that publishes ns on the ns path.
-    let span = cycles_span(prev, cur);
-    let gfx_pct = engine_pct(prev.and_then(|p| p.gpu.gfx_ns), cur.gpu.gfx_ns, secs).or_else(|| {
-        cycles_pct(
-            prev.and_then(|p| p.gpu.gfx_cycles),
-            cur.gpu.gfx_cycles,
-            span,
-        )
-    });
+    // Both need the same drm fds on both sides: a client that joined or left
+    // the set carries or drops its whole lifetime of engine time, not one
+    // interval's. The set only changes on a PSS tick, which rescans it.
+    let gpu_prev = prev.filter(|p| p.drm_fds == cur.drm_fds);
+    let span = cycles_span(gpu_prev, cur);
+    let gfx_pct =
+        engine_pct(gpu_prev.and_then(|p| p.gpu.gfx_ns), cur.gpu.gfx_ns, secs).or_else(|| {
+            cycles_pct(
+                gpu_prev.and_then(|p| p.gpu.gfx_cycles),
+                cur.gpu.gfx_cycles,
+                span,
+            )
+        });
     let compute_pct = engine_pct(
-        prev.and_then(|p| p.gpu.compute_ns),
+        gpu_prev.and_then(|p| p.gpu.compute_ns),
         cur.gpu.compute_ns,
         secs,
     )
     .or_else(|| {
         cycles_pct(
-            prev.and_then(|p| p.gpu.compute_cycles),
+            gpu_prev.and_then(|p| p.gpu.compute_cycles),
             cur.gpu.compute_cycles,
             span,
         )
@@ -362,6 +367,40 @@ mod tests {
         ns_prev.gpu.gfx_ns = Some(0);
         let m = process_metrics(Some(&ns_prev), &ns, Duration::from_secs(1), &consts);
         assert!((m.gfx_pct.unwrap() - 50.0).abs() < 1e-9, "{:?}", m.gfx_pct);
+    }
+
+    /// A drm client first seen on this tick brings every nanosecond it ran
+    /// before, so its engine time is not one interval's work.
+    #[test]
+    fn a_changed_drm_fd_set_blanks_the_gpu_rate_for_that_tick() {
+        let consts = HostHeader {
+            nproc: 8,
+            clk_tck: 100,
+            page_size: 4096,
+        };
+        let sample = |fds: &[u32], ns: u64, cycles: u64, stamp: u64| Process {
+            drm_fds: fds.to_vec(),
+            gpu: crate::types::GpuCounters {
+                gfx_ns: Some(ns),
+                compute_cycles: Some(cycles),
+                total_cycles: Some(stamp),
+                ..crate::types::GpuCounters::default()
+            },
+            ..Process::default()
+        };
+        let one = Duration::from_secs(1);
+        let prev = sample(&[30], 0, 1_000, 5_000);
+        let grown = sample(&[30, 31], 4_000_000_000, 1_250, 6_000);
+        let m = process_metrics(Some(&prev), &grown, one, &consts);
+        assert_eq!((m.gfx_pct, m.compute_pct), (None, None));
+        let same = sample(&[30], 500_000_000, 1_250, 6_000);
+        let m = process_metrics(Some(&prev), &same, one, &consts);
+        assert!((m.gfx_pct.unwrap() - 50.0).abs() < 1e-9, "{:?}", m.gfx_pct);
+        assert!(
+            (m.compute_pct.unwrap() - 25.0).abs() < 1e-9,
+            "{:?}",
+            m.compute_pct
+        );
     }
 
     /// The whole point of `btime`: `starttime` is ticks since boot, and

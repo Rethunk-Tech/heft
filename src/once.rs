@@ -978,7 +978,7 @@ fn write_rows(out: &mut impl Write, cols: &Columns, rows: &[TableRow]) -> io::Re
 /// costs one; a wide character that will not fit in what is left is dropped
 /// rather than half-drawn. Cutting on grapheme clusters rather than chars is
 /// what keeps a combining mark attached to the base it modifies.
-fn trunc(s: &str, width: usize) -> String {
+pub(crate) fn trunc(s: &str, width: usize) -> String {
     if s.width() <= width {
         return s.to_string();
     }

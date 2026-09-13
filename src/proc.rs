@@ -532,20 +532,8 @@ pub(crate) fn detail(pid: u32) -> Vec<(&'static str, String)> {
         ),
         ("EXE", dir.as_ref().and_then(read_exe).unwrap_or_default()),
         ("CGROUP", cgroup),
-        ("CMDLINE", truncate_chars(&argv, 240)),
+        ("CMDLINE", crate::once::trunc(&argv, 240)),
     ]
-}
-
-/// A Chromium helper's argv runs to thousands of characters — one
-/// `--enable-features=` list alone fills a pane. The front is what identifies
-/// the process (`--type=utility`, `--port`), so the tail is cut rather than
-/// letting one field push every other fact off the screen. Chars, not bytes,
-/// so a multi-byte argument cannot be split mid-character.
-fn truncate_chars(s: &str, max: usize) -> String {
-    match s.char_indices().nth(max) {
-        Some((i, _)) => format!("{}{}", &s[..i], crate::glyph::ellipsis()),
-        None => s.to_string(),
-    }
 }
 
 /// Header totals from world-readable files only — no per-PID `/proc` walk.

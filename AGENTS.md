@@ -219,7 +219,7 @@ evaluates it. Procedures stay Rust: the ancestor walks in `group.rs`,
 machine and System bucketing. `build.rs` embeds the directory through a
 generated `include_str!` table, sorted because `read_dir` order is
 machine-dependent, so a file added there cannot be left out of the binary.
-Embedding costs 100,552 bytes of stripped release binary (5.6%).
+Embedding costs 25,312 bytes of stripped release binary (1.3%).
 
 The contract, which a change may extend but not alter:
 
@@ -266,10 +266,9 @@ evaluation allocates nothing (`rules::tests::evaluation_allocates_nothing`,
 counted per thread because the other tests allocate on other threads). The
 compiled shape is what makes that affordable: a `Vec<String>` per test with a
 `windows` scan cost 750 ns per process, and equality bucketed by byte length
-with a first-byte scan for contains cost 415 to 450. Against `900a5fc`,
-`build_tree` measured 147 to 151 µs before and 151 to 166 after on the gui
-fixture, 426 to 438 before and 438 to 454 after on a 293 to 301-process dump,
-and the four stages 433 to 438 ns per process on facts built by
+with a first-byte scan for contains cost 415 to 450. `build_tree` measures
+149 to 152 µs on the gui fixture and 463 to 479 µs on a 324-process
+`--fixture` dump, and the four stages 433 to 438 ns per process on facts built by
 `group::facts_of`. The budget is 20% and 500 ns, measured on a quiet machine:
 `cargo test --release --test grouping -- --ignored --nocapture
 build_tree_timing` and `cargo test --release --lib -- --ignored --nocapture
@@ -400,13 +399,14 @@ optional in CI; grouping tests use `tests/fixtures/` via `tests/grouping.rs`.
 The gate is `cargo clippy --locked --all-targets -- -D warnings` at the
 default level plus the `[lints.clippy]` list in `Cargo.toml`. The wider groups
 are measured, not assumed, and the measurement is against that same
-`--all-targets` gate: `pedantic` + `nursery` + `cargo` reported 397 warnings
-across 29 lints, and 266 across 20 once the list below was adopted. 174 of
-what is left is the one nursery lint `redundant_pub_crate` objecting to a
-visibility style this crate keeps deliberately; the rest is
-`option_if_let_else`, `too_many_lines` over render functions that are one
-piece on purpose, and `multiple_crate_versions` for two `hashbrown` majors
-ratatui pulls. Adopting those wholesale is a mechanical rewrite buying style,
+`--all-targets` gate: with the list below in place, `pedantic` + `nursery` +
+`cargo` report 235 warnings across 23 lints, counted as clippy emits them for
+every target. 134 of those are the one nursery lint `redundant_pub_crate`
+objecting to a visibility style this crate keeps deliberately; most of the
+rest is `too_long_first_doc_paragraph`, `option_if_let_else`, `too_many_lines`
+over render functions that are one piece on purpose, and
+`multiple_crate_versions` for the two `hashbrown` and two `syn` majors the
+dependencies pull. Adopting those wholesale is a mechanical rewrite buying style,
 and is refused. Re-measure before quoting a number here: the counts move with
 every clippy release and every change to this code.
 

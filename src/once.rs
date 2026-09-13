@@ -436,10 +436,10 @@ pub fn sort_labels() -> Vec<&'static str> {
 /// back off for whoever wants that.
 ///
 /// `regex-lite` rather than `regex`, measured: the full engine takes the
-/// stripped release binary from 1.53 MB to 2.93 MB and pulls in four more
-/// crates for its SIMD literal search, which matches a few hundred process
-/// names once a tick and is not worth 92% of the binary. `regex-lite` costs
-/// 70 KB and one crate, and gives up only Unicode character classes.
+/// stripped release binary from 1.93 MB to 3.26 MB and pulls in four crates
+/// in place of one for its SIMD literal search, which matches a few hundred
+/// process names once a tick and is not worth 69% of the binary. `regex-lite`
+/// costs 69 KB and one crate, and gives up only Unicode character classes.
 pub struct Filter(regex_lite::Regex);
 
 impl Filter {

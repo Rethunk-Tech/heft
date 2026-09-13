@@ -56,7 +56,10 @@ impl Sampler {
     /// `--once` each: 0.31s without pressure sampling, 0.32s with. That is
     /// about 5 ms a tick, for three pressure files per cgroup plus the
     /// `cgroup.procs` reads the solo-process rule needs — never enough to
-    /// justify a cadence of its own the way `--pss-interval` was.
+    /// justify a cadence of its own the way `--pss-interval` was. Those are
+    /// wall-clock figures. In CPU time, on a host with 136 distinct cgroups,
+    /// the three pressure files cost 1.08 to 1.13 ms of kernel time a pass
+    /// over three runs, and `cgroup.procs` at most 1.01 to 1.07 ms more.
     pub(crate) fn tick(&mut self, procs: &HashMap<u32, Process>, secs: f64) -> Stalls {
         let mut curr = HashMap::new();
         let mut rates = HashMap::new();

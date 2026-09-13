@@ -39,7 +39,8 @@ pub(crate) const COLUMNS: &[Column] = &[
         fmt: |name, _, _| name.to_string(),
         key: None,
     },
-    // A picture of %CORE's recent history, on a fixed 0-100 scale. Its `fmt`
+    // A picture of the sort metric's recent history, against the scale
+    // `ui::trend_scale` gives the frame. Its `fmt`
     // is empty and the TUI substitutes the drawn cell: `--once` and `--json`
     // take two walks and have no history, so a blank there is the truth
     // rather than a gap. `key: None` and not in the sort cycle — a trend has

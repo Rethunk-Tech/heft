@@ -20,7 +20,8 @@
 //! so the image is repainted every frame rather than hashed and skipped the
 //! way the kitty one is. That is affordable here for a reason it would not be
 //! there: a sparkline is mostly empty, and sixel run-length-encodes the empty
-//! part, so a frame is a couple of kilobytes rather than the whole bitmap.
+//! part: an 18-row column measured 559 bytes a frame rather than the whole
+//! bitmap.
 
 use std::fmt::Write;
 

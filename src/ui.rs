@@ -91,8 +91,8 @@ struct App {
     /// picture. Rows that stop appearing are dropped on the same pass that
     /// records, so an exited process does not hold a buffer for the run.
     history: HashMap<String, VecDeque<f64>>,
-    /// Present only under `--trend kitty`: the image in flight, and what it
-    /// costs to keep it in step. `None` is the ordinary character ramp.
+    /// Present only when TREND is drawn with the kitty protocol: the image in
+    /// flight, and what it costs to keep it in step. `None` is the ordinary character ramp.
     kgp: Option<kgp::Kgp>,
     /// Which of the three TREND renderings is in play.
     trend: TrendMode,
@@ -124,8 +124,9 @@ const TREND: usize = 9;
 /// minute of history nobody reads across, taken from the name column beside it.
 const TREND_MAX: u16 = 30;
 
-/// How the TREND column is drawn. Resolved in `main` from `--trend`, never
-/// detected: `TERM` names a terminal, not what it implements.
+/// How the TREND column is drawn, from `--trend`. `Auto` is resolved by asking
+/// the terminal (`caps::probe`), because `TERM` names a terminal, not what it
+/// implements.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum TrendMode {
     /// Ask the terminal, once, before the first frame.
@@ -252,11 +253,8 @@ fn run_loop(
         app.row_vis = table_body_rows(terminal.size()?.height, header_rows(&app.tree));
         app.row_off = follow_viewport(app.cursor, app.row_off, app.row_vis, rows.len());
         terminal.draw(|f| draw(f, &mut app, &rows))?;
-        // Last, deliberately: ratatui rewrites only the cells that changed,
-        // and a rewritten cell erases the pixels over it, so the image is
-        // repainted every frame rather than hashed the way the kitty one is.
-        // A sparkline is mostly empty and sixel run-length-encodes the empty
-        // part, so a frame is a couple of kilobytes.
+        // Last, and every frame: a cell ratatui rewrites erases the pixels
+        // over it. The `sixel` module doc says why that is affordable.
         if let Some(px) = app.sixel_out.take() {
             let mut out = io::stdout();
             out.write_all(px.as_bytes())?;
@@ -807,19 +805,13 @@ fn sort_header<'a>(cols: impl Iterator<Item = &'a Column>, sort: &str) -> Row<'s
     .style(Style::default().add_modifier(Modifier::BOLD))
 }
 
-/// Paint every visible row's history into one image and hand it to the
-/// terminal, returning whether the placeholders may be drawn.
+/// The image both image transports draw, or `None` where one cannot be made:
+/// a terminal that reports no pixel size, an absurd cell, an empty table.
 ///
 /// One image for the whole column: the protocol's row diacritics index into
 /// it, so nine cells of one band cost the same escape as the whole table. The
 /// row range is known here and nowhere else, which is why this runs from
 /// `draw` rather than from the loop.
-///
-/// Any reason it cannot be done -- a terminal that reports no pixel size, an
-/// absurd cell, a write that failed -- falls back to the character ramp for
-/// that frame rather than leaving the column blank.
-/// The image both image transports draw, or `None` where one cannot be made:
-/// a terminal that reports no pixel size, an absurd cell, an empty table.
 fn trend_image(
     app: &App,
     rows: &[Flat],
@@ -873,6 +865,9 @@ fn marked_corner(buf: &ratatui::buffer::Buffer, area: Rect) -> Option<(u16, u16)
     best
 }
 
+/// Hand the kitty image to the terminal, returning whether the placeholders
+/// may be drawn. Any reason it cannot be done falls back to the character ramp
+/// for that frame rather than leaving the column blank.
 fn send_trend(app: &mut App, rows: &[Flat], start: usize, end: usize, full: f64) -> bool {
     let Some(img) = trend_image(app, rows, start, end, full) else {
         return false;
@@ -1196,10 +1191,6 @@ fn cpu_parts(tree: &HostTree, width: usize) -> (String, String, usize) {
     (prefix, mid, fits)
 }
 
-/// `LABEL [bar] used/total` sized to exactly `width` columns (the bar
-/// absorbs the slack), so two of these can share one header row. Returns the
-/// width the bar settled on as well as the spans, because the CPU row above is
-/// drawn to the same scale.
 /// Every bar's label, right-aligned to the longest one *this machine draws*,
 /// so `[` lands in one column on every header row.
 ///
@@ -1234,6 +1225,10 @@ fn label_width(tree: &HostTree) -> usize {
     }
 }
 
+/// `LABEL [bar] used/total` sized to exactly `width` columns (the bar
+/// absorbs the slack), so two of these can share one header row. Returns the
+/// width the bar settled on as well as the spans, because the CPU row above is
+/// drawn to the same scale.
 fn bar_group(
     label: &str,
     label_w: usize,

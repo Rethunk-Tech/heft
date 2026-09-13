@@ -1,10 +1,8 @@
 //! TREND drawn as a kitty-graphics-protocol image rather than block characters.
 //!
-//! Opt-in (`--trend kitty`), never detected. `TERM` names a terminal, not what
-//! it implements, and the alternative is the DA1-style handshake heft has
-//! deliberately never done: a write, a read, and a timeout before the first
-//! frame. The flag asserts the terminal the same way `--glyphs unicode` asserts
-//! the font.
+//! Chosen by `--trend kitty`, or by `caps::probe` under `--trend auto`. The
+//! explicit flag asserts the terminal the way `--glyphs unicode` asserts the
+//! font, and asks nothing.
 //!
 //! One image for the whole column, not one per row. The protocol's row
 //! diacritics exist to index into an image, so a single transmission covers
@@ -164,8 +162,8 @@ pub(crate) fn cell_px() -> Option<(u32, u32)> {
     Some((xp / cols, yp / rows))
 }
 
-/// Paint one band per row: a line tracing that row's %CORE across the samples,
-/// on the same fixed 0-`full` scale `ui::spark` uses, so the two renderings of
+/// Paint one band per row: a line tracing that row's sort metric across the
+/// samples, on the same 0-`full` scale `ui::spark` uses, so the two renderings of
 /// TREND say the same thing.
 ///
 /// A line and not a filled bar. Filled, every row that was doing any work at

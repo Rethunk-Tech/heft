@@ -46,13 +46,13 @@ pub(crate) struct Cli {
     /// Seconds between catch-all samples (TUI tick and `--once` / `--json` gap)
     #[arg(long, default_value_t = 1.0)]
     pub interval: f64,
-    /// TUI seconds between PSS (`smaps_rollup`) reads (≥ `--interval`). `--once` / `--json` always read PSS
+    /// Seconds between PSS (`smaps_rollup`) reads in the TUI and `--follow` (≥ `--interval`). One-shot `--once` / `--json` always read PSS
     #[arg(long, default_value_t = 5.0)]
     pub pss_interval: f64,
     /// Sort by this column label: the labels Shift-arrows cycle and `view.json` saves; a bad one lists them all
     #[arg(long, value_name = "COLUMN")]
     pub sort: Option<String>,
-    /// Keep only rows whose name matches this regex, and their parents
+    /// Keep only rows whose name, or the argv of any process under them, matches this regex, and their parents
     #[arg(long, value_name = "REGEX", conflicts_with = "json")]
     pub filter: Option<String>,
     /// Show only this user's branch; repeat for several. Takes a name or a uid

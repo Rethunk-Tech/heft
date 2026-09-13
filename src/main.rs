@@ -10,18 +10,6 @@ use cli::{Cli, Glyphs, Trend};
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
-    // Ahead of the terminal check: a flag combination that cannot mean
-    // anything is a usage error wherever stdout happens to point, and telling
-    // someone about their terminal when the problem is their command line
-    // sends them looking in the wrong place. The TUI is already a follow.
-    if cli.follow && !cli.once && !cli.json {
-        Cli::command()
-            .error(
-                ErrorKind::MissingRequiredArgument,
-                "--follow needs --once or --json; the TUI already samples continuously",
-            )
-            .exit()
-    }
     // Before sampling, not after: the TUI cannot open a terminal it has not
     // got, and surfacing that at the end of a `/proc` walk would burn a whole
     // `--interval` first. Non-zero, and no quiet fall back to `--once`, which
@@ -221,9 +209,9 @@ fn check_sort(label: &str) -> &str {
     check_column("sort", label, heft::once::sort_labels())
 }
 
-/// Ordering is presentation, so every column can be moved -- including the
-/// ones no sort can land on. `--sort` and `--order` shared one list until
-/// `spark` gave them different answers.
+/// Ordering is presentation, so every column can be moved, including `spark`,
+/// which no sort can land on: `--order` validates against every column label,
+/// not the sortable ones `--sort` takes.
 fn check_order(label: &str) -> &str {
     check_column("order", label, heft::once::column_labels())
 }

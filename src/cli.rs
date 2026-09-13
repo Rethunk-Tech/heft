@@ -34,7 +34,8 @@ pub(crate) enum Trend {
     // `build.rs` sets HEFT_VERSION for the crate but compiles this file
     // before it has, so it falls back here and sets the man page's itself.
     version = option_env!("HEFT_VERSION").unwrap_or(env!("CARGO_PKG_VERSION")),
-    about = "Read-only Linux application-weight process monitor"
+    about = "Read-only Linux application-weight process monitor",
+    group = clap::ArgGroup::new("mode").args(["once", "json"]).multiple(true)
 )]
 pub(crate) struct Cli {
     /// Print one table and exit
@@ -74,7 +75,7 @@ pub(crate) struct Cli {
     #[arg(long, value_enum, default_value_t = Trend::Auto, value_name = "MODE", conflicts_with_all = ["once", "json"])]
     pub trend: Trend,
     /// Keep sampling: one table or one JSON line per interval. Needs --once or --json
-    #[arg(long)]
+    #[arg(long, requires = "mode")]
     pub follow: bool,
     /// Keep only the N heaviest rows in each list the sort ordered
     #[arg(long, value_name = "N", value_parser = clap::value_parser!(u32).range(1..), conflicts_with = "json")]

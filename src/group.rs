@@ -49,7 +49,7 @@ impl<'a> Ctx<'a> {
     }
 }
 
-fn facts_of<'p>(p: &'p Process, unit: Option<&'p str>) -> Facts<'p> {
+pub(crate) fn facts_of<'p>(p: &'p Process, unit: Option<&'p str>) -> Facts<'p> {
     Facts {
         comm: &p.comm,
         name: classify::name_ref(p),

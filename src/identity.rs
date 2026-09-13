@@ -87,7 +87,7 @@ fn unit_line(cgroup: &str) -> &str {
         .unwrap_or(cgroup)
 }
 
-pub fn user_unit(cgroup: &str) -> Option<String> {
+pub(crate) fn user_unit(cgroup: &str) -> Option<String> {
     let cgroup = unit_line(cgroup);
     let after = match cgroup.find("user@") {
         Some(i) => {

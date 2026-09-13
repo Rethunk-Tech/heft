@@ -98,15 +98,7 @@ fn trace(rules: &Rules, p: Option<&Process>, ident: &str) -> Vec<String> {
         return vec!["  rules     (process gone)".to_string()];
     };
     let unit = crate::identity::user_unit(&p.cgroup);
-    let process = Facts {
-        comm: &p.comm,
-        name: crate::classify::name_ref(p),
-        exe: p.exe.as_deref(),
-        argv: &p.cmdline,
-        cgroup: &p.cgroup,
-        unit: unit.as_deref(),
-        ..Facts::default()
-    };
+    let process = crate::group::facts_of(p, unit.as_deref());
     let stages = [
         (
             Stage::Unit,

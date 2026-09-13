@@ -23,5 +23,4 @@ pub(crate) mod tty;
 pub mod types;
 pub mod ui;
 
-pub use identity::user_unit as identity_user_unit;
 pub use types::*;

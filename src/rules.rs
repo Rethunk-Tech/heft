@@ -1693,4 +1693,87 @@ mod tests {
             r.lines
         );
     }
+
+    /// R44: nanoseconds per process for each stage over the gui fixture and
+    /// any `HEFT_BENCH_FIXTURE`, `HEFT_BENCH_ITERS` passes each. In the crate
+    /// so it builds facts through `group::facts_of`, the tick's own path. Run
+    /// with `cargo test --release --lib -- --ignored --nocapture rules_timing`.
+    #[test]
+    #[ignore]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "a process count and a nanosecond total both fit in 52 bits"
+    )]
+    fn rules_timing() {
+        use std::fmt::Write;
+        #[derive(Deserialize)]
+        struct Dump {
+            processes: Vec<Row>,
+        }
+        #[derive(Deserialize)]
+        struct Row {
+            pid: u32,
+            ppid: u32,
+            comm: String,
+            exe: Option<String>,
+            #[serde(default)]
+            cmdline: Vec<String>,
+            cgroup: String,
+        }
+        let iters: u32 = std::env::var("HEFT_BENCH_ITERS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(5000);
+        let mut paths =
+            vec![concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/gui/world.json").to_string()];
+        paths.extend(std::env::var("HEFT_BENCH_FIXTURE"));
+        let rules = Rules::builtin();
+        for path in paths {
+            let dump: Dump =
+                serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            let procs: Vec<(crate::types::Process, Option<String>)> = dump
+                .processes
+                .into_iter()
+                .map(|r| {
+                    let unit = crate::identity::user_unit(&r.cgroup);
+                    let p = crate::types::Process {
+                        pid: r.pid,
+                        ppid: r.ppid,
+                        comm: r.comm,
+                        exe: r.exe,
+                        cmdline: r.cmdline,
+                        cgroup: r.cgroup,
+                        ..crate::types::Process::default()
+                    };
+                    (p, unit)
+                })
+                .collect();
+            let n = procs.len() as f64;
+            let mut acc = 0u64;
+            let mut line = format!("rules_timing {path}: {} processes", procs.len());
+            for (label, which) in [
+                ("classes", 0),
+                ("session", 1),
+                ("app", 2),
+                ("unit_flags", 3),
+            ] {
+                let t = std::time::Instant::now();
+                for _ in 0..iters {
+                    for (p, unit) in &procs {
+                        let f = crate::group::facts_of(p, unit.as_deref());
+                        acc += match which {
+                            0 => u64::from(rules.classes(&f).0),
+                            1 => rules.session(&f).map_or(0, |(i, _)| i.len() as u64),
+                            2 => rules.app(&f).map_or(0, |i| i.len() as u64),
+                            _ => f.unit.map_or(0, |u| u64::from(rules.unit_flags(u).0)),
+                        };
+                    }
+                }
+                let ns = t.elapsed().as_nanos() as f64 / f64::from(iters) / n;
+                let _ = write!(line, ", {label} {ns:.0} ns");
+            }
+            std::hint::black_box(acc);
+            println!("{line}");
+        }
+    }
 }

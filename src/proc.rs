@@ -3,6 +3,7 @@ use std::fs;
 use std::io;
 use std::num::NonZero;
 use std::panic::AssertUnwindSafe;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
@@ -35,6 +36,13 @@ use crate::{gpu, io as pio, net, psi};
 /// pool exists now. New glibc arenas each tick climbed ~15 MiB every 5s PSS
 /// tick to ~488 MiB. `MALLOC_ARENA_MAX=2` plateaued at 39 MiB, so arenas
 /// dominate the `HostTree`.
+///
+/// Workers pull one pid at a time off a shared index rather than each taking
+/// an equal-count slice, because procfs cost is wildly uneven: one slow
+/// `smaps_rollup` (gnome-shell, 74 ms) stalled its whole slice while the other
+/// workers sat idle. On ~750 pids and 32 threads, twelve interleaved runs
+/// (median, p10-p90): PSS tick 98.1 ms [87.6-107.1] to 82.3 [81.0-90.5], plain
+/// tick 8.7 [8.1-9.6] to 6.5 [6.1-7.2].
 struct WalkPool {
     job_txs: Vec<mpsc::Sender<WalkJob>>,
     result_rx: mpsc::Receiver<WalkChunk>,
@@ -42,7 +50,8 @@ struct WalkPool {
 }
 
 struct WalkJob {
-    pids: Vec<u32>,
+    pids: Arc<[u32]>,
+    next: Arc<AtomicUsize>,
     want_pss: bool,
     want_swap: bool,
     prev: Option<Arc<HashMap<u32, Process>>>,
@@ -85,7 +94,7 @@ impl WalkPool {
         let Ok(dir) = fs::read_dir(crate::root::path("/proc")) else {
             return HashMap::new();
         };
-        let pids: Vec<u32> = dir
+        let pids: Arc<[u32]> = dir
             .flatten()
             .filter_map(|e| e.file_name().to_str().and_then(|s| s.parse::<u32>().ok()))
             .collect();
@@ -93,20 +102,19 @@ impl WalkPool {
             return HashMap::new();
         }
         let workers = self.job_txs.len().min(pids.len());
-        let chunk = pids.len().div_ceil(workers);
-        let n_jobs = pids.chunks(chunk).len();
-        for (i, slice) in pids.chunks(chunk).enumerate() {
-            self.job_txs[i]
-                .send(WalkJob {
-                    pids: slice.to_vec(),
-                    want_pss,
-                    want_swap,
-                    prev: prev.cloned(),
-                })
-                .expect("a /proc walk thread exited");
+        let next = Arc::new(AtomicUsize::new(0));
+        for tx in &self.job_txs[..workers] {
+            tx.send(WalkJob {
+                pids: Arc::clone(&pids),
+                next: Arc::clone(&next),
+                want_pss,
+                want_swap,
+                prev: prev.cloned(),
+            })
+            .expect("a /proc walk thread exited");
         }
         let mut out = HashMap::with_capacity(pids.len());
-        for _ in 0..n_jobs {
+        for _ in 0..workers {
             match self.result_rx.recv().expect("a /proc walk thread exited") {
                 WalkChunk::Done(v) => out.extend(v),
                 // A panic here is a bug in a `/proc` parser, and swallowing it
@@ -130,18 +138,14 @@ impl Drop for WalkPool {
 fn walk_worker(job_rx: mpsc::Receiver<WalkJob>, result_tx: mpsc::Sender<WalkChunk>) {
     while let Ok(job) = job_rx.recv() {
         let chunk = std::panic::catch_unwind(AssertUnwindSafe(|| {
-            job.pids
-                .iter()
-                .filter_map(|&pid| {
-                    let p = read_pid(
-                        pid,
-                        job.want_pss,
-                        job.want_swap,
-                        job.prev.as_ref().and_then(|m| m.get(&pid)),
-                    )?;
-                    Some((pid, p))
-                })
-                .collect::<Vec<_>>()
+            let mut out = Vec::new();
+            while let Some(&pid) = job.pids.get(job.next.fetch_add(1, Ordering::Relaxed)) {
+                let prev = job.prev.as_ref().and_then(|m| m.get(&pid));
+                if let Some(p) = read_pid(pid, job.want_pss, job.want_swap, prev) {
+                    out.push((pid, p));
+                }
+            }
+            out
         }));
         let msg = match chunk {
             Ok(v) => WalkChunk::Done(v),

@@ -373,7 +373,8 @@ const ROLLUP_MAX_PERIODS: u32 = 6;
 ///
 /// `want_swap` must also match what the last read saw, so a `swapon` or
 /// `swapoff` forces one read rather than carrying a blank or a figure from a
-/// host that no longer has swap.
+/// host that no longer has swap. A rollup that could not be read (PSS blank)
+/// carries regardless, or an unreadable pid reopens it every PSS tick.
 fn rollup_holds(
     prev: &Process,
     starttime_ticks: Option<u64>,
@@ -388,7 +389,7 @@ fn rollup_holds(
     prev.starttime_ticks.is_some()
         && prev.starttime_ticks == starttime_ticks
         && prev.rollup_periods + 1 < ROLLUP_MAX_PERIODS
-        && prev.swap_pss_kb.is_some() == want_swap
+        && (prev.pss_kb.is_none() || prev.swap_pss_kb.is_some() == want_swap)
         && now.abs_diff(then) <= (then / 100).max(floor)
 }
 
@@ -955,6 +956,7 @@ mod tests {
         assert!(!holds(&prev, Some(7), 101_001));
         assert!(!holds(&prev, Some(8), 100_000), "a new process");
         let swapped = Process {
+            pss_kb: Some(12),
             swap_pss_kb: Some(3),
             ..prev.clone()
         };
@@ -963,9 +965,17 @@ mod tests {
             !rollup_holds(&swapped, Some(7), Some(100_000), false, 4096),
             "swapoff"
         );
+        let read = Process {
+            pss_kb: Some(12),
+            ..prev.clone()
+        };
         assert!(
-            !rollup_holds(&prev, Some(7), Some(100_000), true, 4096),
+            !rollup_holds(&read, Some(7), Some(100_000), true, 4096),
             "swapon"
+        );
+        assert!(
+            rollup_holds(&prev, Some(7), Some(100_000), true, 4096),
+            "an unreadable rollup carries whatever swap is"
         );
         let small = Process {
             rollup_rss_pages: Some(1_000),

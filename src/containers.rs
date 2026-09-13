@@ -28,6 +28,16 @@ fn normalized_id(s: &str) -> Option<String> {
     hex_id(s).map(str::to_ascii_lowercase)
 }
 
+/// The `by_id` key, on insert and lookup alike: the normalized id cut to 12
+/// hex digits, so a full id and a truncated one reach the same row whichever
+/// side reported which. The ceiling: two running containers sharing a 12-hex
+/// prefix bill to one row, the ambiguity the docker CLI refuses a short id for.
+fn id_key(s: &str) -> Option<String> {
+    let mut id = normalized_id(s)?;
+    id.truncate(12);
+    Some(id)
+}
+
 /// Both index builders look an inspect up by this normalized id, in one place
 /// so neither can key differently from the other: a raw `item.id` misses
 /// whenever the daemon reports it in any case but the one the map was built in.
@@ -194,26 +204,16 @@ impl ContainerIndex {
             owner_uid: owner,
             own_netns: inspect.is_some_and(Inspect::owns_netns),
         };
-        self.index_ids(&info);
         for ip in ips {
             self.by_ip.insert(ip, info.id.clone());
         }
+        if let Some(key) = id_key(&info.id) {
+            self.by_id.insert(key, info);
+        }
     }
 
-    fn index_ids(&mut self, info: &ContainerInfo) {
-        let Some(id) = normalized_id(&info.id) else {
-            return;
-        };
-        if let Some(short) = hex12(&id) {
-            self.by_id.insert(short.to_string(), info.clone());
-        }
-        self.by_id.insert(id, info.clone());
-    }
     pub(crate) fn get(&self, raw: &str) -> Option<&ContainerInfo> {
-        let id = normalized_id(raw)?;
-        self.by_id
-            .get(&id)
-            .or_else(|| hex12(&id).and_then(|s| self.by_id.get(s)))
+        self.by_id.get(&id_key(raw)?)
     }
     pub(crate) fn by_ip(&self, ip: &str) -> Option<&ContainerInfo> {
         self.by_ip.get(ip).and_then(|id| self.get(id))
@@ -464,18 +464,26 @@ mod tests {
         assert!(helper_id(&runc(mid), true).is_none());
         assert!(helper_id(&runc("zzzzzzzzzzzzz"), true).is_none());
 
-        let mut idx = ContainerIndex::default();
-        idx.index_ids(&info(mid));
-        idx.index_ids(&info("zzzzzzzzzzzzz"));
-        assert!(idx.by_id.is_empty());
-        assert!(idx.get(mid).is_none());
-        assert!(idx.get("zzzzzzzzzzzzz").is_none());
+        assert!(id_key(mid).is_none());
+        assert!(id_key("zzzzzzzzzzzzz").is_none());
 
         let hex = "0123456789abcdef";
-        idx.index_ids(&info(hex));
+        let mut idx = ContainerIndex::default();
+        idx.by_id.insert(id_key(hex).unwrap(), info(hex));
         assert!(idx.get(hex).is_some());
-        assert!(idx.get("0123456789ab").is_some());
+        assert!(
+            idx.get("0123456789AB").is_some(),
+            "truncated, in another case"
+        );
         assert!(idx.get(mid).is_none());
+        let mut short = ContainerIndex::default();
+        short
+            .by_id
+            .insert(id_key("0123456789ab").unwrap(), info("0123456789ab"));
+        assert!(
+            short.get(hex).is_some(),
+            "a full id finds a row a truncated id keyed"
+        );
         assert_eq!(helper_id(&runc(hex), true).as_deref(), Some(hex));
         assert!(helper_id(&runc(hex), false).is_none());
 

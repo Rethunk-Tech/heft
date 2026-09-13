@@ -1,0 +1,17 @@
+{
+  "stage": "session",
+  "rules": [
+    { "id": "flatpak", "match": { "any": [ { "name_prefix": "flatpak-session" }, { "name": "flatpak-portal" }, { "all": [ { "name": "xdg-dbus-proxy" }, { "not": { "cgroup_contains": "app-flatpak-" } } ] } ] }, "identity": "flatpak", "folder": "user_services" },
+    { "id": "xdg-desktop-portal", "match": { "any": [ { "name": ["xdg-desktop-portal", "xdg-document-portal", "xdg-permission-store"] }, { "name_prefix": "xdg-desktop-portal-" }, { "all": [ { "name_prefix": "fusermount" }, { "cgroup_contains": "xdg-document-portal" } ] } ] }, "identity": "xdg-desktop-portal", "folder": "user_services" }
+  ],
+  "examples": [
+    { "comm": "flatpak-session-helper", "exe": "/usr/libexec/flatpak-session-helper", "expect": { "identity": "flatpak", "rule": "flatpak" } },
+    { "comm": "flatpak-portal", "exe": "/usr/libexec/flatpak-portal", "expect": { "identity": "flatpak", "rule": "flatpak" } },
+    { "comm": "xdg-dbus-proxy", "exe": "/usr/bin/xdg-dbus-proxy", "cmdline": ["/usr/bin/xdg-dbus-proxy"], "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/session.slice/xdg-desktop-portal.service", "expect": { "identity": "flatpak", "rule": "flatpak" } },
+    { "comm": "xdg-dbus-proxy", "exe": "/usr/bin/xdg-dbus-proxy", "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-flatpak-com.visualstudio.code-1.scope", "expect": null },
+    { "comm": "cursor", "exe": "/tmp/.mount_cursor/usr/share/cursor/cursor", "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/flatpak-session-helper.service", "expect": null },
+    { "comm": "xdg-desktop-portal-gnome", "exe": "/usr/libexec/xdg-desktop-portal-gnome", "expect": { "identity": "xdg-desktop-portal", "rule": "xdg-desktop-portal" } },
+    { "comm": "fusermount3", "exe": "/usr/bin/fusermount3", "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/session.slice/xdg-document-portal.service", "expect": { "identity": "xdg-desktop-portal", "rule": "xdg-desktop-portal" } },
+    { "comm": "fusermount3", "exe": "/usr/bin/fusermount3", "expect": null }
+  ]
+}

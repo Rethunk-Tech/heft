@@ -1,0 +1,11 @@
+{
+  "stage": "session",
+  "rules": [
+    { "id": "kwin", "match": { "any": [ { "name": "kwin" }, { "name_prefix": ["kwin_", "kwin-"] } ] }, "identity": "kwin", "folder": "user_services" }
+  ],
+  "examples": [
+    { "comm": "kwin_wayland", "exe": "/usr/bin/kwin_wayland", "cmdline": ["/usr/bin/kwin_wayland"], "expect": { "identity": "kwin", "rule": "kwin" } },
+    { "comm": "kwin_wayland_wrapper", "exe": "/usr/bin/kwin_wayland_wrapper", "cmdline": ["/usr/bin/kwin_wayland_wrapper"], "expect": { "identity": "kwin", "rule": "kwin" } },
+    { "comm": "kwindowprop", "exe": "/usr/bin/kwindowprop", "expect": null }
+  ]
+}

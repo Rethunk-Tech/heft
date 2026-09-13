@@ -1,4 +1,6 @@
 use crate::classify::{self, script_basename};
+use crate::group::Judged;
+use crate::rules::{Classes, Facts, Rules};
 use crate::types::Process;
 
 pub(crate) fn docker_scope_id(cgroup: &str) -> Option<String> {
@@ -85,7 +87,7 @@ fn unit_line(cgroup: &str) -> &str {
         .unwrap_or(cgroup)
 }
 
-pub(crate) fn user_unit(cgroup: &str) -> Option<String> {
+pub fn user_unit(cgroup: &str) -> Option<String> {
     let cgroup = unit_line(cgroup);
     let after = match cgroup.find("user@") {
         Some(i) => {
@@ -128,25 +130,6 @@ fn systemd_unescape(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-pub(crate) fn lying_unit(unit: &str) -> bool {
-    let u = unit.to_ascii_lowercase();
-    u.contains("-transient-")
-        || u.contains("org.chromium.chromium")
-        || u.starts_with("dbus:")
-        || u.starts_with("dbus-:")
-        || u.starts_with("run-u")
-        || u.starts_with("flatpak-session-helper")
-}
-
-pub(crate) fn is_user_service_unit(unit: &str) -> bool {
-    let u = unit.to_ascii_lowercase();
-    if u == "init.scope" {
-        return true;
-    }
-    let service = u.ends_with(".service");
-    service && !u.starts_with("app-")
-}
-
 fn unit_stem(unit: &str) -> String {
     let mut s = unit.to_string();
     if let Some(stripped) = s.strip_suffix(".scope") {
@@ -168,9 +151,13 @@ pub(crate) const fn is_kernel(p: &Process) -> bool {
     p.kthread
 }
 
-pub(crate) fn generic_fallback(p: &Process, unit: Option<&str>) -> String {
-    if let Some(u) = unit
-        && !lying_unit(u)
+/// A generic interpreter's identity: the unit stem when the unit is not
+/// lying, else a distinctive script basename, else the interpreter's name.
+/// The non-distinctive names are the `anonymous_script` class, asked of the
+/// script basename alone (`Facts.script` is set nowhere else).
+pub(crate) fn generic_fallback(p: &Process, j: &Judged, rules: &Rules) -> String {
+    if let Some(u) = &j.unit
+        && !j.unit_flags.lying()
     {
         let stem = unit_stem(u);
         if !stem.is_empty() && stem != "app" {
@@ -178,25 +165,29 @@ pub(crate) fn generic_fallback(p: &Process, unit: Option<&str>) -> String {
         }
     }
     if let Some(script) = script_basename(&p.cmdline) {
-        let b = classify::basename(&script);
-        if !matches!(
-            b.as_str(),
-            "main.js" | "main" | "index.js" | "app.js" | "server.js" | "run.js"
-        ) {
+        let anonymous = rules
+            .classes(&Facts {
+                script: Some(&script),
+                ..Facts::default()
+            })
+            .has(Classes::ANONYMOUS_SCRIPT);
+        if !anonymous {
             return script;
         }
     }
     classify::name_of(p)
 }
 
-pub(crate) fn instance_key(p: &Process, container_id: Option<&str>) -> String {
+/// `j.unit` is the `user_unit` result the tick already holds, so no second
+/// `systemd_unescape` allocation per pid.
+pub(crate) fn instance_key(p: &Process, container_id: Option<&str>, j: &Judged) -> String {
     if let Some(id) = container_id {
         return format!("ctr:{id}");
     }
-    if let Some(unit) = user_unit(&p.cgroup)
-        && !lying_unit(&unit)
+    if let Some(unit) = &j.unit
+        && !j.unit_flags.lying()
     {
-        return unit;
+        return unit.clone();
     }
     format!("pgid:{}", p.pgrp)
 }
@@ -279,13 +270,5 @@ mod tests {
             systemd_unescape(r"app-gnome-vivaldi\x2dstable-1.scope"),
             "app-gnome-vivaldi-stable-1.scope"
         );
-        assert!(lying_unit("app-ghostty-surface-transient-1.scope"));
-        assert!(lying_unit("app-org.chromium.Chromium-1743723.scope"));
-        assert!(lying_unit("flatpak-session-helper.service"));
-        assert!(lying_unit("dbus-:1.2-org.gnome.Nautilus@250.service"));
-        assert!(!lying_unit("dbus-broker.service"));
-        assert!(is_user_service_unit("syncthing.service"));
-        assert!(!is_user_service_unit("app-com.mitchellh.ghostty.service"));
-        assert!(is_user_service_unit("org.gnome.Shell@user.service"));
     }
 }

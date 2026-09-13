@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use heft::config::Overrides;
 use heft::containers::{ContainerIndex, Inspect, ListItem};
 use heft::group::build_tree;
+use heft::rules::{LoadedFile, Rules, Source};
 use heft::types::Process;
 use heft::{HostHeader, HostTree};
 
@@ -44,7 +44,7 @@ struct ProcFix {
 
 const GUI: &str = "tests/fixtures/gui/world.json";
 
-fn load(path: &str, ov: &Overrides) -> (HashMap<u32, Process>, ContainerIndex, HostHeader) {
+fn load(path: &str, rules: &Rules) -> (HashMap<u32, Process>, ContainerIndex, HostHeader) {
     let text = std::fs::read_to_string(path).unwrap();
     let fix: Fixture = serde_json::from_str(&text).unwrap();
     let mut curr = HashMap::new();
@@ -71,7 +71,7 @@ fn load(path: &str, ov: &Overrides) -> (HashMap<u32, Process>, ContainerIndex, H
             },
         );
     }
-    let idx = ContainerIndex::from_list(&fix.containers, &fix.inspects, &fix.workdir_uids, ov);
+    let idx = ContainerIndex::from_list(&fix.containers, &fix.inspects, &fix.workdir_uids, rules);
     let header = HostHeader {
         nproc: fix.nproc,
         clk_tck: fix.clk_tck,
@@ -80,8 +80,8 @@ fn load(path: &str, ov: &Overrides) -> (HashMap<u32, Process>, ContainerIndex, H
     (curr, idx, header)
 }
 
-fn tree_of(path: &str, ov: &Overrides) -> HostTree {
-    let (curr, idx, header) = load(path, ov);
+fn tree_of(path: &str, rules: &Rules) -> HostTree {
+    let (curr, idx, header) = load(path, rules);
     build_tree(
         &curr,
         &curr,
@@ -89,8 +89,29 @@ fn tree_of(path: &str, ov: &Overrides) -> HostTree {
         &header,
         HostTree::default(),
         &idx,
-        ov,
+        rules,
     )
+}
+
+/// One user file at the XDG rank plus the built-ins, the set `rules::load`
+/// builds when `$XDG_CONFIG_HOME/heft/rules.d/90-mine.json` exists.
+fn with_user(text: &str) -> Rules {
+    let mut files = vec![LoadedFile {
+        source: Source {
+            rank: 0,
+            label: "xdg".into(),
+        },
+        name: "90-mine.json".into(),
+        text: text.into(),
+    }];
+    files.extend(heft::rules::BUILTIN.iter().map(|(n, t)| LoadedFile {
+        source: Source::builtin(),
+        name: (*n).to_string(),
+        text: (*t).to_string(),
+    }));
+    let r = Rules::from_files(files);
+    assert!(r.problems.is_empty(), "{:?}", r.problems);
+    r
 }
 
 fn titles(nodes: &[heft::IdentNode]) -> Vec<String> {
@@ -132,7 +153,7 @@ fn a_fixture_dump_loads_as_a_fixture() {
         String::from_utf8_lossy(&out.stderr)
     );
     std::fs::write(&path, &out.stdout).unwrap();
-    let tree = tree_of(path.to_str().unwrap(), &Overrides::default());
+    let tree = tree_of(path.to_str().unwrap(), &Rules::builtin());
     std::fs::remove_file(&path).unwrap();
     assert!(
         !tree.users.is_empty(),
@@ -142,7 +163,7 @@ fn a_fixture_dump_loads_as_a_fixture() {
 
 #[test]
 fn gui_and_docker_fixture() {
-    let tree = tree_of(GUI, &Overrides::default());
+    let tree = tree_of(GUI, &Rules::builtin());
     let user = tree.users.iter().find(|u| u.uid == 1000).expect("uid 1000");
 
     for name in [
@@ -590,7 +611,7 @@ fn gui_and_docker_fixture() {
 
 #[test]
 fn idle_interactive_bash_under_ghostty_bills_to_ghostty() {
-    let tree = tree_of(GUI, &Overrides::default());
+    let tree = tree_of(GUI, &Rules::builtin());
     let user = user_of(&tree, 1000);
     assert!(
         !has(&user.applications, "bash"),
@@ -611,7 +632,7 @@ fn idle_interactive_bash_under_ghostty_bills_to_ghostty() {
 
 #[test]
 fn claude_under_bash_under_ghostty_owns_the_shell() {
-    let tree = tree_of(GUI, &Overrides::default());
+    let tree = tree_of(GUI, &Rules::builtin());
     let user = user_of(&tree, 1000);
     let claude = user
         .applications
@@ -644,7 +665,7 @@ fn a_lone_crash_helper_under_a_launcher_bills_to_its_app() {
     // so the zygote fallback in `unique_descendant_ident` decides the identity.
     // The helper's own path names the app, which is what every other placement
     // site would use.
-    let tree = tree_of("tests/fixtures/zygote/world.json", &Overrides::default());
+    let tree = tree_of("tests/fixtures/zygote/world.json", &Rules::builtin());
     let user = user_of(&tree, 1000);
     assert!(
         has(&user.applications, "firefox"),
@@ -660,8 +681,10 @@ fn a_lone_crash_helper_under_a_launcher_bills_to_its_app() {
 
 #[test]
 fn one_override_moves_one_row_and_leaves_the_rest_alone() {
-    let base = tree_of(GUI, &Overrides::default());
-    let ov = Overrides::parse(r#"{"user_services": ["htop"]}"#).expect("valid overrides");
+    let base = tree_of(GUI, &Rules::builtin());
+    let ov = with_user(
+        r#"{"stage":"placement","rules":[{"id":"pin-htop","match":{"identity":"htop"},"folder":"user_services"}]}"#,
+    );
     let pinned = tree_of(GUI, &ov);
 
     let (b, p) = (user_of(&base, 1000), user_of(&pinned, 1000));
@@ -682,7 +705,9 @@ fn one_override_moves_one_row_and_leaves_the_rest_alone() {
 
 #[test]
 fn fold_bills_a_named_process_to_another_identity() {
-    let ov = Overrides::parse(r#"{"fold": {"spotify": "media"}}"#).expect("valid overrides");
+    let ov = with_user(
+        r#"{"stage":"placement","rules":[{"id":"fold-spotify","match":{"identity":"spotify"},"fold_to":"media"}]}"#,
+    );
     let tree = tree_of(GUI, &ov);
     let user = &user_of(&tree, 1000).applications;
     assert!(!has(user, "spotify"), "{:?}", titles(user));
@@ -698,27 +723,38 @@ fn fold_bills_a_named_process_to_another_identity() {
 fn a_malformed_override_file_is_rejected_rather_than_obeyed() {
     // The loader turns each of these into a stderr warning and built-in
     // behaviour; parsing is where the file is judged.
-    assert!(Overrides::parse("{ not json }").is_err());
+    let bad = |text: &str| {
+        let r = Rules::from_files(vec![LoadedFile {
+            source: Source {
+                rank: 0,
+                label: "xdg".into(),
+            },
+            name: "90-mine.json".into(),
+            text: text.into(),
+        }]);
+        r.problems.len() == 1
+    };
+    assert!(bad("{ not json }"));
     assert!(
-        Overrides::parse(r#"{"applicatons": ["htop"]}"#).is_err(),
+        bad(r#"{"stage":"placement","ruls":[]}"#),
         "a typoed key must not be silently dropped"
     );
-    assert!(Overrides::parse(r#"{"applications": "htop"}"#).is_err());
-    assert!(Overrides::parse("{}").is_ok());
+    assert!(bad(r#"{"stage":"placement","rules":"htop"}"#));
+    assert!(!bad(r#"{"stage":"placement"}"#));
     // Built-in behaviour is what the default stands in for.
     assert!(has(
-        &user_of(&tree_of(GUI, &Overrides::default()), 1000).applications,
+        &user_of(&tree_of(GUI, &Rules::builtin()), 1000).applications,
         "htop"
     ));
 }
 
 #[test]
 fn an_override_cannot_break_a_structural_invariant() {
-    let ov = Overrides::parse(
-        r#"{"applications": ["kernel", "acme-indexer"],
-            "fold": {"kernel": "myapp", "acme-indexer": "myapp"}}"#,
-    )
-    .expect("valid overrides");
+    let ov = with_user(
+        r#"{"stage":"placement","rules":[
+            {"id":"fold-kernel","match":{"identity":"kernel"},"fold_to":"myapp","folder":"applications"},
+            {"id":"fold-acme","match":{"identity":"acme-indexer"},"fold_to":"myapp","folder":"applications"}]}"#,
+    );
     let tree = tree_of(GUI, &ov);
     let user = user_of(&tree, 1000);
     assert!(has(&tree.system, "kernel"), "{:?}", titles(&tree.system));
@@ -738,10 +774,117 @@ fn an_override_cannot_break_a_structural_invariant() {
 
 #[test]
 fn a_container_owner_override_beats_bind_mount_inference() {
-    let ov = Overrides::parse(r#"{"container_owners": {"acme-encoder": 1001}}"#)
-        .expect("valid overrides");
+    let ov = with_user(
+        r#"{"stage":"placement","rules":[{"id":"own","match":{"container":"acme-encoder"},"owner_uid":1001}]}"#,
+    );
     let tree = tree_of(GUI, &ov);
     assert!(has(&user_of(&tree, 1001).containers, "acme-encoder"));
     assert!(!has(&user_of(&tree, 1000).containers, "acme-encoder"));
     assert!(!has(&tree.containers, "acme-encoder"));
+}
+
+/// R44 budget harness: `build_tree` mean over the gui fixture and any
+/// `HEFT_BENCH_FIXTURE`. Run with
+/// `cargo test --release --test grouping -- --ignored --nocapture build_tree_timing`.
+#[test]
+#[ignore]
+fn build_tree_timing() {
+    let iters: u32 = std::env::var("HEFT_BENCH_ITERS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(5000);
+    let mut paths = vec![(GUI.to_string(), iters)];
+    if let Ok(p) = std::env::var("HEFT_BENCH_FIXTURE") {
+        paths.push((p, iters / 10));
+    }
+    let rules = Rules::builtin();
+    for (path, iters) in paths {
+        let (curr, idx, header) = load(&path, &rules);
+        let t = std::time::Instant::now();
+        for _ in 0..iters {
+            let tree = build_tree(
+                &curr,
+                &curr,
+                Duration::from_secs(1),
+                &header,
+                HostTree::default(),
+                &idx,
+                &rules,
+            );
+            std::hint::black_box(tree);
+        }
+        let per = t.elapsed().as_secs_f64() * 1e6 / f64::from(iters);
+        println!(
+            "build_tree_timing {path}: {} processes, {iters} iters, mean {per:.1} us",
+            curr.len()
+        );
+    }
+}
+
+/// R44: nanoseconds per process for each stage, once, over the gui fixture
+/// and any `HEFT_BENCH_FIXTURE`; same variables as `build_tree_timing`.
+#[test]
+#[ignore]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "a process count and a nanosecond total both fit in 52 bits"
+)]
+fn rules_timing() {
+    use heft::rules::Facts;
+    use std::fmt::Write;
+    let iters: u32 = std::env::var("HEFT_BENCH_ITERS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(5000);
+    let mut paths = vec![GUI.to_string()];
+    if let Ok(p) = std::env::var("HEFT_BENCH_FIXTURE") {
+        paths.push(p);
+    }
+    let rules = Rules::builtin();
+    for path in paths {
+        let (curr, _, _) = load(&path, &rules);
+        let procs: Vec<(&Process, Option<String>)> = curr
+            .values()
+            .map(|p| (p, heft::identity_user_unit(&p.cgroup)))
+            .collect();
+        fn facts<'a>((p, unit): &'a (&'a Process, Option<String>)) -> Facts<'a> {
+            Facts {
+                comm: &p.comm,
+                name: &p.comm,
+                exe: p.exe.as_deref(),
+                argv: &p.cmdline,
+                cgroup: &p.cgroup,
+                unit: unit.as_deref(),
+                script: None,
+                identity: None,
+                container: None,
+            }
+        }
+        let n = procs.len() as f64;
+        let mut acc = 0u64;
+        let mut line = format!("rules_timing {path}: {} processes", procs.len());
+        for (label, which) in [
+            ("classes", 0),
+            ("session", 1),
+            ("app", 2),
+            ("unit_flags", 3),
+        ] {
+            let t = std::time::Instant::now();
+            for _ in 0..iters {
+                for pr in &procs {
+                    let f = facts(pr);
+                    acc += match which {
+                        0 => u64::from(rules.classes(&f).0),
+                        1 => rules.session(&f).map_or(0, |(i, _)| i.len() as u64),
+                        2 => rules.app(&f).map_or(0, |i| i.len() as u64),
+                        _ => f.unit.map_or(0, |u| u64::from(rules.unit_flags(u).0)),
+                    };
+                }
+            }
+            let ns = t.elapsed().as_nanos() as f64 / f64::from(iters) / n;
+            let _ = write!(line, ", {label} {ns:.0} ns");
+        }
+        std::hint::black_box(acc);
+        println!("{line}");
+    }
 }

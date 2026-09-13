@@ -2,21 +2,94 @@ use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
 use crate::classify::{self, name_of};
-use crate::config::Overrides;
 use crate::containers::{self, ContainerIndex};
 use crate::cpu::process_metrics;
 use crate::identity::{self, docker_scope_id};
 use crate::proc;
+use crate::rules::{Classes, Facts, Rules, Stage, UnitFlags};
 use crate::types::{
     Folder, HostHeader, HostTree, IdentNode, InstanceNode, MemberContainer, Metrics, ProcNode,
     Process, UserNode,
 };
 
-/// The two read-only inputs every placement rule needs, bundled so the
-/// recursive walk keeps one parameter instead of two.
+/// The read-only inputs every placement rule needs, bundled so the recursive
+/// walk keeps one parameter instead of several.
 struct Ctx<'a> {
     containers: &'a ContainerIndex,
-    ov: &'a Overrides,
+    rules: &'a Rules,
+    /// Per-tick, per-pid facts the stages read. Keyed on pid and valid for one
+    /// `Ctx` only: `exec` keeps the pid while changing exe and comm, and a
+    /// `Ctx` lives one `build_tree` call, so no invalidation is needed.
+    judged: HashMap<u32, Judged>,
+}
+
+impl<'a> Ctx<'a> {
+    fn new(containers: &'a ContainerIndex, rules: &'a Rules, curr: &HashMap<u32, Process>) -> Self {
+        let judged = curr
+            .iter()
+            .map(|(pid, p)| (*pid, judge(p, rules)))
+            .collect();
+        Self {
+            containers,
+            rules,
+            judged,
+        }
+    }
+    fn facts<'p>(&'p self, p: &'p Process) -> Facts<'p> {
+        facts_of(p, self.judged[&p.pid].unit.as_deref())
+    }
+    fn classes(&self, p: &Process) -> Classes {
+        self.judged[&p.pid].classes
+    }
+    fn judged(&self, p: &Process) -> &Judged {
+        &self.judged[&p.pid]
+    }
+    fn instance(&self, p: &Process) -> String {
+        identity::instance_key(p, None, self.judged(p))
+    }
+}
+
+fn facts_of<'p>(p: &'p Process, unit: Option<&'p str>) -> Facts<'p> {
+    Facts {
+        comm: &p.comm,
+        name: classify::name_ref(p),
+        exe: p.exe.as_deref(),
+        argv: &p.cmdline,
+        cgroup: &p.cgroup,
+        unit,
+        script: None,
+        identity: None,
+        container: None,
+    }
+}
+
+/// What the rule stages need of one process, computed once per pid per tick.
+pub(crate) struct Judged {
+    pub(crate) unit: Option<String>,
+    pub(crate) unit_flags: UnitFlags,
+    classes: Classes,
+}
+
+fn judge(p: &Process, rules: &Rules) -> Judged {
+    let unit = identity::user_unit(&p.cgroup);
+    let unit_flags = unit
+        .as_deref()
+        .map_or_else(UnitFlags::default, |u| rules.unit_flags(u));
+    let mut classes = rules.classes(&facts_of(p, unit.as_deref()));
+    // A shell wrapper reports the shell as comm; the launcher it execs is the
+    // first positional argument. A procedure over argv, not a class rule.
+    if let Some(arg) = p.cmdline.iter().skip(1).find(|a| !a.starts_with('-'))
+        && rules
+            .classes_of_name(&classify::basename(arg))
+            .has(Classes::LAUNCHER)
+    {
+        classes.0 |= Classes::LAUNCHER;
+    }
+    Judged {
+        unit,
+        unit_flags,
+        classes,
+    }
 }
 
 #[derive(Clone)]
@@ -35,9 +108,9 @@ pub fn build_tree(
     consts: &HostHeader,
     header: HostTree,
     containers: &ContainerIndex,
-    ov: &Overrides,
+    rules: &Rules,
 ) -> HostTree {
-    let places = resolve(curr, &Ctx { containers, ov });
+    let places = resolve(curr, &Ctx::new(containers, rules, curr));
     let metrics = metrics_map(prev, curr, elapsed, consts);
     let mut tree = assemble(curr, &places, &metrics, header);
     crate::once::sort_default(&mut tree);
@@ -76,9 +149,9 @@ fn resolve_one(
     }
     let p = curr.get(&pid)?;
     if !walking.insert(pid) {
-        return Some(override_place(ctx.ov, raw_place(p, ctx)));
+        return Some(override_place(ctx.rules, raw_place(p, ctx)));
     }
-    let place = override_place(ctx.ov, compute_place(p, curr, ctx, memo, walking));
+    let place = override_place(ctx.rules, compute_place(p, curr, ctx, memo, walking));
     walking.remove(&pid);
     memo.insert(pid, place.clone());
     Some(place)
@@ -95,7 +168,8 @@ fn compute_place(
         return place;
     }
 
-    if classify::is_worker(p)
+    let classes = ctx.classes(p);
+    if classes.has(Classes::WORKER)
         && let Some(parent) = resolve_one(p.ppid, curr, ctx, memo, walking)
         && parent.folder != Folder::System
         // `key` is the ppid's RESOLVED Place identity, not its process name, and
@@ -106,42 +180,45 @@ fn compute_place(
         && parent.key != "systemd"
     {
         return Place {
-            instance: identity::instance_key(p, None),
+            instance: ctx.instance(p),
             ..parent
         };
     }
 
     // Pipe helpers under a launcher (flatpak bwrap `cat`) or an app (vivaldi).
     // Immediate parent only — never a sibling identity under a mixed shell.
-    if classify::is_session_noise(p)
+    if classes.has(Classes::NOISE)
         && let Some(parent) = resolve_one(p.ppid, curr, ctx, memo, walking)
         && parent.folder != Folder::System
     {
         return Place {
-            instance: identity::instance_key(p, None),
+            instance: ctx.instance(p),
             ..parent
         };
     }
 
-    if classify::is_foldable_helper(p) {
+    if classify::is_foldable_helper(classes) {
         if let Some(payload) = unique_descendant_ident(p.pid, curr, ctx, memo, walking) {
             return Place {
-                instance: identity::instance_key(p, None),
+                instance: ctx.instance(p),
                 ..payload
             };
         }
-        if classify::is_launcher(p) {
-            if let Some(hint) = classify::launcher_payload_hint(p) {
-                let mut place = user_place(p);
+        if classes.has(Classes::LAUNCHER) {
+            if let Some(hint) = classify::launcher_payload_hint(p, ctx.rules) {
+                let mut place = user_place(p, ctx);
                 place.key = hint;
                 return place;
             }
             if let Some(parent) = resolve_one(p.ppid, curr, ctx, memo, walking)
                 && parent.folder != Folder::System
-                && !classify::is_launcher_name(&parent.key)
+                && !ctx
+                    .rules
+                    .classes_of_name(&parent.key)
+                    .has(Classes::LAUNCHER)
             {
                 return Place {
-                    instance: identity::instance_key(p, None),
+                    instance: ctx.instance(p),
                     ..parent
                 };
             }
@@ -149,49 +226,54 @@ fn compute_place(
         // Idle interactive shell: not an application. The resolved parent
         // identity is the terminal that owns the tty. A unique payload child
         // already returned above, same walk as a launcher.
-        if classify::is_interactive_shell(p)
+        if classify::is_interactive_shell(p, classes)
             && let Some(parent) = resolve_one(p.ppid, curr, ctx, memo, walking)
             && parent.folder != Folder::System
-            && classify::is_terminal_name(&parent.key)
+            && ctx
+                .rules
+                .classes_of_name(&parent.key)
+                .has(Classes::TERMINAL)
         {
             return Place {
-                instance: identity::instance_key(p, None),
+                instance: ctx.instance(p),
                 ..parent
             };
         }
     }
 
-    if classify::is_generic(p)
+    if classes.has(Classes::GENERIC)
         && let Some(owner) = owning_app_ancestor(p.ppid, curr, ctx, memo, walking)
     {
         return Place {
-            instance: identity::instance_key(p, None),
+            instance: ctx.instance(p),
             ..owner
         };
     }
 
-    user_place(p)
+    user_place(p, ctx)
 }
 
-fn container_place(p: &Process, containers: &ContainerIndex) -> Option<Place> {
-    if let Some(info) = containers.lookup_process(p) {
+fn container_place(p: &Process, ctx: &Ctx<'_>) -> Option<Place> {
+    let containers = ctx.containers;
+    let runtime = ctx.classes(p).has(Classes::CONTAINER_RUNTIME);
+    if let Some(info) = containers.lookup_process(p, runtime) {
         return Some(Place {
             folder: Folder::Containers,
             uid: info.owner_uid,
             key: info.ident_key.clone(),
-            instance: identity::instance_key(p, Some(&info.id)),
+            instance: identity::instance_key(p, Some(&info.id), ctx.judged(p)),
             member: info.member_name.clone(),
         });
     }
     let scope = docker_scope_id(&p.cgroup);
-    if let Some(id) = scope.clone().or_else(|| containers::helper_id(p)) {
+    if let Some(id) = scope.clone().or_else(|| containers::helper_id(p, runtime)) {
         return Some(Place {
             folder: Folder::Containers,
             // Only a cgroup id is known on this path, so there is no name or
             // label to attribute an owner from; lookup_process does that.
             uid: None,
             key: containers::docker_title(&id),
-            instance: identity::instance_key(p, scope.as_deref()),
+            instance: identity::instance_key(p, scope.as_deref(), ctx.judged(p)),
             member: None,
         });
     }
@@ -206,18 +288,18 @@ fn container_place(p: &Process, containers: &ContainerIndex) -> Option<Place> {
 /// container it cannot attribute. There is no API here to ask who owns it, and
 /// the uid running it is a service account — a `qemu` User node holding one
 /// VM says less than the machine's own Containers folder does.
-fn machine_place(p: &Process) -> Option<Place> {
+fn machine_place(p: &Process, ctx: &Ctx<'_>) -> Option<Place> {
     let name = identity::machine_scope_name(&p.cgroup)?;
     Some(Place {
         folder: Folder::Containers,
         uid: None,
-        instance: identity::instance_key(p, Some(&name)),
+        instance: identity::instance_key(p, Some(&name), ctx.judged(p)),
         key: name,
         member: None,
     })
 }
 
-fn system_place(p: &Process) -> Place {
+fn system_place(p: &Process, ctx: &Ctx<'_>) -> Place {
     Place {
         folder: Folder::System,
         uid: None,
@@ -226,17 +308,15 @@ fn system_place(p: &Process) -> Place {
         } else {
             name_of(p)
         },
-        instance: identity::instance_key(p, None),
+        instance: ctx.instance(p),
         member: None,
     }
 }
 
-fn user_place(p: &Process) -> Place {
-    let unit = identity::user_unit(&p.cgroup);
-    let folder = if classify::is_compositor(p)
-        || unit
-            .as_deref()
-            .is_some_and(|u| !identity::lying_unit(u) && identity::is_user_service_unit(u))
+fn user_place(p: &Process, ctx: &Ctx<'_>) -> Place {
+    let j = ctx.judged(p);
+    let folder = if j.classes.has(Classes::COMPOSITOR)
+        || (j.unit_flags.service() && !j.unit_flags.lying())
     {
         Folder::UserServices
     } else {
@@ -245,34 +325,34 @@ fn user_place(p: &Process) -> Place {
     Place {
         folder,
         uid: Some(p.uid),
-        key: if classify::is_generic(p) {
-            identity::generic_fallback(p, unit.as_deref())
+        key: if j.classes.has(Classes::GENERIC) {
+            identity::generic_fallback(p, j, ctx.rules)
         } else {
             name_of(p)
         },
-        instance: identity::instance_key(p, None),
+        instance: ctx.instance(p),
         member: None,
     }
 }
 
-fn session_plumbing_place(p: &Process) -> Option<Place> {
-    let key = classify::session_helper_ident(p)?;
+fn session_plumbing_place(p: &Process, ctx: &Ctx<'_>) -> Option<Place> {
+    let (key, folder) = ctx.rules.session(&ctx.facts(p))?;
     Some(Place {
-        folder: Folder::UserServices,
+        folder: folder.into(),
         uid: Some(p.uid),
         key: key.to_string(),
-        instance: identity::instance_key(p, None),
+        instance: ctx.instance(p),
         member: None,
     })
 }
 
-fn crash_helper_place(p: &Process) -> Option<Place> {
-    let owner = classify::crash_helper_app(p)?;
+fn crash_helper_place(p: &Process, ctx: &Ctx<'_>) -> Option<Place> {
+    let owner = classify::crash_helper_app(p, ctx.classes(p), ctx.rules)?;
     Some(Place {
         folder: Folder::Applications,
         uid: Some(p.uid),
         key: owner,
-        instance: identity::instance_key(p, None),
+        instance: ctx.instance(p),
         member: None,
     })
 }
@@ -280,44 +360,54 @@ fn crash_helper_place(p: &Process) -> Option<Place> {
 /// The bucket rules that need no ancestor walk, so the cycle-breaking path can
 /// answer with the same verdict `compute_place` would give instead of a subset.
 fn direct_place(p: &Process, ctx: &Ctx<'_>) -> Option<Place> {
-    if let Some(place) = container_place(p, ctx.containers) {
+    if let Some(place) = container_place(p, ctx) {
         return Some(place);
     }
-    if let Some(place) = machine_place(p) {
+    if let Some(place) = machine_place(p, ctx) {
         return Some(place);
     }
     if identity::is_kernel(p)
         || (identity::in_system_slice(&p.cgroup) && !identity::in_user_slice(&p.cgroup))
     {
-        return Some(system_place(p));
+        return Some(system_place(p, ctx));
     }
-    session_plumbing_place(p)
-        .or_else(|| crash_helper_place(p))
+    session_plumbing_place(p, ctx)
+        .or_else(|| crash_helper_place(p, ctx))
         .or_else(|| {
-            let app = classify::bundled_helper_app(p)?;
+            let app = ctx.rules.app(&ctx.facts(p))?;
             Some(Place {
                 key: app.to_string(),
-                ..user_place(p)
+                ..user_place(p, ctx)
             })
         })
 }
 
 fn raw_place(p: &Process, ctx: &Ctx<'_>) -> Place {
-    direct_place(p, ctx).unwrap_or_else(|| user_place(p))
+    direct_place(p, ctx).unwrap_or_else(|| user_place(p, ctx))
 }
 
-/// Apply the user's overrides to a finished placement. They run last, so a pin
-/// beats every built-in table; they run only on the two user-owned folders, so
-/// no override can pull a container or a kernel thread out of where it belongs.
-fn override_place(ov: &Overrides, place: Place) -> Place {
-    if ov.no_placement_overrides()
+/// Apply the placement stage to a finished placement. It runs last, so a pin
+/// beats every built-in table; it runs only on the two user-owned folders, so
+/// no rule can pull a container or a kernel thread out of where it belongs.
+///
+/// Two lookups: `placement(old)` for `fold_to`, then the folder from that same
+/// rule when it carries one, else from `placement(key)` when the key changed.
+fn override_place(rules: &Rules, place: Place) -> Place {
+    if rules.is_empty(Stage::Placement)
         || !matches!(place.folder, Folder::Applications | Folder::UserServices)
     {
         return place;
     }
-    // Fold first: the pin then names the row the user is left looking at.
-    let key = ov.fold_key(&place.key).map_or(place.key, str::to_string);
-    let folder = ov.folder_for(&key).unwrap_or(place.folder);
+    let r1 = rules.placement(&place.key);
+    let key = r1.and_then(|r| r.fold_to.clone()).unwrap_or(place.key);
+    let folder = match r1.and_then(|r| r.folder) {
+        Some(f) => f.into(),
+        None if r1.is_some_and(|r| r.fold_to.is_some()) => rules
+            .placement(&key)
+            .and_then(|r| r.folder)
+            .map_or(place.folder, Into::into),
+        None => place.folder,
+    };
     Place {
         folder,
         key,
@@ -334,15 +424,12 @@ fn owning_app_ancestor(
 ) -> Option<Place> {
     for _ in 0..32 {
         let proc = curr.get(&pid)?;
-        if classify::is_launcher(proc)
-            || classify::is_generic(proc)
-            || classify::is_foldable_helper(proc)
-            || classify::is_session_noise(proc)
-        {
+        let classes = ctx.classes(proc);
+        if classes.has(Classes::LAUNCHER | Classes::GENERIC | Classes::SHELL | Classes::NOISE) {
             pid = proc.ppid;
             continue;
         }
-        if !classify::absorbs_generic(proc) {
+        if !classify::absorbs_generic(classes) {
             return None;
         }
         let place = resolve_one(pid, curr, ctx, memo, walking)?;
@@ -363,13 +450,14 @@ fn unique_descendant_ident(
 ) -> Option<Place> {
     let mut kids = Vec::new();
     for child in curr.values().filter(|c| c.ppid == pid) {
-        if classify::is_foldable_helper(child) || classify::is_session_noise(child) {
+        let classes = ctx.classes(child);
+        if classes.has(Classes::LAUNCHER | Classes::SHELL | Classes::NOISE) {
             if let Some(p) = unique_descendant_ident(child.pid, curr, ctx, memo, walking) {
                 kids.push(p);
             }
             continue;
         }
-        if classify::is_worker(child) {
+        if classes.has(Classes::WORKER) {
             if let Some(p) = unique_descendant_ident(child.pid, curr, ctx, memo, walking) {
                 kids.push(p);
             } else {
@@ -564,25 +652,28 @@ fn proc_node(
 #[cfg(test)]
 mod tests {
     use super::{Ctx, Folder, Process, raw_place};
-    use crate::config::Overrides;
     use crate::containers::ContainerIndex;
+    use crate::rules::Rules;
+    use std::collections::HashMap;
+
+    fn place_alone(p: Process) -> super::Place {
+        let curr = HashMap::from([(p.pid, p)]);
+        let rules = Rules::builtin();
+        let containers = ContainerIndex::default();
+        let ctx = Ctx::new(&containers, &rules, &curr);
+        raw_place(&curr[&0], &ctx)
+    }
 
     #[test]
     fn cycle_path_still_bills_a_crash_helper_to_its_app() {
-        let place = raw_place(
-            &Process {
-                comm: "crashhelper".into(),
-                exe: Some("/usr/lib64/firefox/crashhelper".into()),
-                cmdline: vec!["crashhelper".into(), "12766".into()],
-                uid: 1000,
-                cgroup: "0::/user.slice/user-1000.slice/user@1000.service/app.slice".into(),
-                ..Process::default()
-            },
-            &Ctx {
-                containers: &ContainerIndex::default(),
-                ov: &Overrides::default(),
-            },
-        );
+        let place = place_alone(Process {
+            comm: "crashhelper".into(),
+            exe: Some("/usr/lib64/firefox/crashhelper".into()),
+            cmdline: vec!["crashhelper".into(), "12766".into()],
+            uid: 1000,
+            cgroup: "0::/user.slice/user-1000.slice/user@1000.service/app.slice".into(),
+            ..Process::default()
+        });
         assert_eq!(place.folder, Folder::Applications);
         assert_eq!(place.key, "firefox");
     }
@@ -594,19 +685,13 @@ mod tests {
     #[test]
     fn a_vm_is_a_container_row_rather_than_root_s_application() {
         let place = |cgroup: &str, uid: u32| {
-            raw_place(
-                &Process {
-                    comm: "qemu-system-x86".into(),
-                    exe: Some("/usr/bin/qemu-system-x86_64".into()),
-                    uid,
-                    cgroup: cgroup.into(),
-                    ..Process::default()
-                },
-                &Ctx {
-                    containers: &ContainerIndex::default(),
-                    ov: &Overrides::default(),
-                },
-            )
+            place_alone(Process {
+                comm: "qemu-system-x86".into(),
+                exe: Some("/usr/bin/qemu-system-x86_64".into()),
+                uid,
+                cgroup: cgroup.into(),
+                ..Process::default()
+            })
         };
         let vm = place(
             r"0::/machine.slice/machine-qemu-3-fedora.scope/libvirt/emulator",

@@ -232,7 +232,7 @@ mod tests {
             }],
             &inspects,
             &HashMap::new(),
-            &crate::config::Overrides::default(),
+            &crate::rules::Rules::builtin(),
         )
     }
 

@@ -9,8 +9,8 @@ use serde_json::Value;
 
 use std::os::unix::fs::MetadataExt;
 
-use crate::config::Overrides;
 use crate::identity::docker_scope_id;
+use crate::rules::Rules;
 use crate::types::Process;
 
 /// Docker/containerd ids are hex. Byte-slicing `s[..12]` panics when 12 is not a
@@ -95,7 +95,7 @@ pub struct ContainerIndex {
 }
 
 impl ContainerIndex {
-    pub(crate) fn load(cache: &mut InspectCache, ov: &Overrides) -> Self {
+    pub(crate) fn load(cache: &mut InspectCache, rules: &Rules) -> Self {
         let mut idx = Self::default();
         let Some(sock) = docker_sock() else {
             cache.refresh(Vec::new(), |_| None);
@@ -118,7 +118,7 @@ impl ContainerIndex {
             if list_skip(item) {
                 continue;
             }
-            idx.insert_resolved(item, inspect_for(item, &cache.inspects), None, ov);
+            idx.insert_resolved(item, inspect_for(item, &cache.inspects), None, rules);
         }
         idx
     }
@@ -127,14 +127,14 @@ impl ContainerIndex {
         items: &[ListItem],
         inspects: &HashMap<String, Inspect>,
         workdir_uids: &HashMap<PathBuf, u32>,
-        ov: &Overrides,
+        rules: &Rules,
     ) -> Self {
         let mut idx = Self::default();
         for item in items {
             if list_skip(item) {
                 continue;
             }
-            idx.insert_resolved(item, inspect_for(item, inspects), Some(workdir_uids), ov);
+            idx.insert_resolved(item, inspect_for(item, inspects), Some(workdir_uids), rules);
         }
         idx
     }
@@ -144,7 +144,7 @@ impl ContainerIndex {
         item: &ListItem,
         inspect: Option<&Inspect>,
         workdir_uids: Option<&HashMap<PathBuf, u32>>,
-        ov: &Overrides,
+        rules: &Rules,
     ) {
         let Some(id) = hex_id(&item.id).map(str::to_ascii_lowercase) else {
             return;
@@ -172,7 +172,7 @@ impl ContainerIndex {
         // that mounts nothing of a user's.
         // A user pin comes first: it is the escape hatch for a container that
         // mounts nothing of theirs, so inference must not be able to beat it.
-        let owner = ov
+        let owner = rules
             .container_owner(&name)
             .or_else(|| workdir.as_deref().and_then(owner_of))
             .or_else(|| {
@@ -223,22 +223,25 @@ impl ContainerIndex {
     pub(crate) fn by_ip(&self, ip: &str) -> Option<&ContainerInfo> {
         self.by_ip.get(ip).and_then(|id| self.get(id))
     }
-    pub(crate) fn lookup_process(&self, p: &Process) -> Option<&ContainerInfo> {
+    /// `runtime` is the `container_runtime` class the caller already holds
+    /// for this pid, so the name test is not run again here.
+    pub(crate) fn lookup_process(&self, p: &Process, runtime: bool) -> Option<&ContainerInfo> {
         if let Some(id) = docker_scope_id(&p.cgroup) {
             return self.get(&id);
         }
-        helper_id(p).and_then(|id| self.get(&id)).or_else(|| {
-            crate::classify::cmdline_flag_value(&p.cmdline, "-container-ip")
-                .and_then(|ip| self.by_ip(ip))
-        })
+        helper_id(p, runtime)
+            .and_then(|id| self.get(&id))
+            .or_else(|| {
+                crate::classify::cmdline_flag_value(&p.cmdline, "-container-ip")
+                    .and_then(|ip| self.by_ip(ip))
+            })
     }
 }
 
-pub(crate) fn helper_id(p: &Process) -> Option<String> {
-    let names = crate::classify::names_of(p);
-    let runtime = crate::classify::names_match(&names, |n| {
-        n.contains("containerd-shim") || matches!(n, "conmon" | "runc" | "crun")
-    });
+/// The container id a runtime helper (`containerd-shim-runc-v2 -id`, `conmon`,
+/// `runc`, `crun`) names in its argv; `runtime` is that class, decided by the
+/// `container-runtimes` rule in `rules.d/10-classes.json`.
+pub(crate) fn helper_id(p: &Process, runtime: bool) -> Option<String> {
     if !runtime {
         return None;
     }
@@ -469,8 +472,8 @@ mod tests {
         let mid = "01234567890é";
         assert_eq!(mid.len(), 13);
         assert!(mid.get(..12).is_none());
-        assert!(helper_id(&runc(mid)).is_none());
-        assert!(helper_id(&runc("zzzzzzzzzzzzz")).is_none());
+        assert!(helper_id(&runc(mid), true).is_none());
+        assert!(helper_id(&runc("zzzzzzzzzzzzz"), true).is_none());
 
         let mut idx = ContainerIndex::default();
         idx.index_ids(&info(mid));
@@ -484,32 +487,13 @@ mod tests {
         assert!(idx.get(hex).is_some());
         assert!(idx.get("0123456789ab").is_some());
         assert!(idx.get(mid).is_none());
-        assert_eq!(helper_id(&runc(hex)).as_deref(), Some(hex));
+        assert_eq!(helper_id(&runc(hex), true).as_deref(), Some(hex));
+        assert!(helper_id(&runc(hex), false).is_none());
 
         assert!(!docker_get_path("/containers/0123456789ab\r\nHost: x/json"));
         assert!(!docker_get_path(&format!("/containers/{mid}/json")));
         assert!(docker_get_path("/containers/json"));
         assert!(docker_get_path("/containers/0123456789ab/json"));
-    }
-
-    #[test]
-    fn runtime_helpers_match_regardless_of_case() {
-        let hex = "0123456789abcdef";
-        for comm in ["RunC", "Conmon", "CRun", "Containerd-Shim-Runc-V2"] {
-            let p = Process {
-                comm: comm.into(),
-                cmdline: vec![comm.into(), "-id".into(), hex.into()],
-                ..Process::default()
-            };
-            assert_eq!(helper_id(&p).as_deref(), Some(hex), "comm {comm}");
-        }
-        let by_exe = Process {
-            comm: "n/a".into(),
-            exe: Some("/usr/bin/Conmon".into()),
-            cmdline: vec!["conmon".into(), "-id".into(), hex.into()],
-            ..Process::default()
-        };
-        assert_eq!(helper_id(&by_exe).as_deref(), Some(hex));
     }
 
     fn item(id: &str, state: Option<&str>) -> ListItem {

@@ -17,9 +17,11 @@ pub mod once;
 pub mod proc;
 pub(crate) mod psi;
 pub mod root;
+pub mod rules;
 pub(crate) mod sixel;
 pub(crate) mod tty;
 pub mod types;
 pub mod ui;
 
+pub use identity::user_unit as identity_user_unit;
 pub use types::*;

@@ -1,0 +1,13 @@
+{
+  "stage": "session",
+  "rules": [
+    { "id": "evolution-data-server", "match": { "any": [ { "name_prefix": ["evolution-addressbook", "evolution-calendar", "evolution-source", "evolution-alarm"] }, { "name": "evolution-data-server" }, { "exe_contains": "/evolution-data-server/" } ] }, "identity": "evolution-data-server", "folder": "user_services" },
+    { "id": "pipewire", "match": { "name": ["pipewire", "pipewire-pulse"] }, "identity": "pipewire", "folder": "user_services" }
+  ],
+  "examples": [
+    { "comm": "evolution-addressbook-factory", "exe": "/usr/libexec/evolution-addressbook-factory", "expect": { "identity": "evolution-data-server", "rule": "evolution-data-server" } },
+    { "comm": "evolution", "exe": "/usr/bin/evolution", "expect": null },
+    { "comm": "pipewire-pulse", "exe": "/usr/bin/pipewire-pulse", "expect": { "identity": "pipewire", "rule": "pipewire" } },
+    { "comm": "wireplumber", "exe": "/usr/bin/wireplumber", "expect": null }
+  ]
+}

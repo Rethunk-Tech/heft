@@ -1,0 +1,10 @@
+{
+  "stage": "session",
+  "rules": [
+    { "id": "dbus-broker", "match": { "name_prefix": "dbus-broker" }, "identity": "dbus-broker", "folder": "user_services" }
+  ],
+  "examples": [
+    { "comm": "dbus-broker-launch", "exe": "/usr/bin/dbus-broker-launch", "cmdline": ["dbus-broker-launch", "--scope", "user"], "expect": { "identity": "dbus-broker", "rule": "dbus-broker" } },
+    { "comm": "dbus-daemon", "exe": "/usr/bin/dbus-daemon", "expect": null }
+  ]
+}

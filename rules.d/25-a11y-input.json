@@ -1,0 +1,15 @@
+{
+  "stage": "session",
+  "rules": [
+    { "id": "ibus", "match": { "any": [ { "name": ["ibus-daemon", "ibus-portal", "ibus-dconf", "ibus-x11"] }, { "name_prefix": ["ibus-engine", "ibus-extension", "ibus-ui-"] } ] }, "identity": "ibus-daemon", "folder": "user_services" },
+    { "id": "at-spi", "match": { "name_prefix": "at-spi2-registr" }, "identity": "at-spi-bus-launcher", "folder": "user_services" }
+  ],
+  "examples": [
+    { "comm": "ibus-x11", "exe": "/usr/libexec/ibus-x11", "expect": { "identity": "ibus-daemon", "rule": "ibus" } },
+    { "comm": "ibus-portal", "exe": "/usr/libexec/ibus-portal", "expect": { "identity": "ibus-daemon", "rule": "ibus" } },
+    { "comm": "ibus-dconf", "exe": "/usr/libexec/ibus-dconf", "expect": { "identity": "ibus-daemon", "rule": "ibus" } },
+    { "comm": "ibus-setup", "exe": "/usr/bin/ibus-setup", "expect": null },
+    { "comm": "at-spi2-registryd", "exe": "/usr/libexec/at-spi2-registryd", "cmdline": ["/usr/libexec/at-spi2-registryd", "--use-gnome-session"], "expect": { "identity": "at-spi-bus-launcher", "rule": "at-spi" } },
+    { "comm": "at-spi-bus-launcher", "exe": "/usr/libexec/at-spi-bus-launcher", "expect": null }
+  ]
+}

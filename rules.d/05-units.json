@@ -1,0 +1,19 @@
+{
+  "stage": "unit",
+  "rules": [
+    { "id": "lying", "match": { "any": [ { "unit_contains": ["-transient-", "org.chromium.chromium"] }, { "unit_prefix": ["dbus:", "dbus-:", "run-u", "flatpak-session-helper"] } ] }, "flags": ["lying"] },
+    { "id": "service", "match": { "any": [ { "unit": "init.scope" }, { "all": [ { "unit_suffix": ".service" }, { "not": { "unit_prefix": "app-" } } ] } ] }, "flags": ["service"] }
+  ],
+  "examples": [
+    { "unit": "app-ghostty-surface-transient-1.scope", "expect": { "flags": ["lying"], "rules": ["lying"] } },
+    { "unit": "app-org.chromium.Chromium-1743723.scope", "expect": { "flags": ["lying"] } },
+    { "unit": "dbus-:1.2-org.gnome.Nautilus@250.service", "expect": { "flags": ["lying", "service"] } },
+    { "unit": "flatpak-session-helper.service", "expect": { "flags": ["lying", "service"], "rules": ["lying", "service"] } },
+    { "unit": "dbus-broker.service", "expect": { "flags": ["service"] } },
+    { "unit": "syncthing.service", "expect": { "flags": ["service"] } },
+    { "unit": "org.gnome.Shell@user.service", "expect": { "flags": ["service"] } },
+    { "unit": "init.scope", "expect": { "flags": ["service"] } },
+    { "unit": "app-com.mitchellh.ghostty.service", "expect": { "flags": [] } },
+    { "unit": "app-firefox.scope", "expect": { "flags": [] } }
+  ]
+}

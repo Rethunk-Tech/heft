@@ -1,4 +1,3 @@
-use std::collections::{HashMap, HashSet};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
@@ -6,7 +5,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::types::{Error, Folder};
+use crate::types::Error;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct View {
@@ -70,7 +69,7 @@ fn default_hidden() -> Vec<String> {
 /// so a serde error still names the line and column the reader is looking at.
 /// A `//` inside a string stays put -- a saved filter is a regex, and
 /// `"https?://"` is a pattern rather than the start of a comment.
-fn strip_comments(text: &str) -> String {
+pub(crate) fn strip_comments(text: &str) -> String {
     let b = text.as_bytes();
     let mut out = Vec::with_capacity(b.len());
     let mut i = 0;
@@ -145,7 +144,7 @@ fn view_header() -> String {
     format!(
         "// heft view -- sort, direction, filter, hidden columns, column order.\n\
          // Written by `s` in the TUI, and rewritten whole by the next `s`.\n\
-         // `//` and `/* */` comments are allowed here and in grouping.json.\n\
+         // `//` and `/* */` comments are allowed here and in rules.d files.\n\
          //\n\
          // sort:          one of the labels below\n\
          // desc:          true for high to low\n\
@@ -158,7 +157,7 @@ fn view_header() -> String {
     )
 }
 
-fn config_dir() -> PathBuf {
+pub(crate) fn config_dir() -> PathBuf {
     let base = match std::env::var("XDG_CONFIG_HOME") {
         Ok(v) if !v.is_empty() => PathBuf::from(v),
         _ => std::env::var("HOME")
@@ -204,90 +203,6 @@ pub(crate) fn save_view(view: &View) -> Result<(), Error> {
     Ok(())
 }
 
-/// Grouping overrides, read from `grouping.json` beside the saved view.
-///
-/// heft never writes this file and never creates the directory for it; the
-/// only config write is still an explicit view save.
-///
-/// Every field names a decision the grouping code already makes, so an
-/// override replaces a verdict rather than adding a grouping concept. Keys are
-/// the identities the tree shows — the row title, not a pid or a comm — so a
-/// user names what they can see.
-#[derive(Clone, Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Overrides {
-    /// Identities forced into Applications.
-    #[serde(default)]
-    pub applications: HashSet<String>,
-    /// Identities forced into User Services.
-    #[serde(default)]
-    pub user_services: HashSet<String>,
-    /// Identity -> the identity it bills to instead.
-    #[serde(default)]
-    pub fold: HashMap<String, String>,
-    /// Container name -> owning uid.
-    #[serde(default)]
-    pub container_owners: HashMap<String, u32>,
-}
-
-impl Overrides {
-    /// # Errors
-    ///
-    /// Returns an error if the text is not an object of the documented keys.
-    pub fn parse(text: &str) -> Result<Self, Error> {
-        Ok(serde_json::from_str(&strip_comments(text))?)
-    }
-
-    /// The folder this identity is pinned to, if the user pinned it.
-    ///
-    /// Applications wins an identity listed in both: an entry in the user's own
-    /// application list is the reading that keeps the row where they look.
-    pub(crate) fn folder_for(&self, ident: &str) -> Option<Folder> {
-        if self.applications.contains(ident) {
-            Some(Folder::Applications)
-        } else if self.user_services.contains(ident) {
-            Some(Folder::UserServices)
-        } else {
-            None
-        }
-    }
-
-    /// The identity this one bills to instead, if the user redirected it.
-    pub(crate) fn fold_key(&self, ident: &str) -> Option<&str> {
-        self.fold.get(ident).map(String::as_str)
-    }
-
-    /// True when no override can move a row between folders, so the
-    /// per-process path skips the lookups on the common no-config run.
-    /// `container_owners` is deliberately not counted: it is consulted in
-    /// `containers::insert_resolved`, and an override can never move a
-    /// container row anyway.
-    pub(crate) fn no_placement_overrides(&self) -> bool {
-        self.applications.is_empty() && self.user_services.is_empty() && self.fold.is_empty()
-    }
-    pub(crate) fn container_owner(&self, name: &str) -> Option<u32> {
-        self.container_owners.get(name).copied()
-    }
-}
-pub(crate) fn overrides_path() -> PathBuf {
-    config_dir().join("grouping.json")
-}
-
-/// Read `grouping.json`, or the built-in behaviour when it is absent or bad.
-///
-/// A monitor that dies on a typo in a config file is worse than one with no
-/// config at all, so a parse failure warns once and grouping continues.
-pub(crate) fn load_overrides() -> Overrides {
-    let path = overrides_path();
-    let Ok(text) = fs::read_to_string(&path) else {
-        return Overrides::default();
-    };
-    Overrides::parse(&text).unwrap_or_else(|e| {
-        eprintln!("heft: ignoring {}: {e}", path.display());
-        Overrides::default()
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -328,13 +243,6 @@ mod tests {
         let text = r#"{"sort":"pss","desc":true,"filter":"say \" then //x"}"#;
         let v: View = serde_json::from_str(&strip_comments(text)).unwrap();
         assert_eq!(v.filter, r#"say " then //x"#);
-    }
-
-    #[test]
-    fn overrides_take_comments_too() {
-        let o = Overrides::parse("{\n // mine\n \"user_services\": [\"mydaemon\"] /* pinned */\n}")
-            .unwrap();
-        assert!(o.user_services.contains("mydaemon"));
     }
 
     /// What `s` writes must be what `load_view` reads back, header and all.

@@ -8,10 +8,10 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use crate::config::Overrides;
 use crate::containers::{ContainerIndex, InspectCache};
 use crate::cpu;
 use crate::group;
+use crate::rules::Rules;
 use crate::types::{GpuCounters, HostHeader, HostTree, Process};
 use crate::{gpu, io as pio, net, psi};
 
@@ -444,14 +444,14 @@ struct Sampler {
     pss_interval: Duration,
     consts: HostHeader,
     inspect_cache: InspectCache,
-    overrides: Overrides,
+    rules: &'static Rules,
     psi: psi::Sampler,
     net: net::Sampler,
 }
 
 impl Sampler {
     fn prime(pss_interval: Duration) -> Self {
-        let overrides = crate::config::load_overrides();
+        let rules = crate::rules::Rules::load();
         let mut inspect_cache = InspectCache::default();
         let mut net = net::Sampler::default();
         let pool = WalkPool::new();
@@ -459,11 +459,7 @@ impl Sampler {
         // Netns counters are levels, so the first published tick needs a
         // baseline here or `--once` and `--json` would always print a blank
         // rate. The inspect cache makes the tick's own load a no-op.
-        net.tick(
-            &ContainerIndex::load(&mut inspect_cache, &overrides),
-            &prev,
-            1.0,
-        );
+        net.tick(&ContainerIndex::load(&mut inspect_cache, rules), &prev, 1.0);
         // Pressure totals are levels too, for the same reason: without a
         // baseline here the first published tick has nothing to subtract and
         // every stall column would be blank.
@@ -479,14 +475,14 @@ impl Sampler {
             last_pss: None,
             pss_interval,
             inspect_cache,
-            overrides,
+            rules,
             net,
             psi,
         }
     }
 
     fn tick(&mut self, force_pss: bool) -> HostTree {
-        let containers = ContainerIndex::load(&mut self.inspect_cache, &self.overrides);
+        let containers = ContainerIndex::load(&mut self.inspect_cache, self.rules);
         let t1 = Instant::now();
         let cpu1 = cpu::read_host();
         let want_pss = force_pss || pss_due(self.last_pss, t1, self.pss_interval);
@@ -511,7 +507,7 @@ impl Sampler {
             &self.consts,
             header,
             &containers,
-            &self.overrides,
+            self.rules,
         );
         net.apply(&mut tree);
         // Applied after the tree exists, because a row's cgroup is only

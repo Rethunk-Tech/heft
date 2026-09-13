@@ -12,10 +12,15 @@ const BIN: &str = env!("CARGO_BIN_EXE_heft");
 /// saved view or grouping overrides cannot reshape the tree under test.
 pub fn heft(args: &[&str]) -> Command {
     let mut cmd = Command::new(BIN);
-    cmd.args(args).env(
-        "XDG_CONFIG_HOME",
-        std::env::temp_dir().join("heft-no-config"),
-    );
+    cmd.args(args)
+        .env(
+            "XDG_CONFIG_HOME",
+            std::env::temp_dir().join("heft-no-config"),
+        )
+        .env(
+            "HEFT_RULES_PATH",
+            std::env::temp_dir().join("heft-no-rules"),
+        );
     cmd
 }
 

@@ -141,39 +141,36 @@ pub fn run(pid: u32, interval: Duration) -> Result<(), Error> {
         if f.siblings == 1 { "" } else { "es" }
     );
 
-    let ov = crate::config::load_overrides();
-    let active = ov.folder_for(&f.ident).is_some() || ov.fold_key(&f.ident).is_some();
+    let rules = crate::rules::Rules::load();
     println!(
-        "  override  {}",
-        if active {
-            "yes -- grouping.json already names this identity"
-        } else {
-            "none"
-        }
+        "  placement {}",
+        rules
+            .placement(&f.ident)
+            .map_or_else(|| "no match".to_string(), |r| r.name())
     );
 
     println!();
     match f.pinnable {
         Some(list) => {
-            println!("  \"{}\" is the grouping.json key for this row.", f.ident);
+            println!("  \"{}\" is the placement key for this row.", f.ident);
             println!();
             println!(
-                "  To pin it to a folder, in {}:",
-                crate::config::overrides_path().display()
+                "  To pin it to a folder, in {}/rules.d/90-mine.json:",
+                crate::config::config_dir().display()
             );
-            println!("    {{ \"{list}\": [\"{}\"] }}", f.ident);
-            println!();
-            println!("  To bill it to another row instead:");
             println!(
-                "    {{ \"fold\": {{ \"{}\": \"<other identity>\" }} }}",
+                "    {{ \"stage\": \"placement\", \"rules\": [ {{ \"id\": \"pin\", \"match\": {{ \"identity\": \"{}\" }}, \"folder\": \"{list}\" }} ] }}",
                 f.ident
             );
+            println!();
+            println!("  To bill it to another row instead, `\"fold_to\": \"<other identity>\"`");
+            println!("  in place of `folder`.");
         }
         None => {
-            println!("  No override can move this row. A container is placed by its");
+            println!("  No placement rule can move this row. A container is placed by its");
             println!("  runtime labels and a kernel thread by the cgroup it is in, so");
-            println!("  `applications`, `user_services` and `fold` all skip them.");
-            println!("  `container_owners` sets a container's owning uid by name.");
+            println!("  `fold_to` and `folder` skip them. A rule with `owner_uid` sets a");
+            println!("  container's owning uid by name.");
         }
     }
     Ok(())

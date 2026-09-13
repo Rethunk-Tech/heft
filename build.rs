@@ -36,9 +36,9 @@ Sort column, direction, filter, hidden columns and column order, written by
 the \\fBs\\fR key. Defaults to ~/.config/heft/view.json. Never written except
 by \\fBs\\fR.
 .TP
-\\fB$XDG_CONFIG_HOME/heft/grouping.json\\fR
-Optional grouping overrides. Read only, never created. A malformed file warns
-once and grouping continues with the built\\-in tables.
+\\fB$XDG_CONFIG_HOME/heft/rules.d/\\fR, \\fB/etc/heft/rules.d/\\fR
+Grouping rule files, read in that order ahead of the built\\-in set. Read only,
+never created. A malformed file warns once and the rest still load.
 .SH ENVIRONMENT
 .TP
 \\fBNO_COLOR\\fR
@@ -49,7 +49,7 @@ value, so NO_COLOR=0 disables colour too.
 A unix:// socket is tried before /var/run/docker.sock and the Podman sockets.
 .TP
 \\fBXDG_CONFIG_HOME\\fR
-Where the two files above live. Defaults to ~/.config.
+Where view.json and the user rules.d live. Defaults to ~/.config.
 .TP
 \\fBLC_ALL\\fR, \\fBLC_CTYPE\\fR, \\fBLANG\\fR
 Read in that order by \\fB\\-\\-glyphs auto\\fR: block characters only when one
@@ -102,9 +102,38 @@ fn version() -> String {
     }
 }
 
+/// `OUT_DIR/builtin_rules.rs`: every `rules.d/*.json`, sorted bytewise, as a
+/// `(name, include_str!)` table. Generated from `read_dir` rather than a
+/// hand-kept list so a file added to the directory cannot be left out of the
+/// binary, and sorted because `read_dir` order is machine-dependent.
+fn embed_rules(out: &Path) -> std::io::Result<()> {
+    println!("cargo::rerun-if-changed=rules.d");
+    let root = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
+    let dir = root.join("rules.d");
+    let mut names: Vec<String> = std::fs::read_dir(&dir)?
+        .filter_map(Result::ok)
+        .filter_map(|e| e.file_name().into_string().ok())
+        .filter(|n| n.ends_with(".json"))
+        .collect();
+    names.sort_by(|a, b| a.as_bytes().cmp(b.as_bytes()));
+    let mut s = String::from("pub static BUILTIN: &[(&str, &str)] = &[\n");
+    for n in names {
+        let _ = writeln!(
+            s,
+            "    ({n:?}, include_str!({:?})),",
+            dir.join(&n).display()
+        );
+    }
+    s.push_str("];\n");
+    std::fs::write(out.join("builtin_rules.rs"), s)
+}
+
 fn main() -> std::io::Result<()> {
     println!("cargo::rerun-if-changed=src/cli.rs");
     println!("cargo::rerun-if-changed=src/keys.rs");
+    embed_rules(&PathBuf::from(
+        std::env::var_os("OUT_DIR").expect("OUT_DIR"),
+    ))?;
 
     let version = version();
     println!("cargo::rustc-env=HEFT_VERSION={version}");

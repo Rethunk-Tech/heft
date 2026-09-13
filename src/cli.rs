@@ -61,7 +61,7 @@ pub(crate) struct Cli {
     /// Characters for bars, rules and markers
     #[arg(long, value_enum, default_value_t = Glyphs::Auto, value_name = "SET")]
     pub glyphs: Glyphs,
-    /// Say where this pid landed in the tree and the grouping.json key that moves it
+    /// Say where this pid landed in the tree, the identity a placement rule keys on, and the rule per stage
     #[arg(long, value_name = "PID", conflicts_with_all = ["once", "json", "follow"])]
     pub explain: Option<u32>,
     /// Print what grouping reads about every process, as a test fixture to attach to a grouping bug report

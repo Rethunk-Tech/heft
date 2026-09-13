@@ -1,0 +1,24 @@
+{
+  "stage": "session",
+  "rules": [
+    { "id": "p11-kit", "match": { "name_prefix": "p11-kit" }, "identity": "p11-kit", "folder": "user_services" },
+    { "id": "gcr-ssh-agent", "match": { "any": [ { "name_prefix": "gcr-ssh-agent" }, { "all": [ { "name": "ssh-agent" }, { "cgroup_contains": "gcr-ssh-agent" } ] } ] }, "identity": "gcr-ssh-agent", "folder": "user_services" },
+    { "id": "abrt-applet", "match": { "name": "abrt-applet" }, "identity": "abrt-applet", "folder": "user_services" }
+  ],
+  "examples": [
+    { "comm": "p11-kit-server", "exe": "/usr/libexec/p11-kit/p11-kit-server", "expect": { "identity": "p11-kit", "rule": "p11-kit" } },
+    { "comm": "p11-kit-remote", "exe": "/usr/libexec/p11-kit/p11-kit-remote", "expect": { "identity": "p11-kit", "rule": "p11-kit" } },
+    { "comm": "cursor", "exe": "/tmp/.mount_cursor/usr/share/cursor/cursor", "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/flatpak-session-helper.service", "expect": null },
+    { "comm": "ssh-agent", "exe": "/usr/bin/ssh-agent", "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/gcr-ssh-agent.service", "expect": { "identity": "gcr-ssh-agent", "rule": "gcr-ssh-agent" } },
+    { "comm": "ssh-agent", "exe": "/usr/bin/ssh-agent", "cmdline": ["/usr/bin/ssh-agent"], "expect": null },
+    { "comm": "abrt-applet", "exe": "/usr/bin/abrt-applet", "cmdline": ["/usr/bin/abrt-applet", "--gapplication-service"], "expect": { "identity": "abrt-applet", "rule": "abrt-applet" } },
+    { "comm": "gnome-abrt", "exe": "/usr/bin/gnome-abrt", "expect": null },
+    { "comm": "vivaldi-bin", "exe": "/usr/bin/vivaldi-bin", "expect": null },
+    { "comm": "claude", "exe": "/usr/bin/claude", "expect": null },
+    { "comm": "cursor", "exe": "/usr/bin/cursor", "expect": null },
+    { "comm": "code", "exe": "/usr/bin/code", "expect": null },
+    { "comm": "htop", "exe": "/usr/bin/htop", "cmdline": ["htop", "-u", "1000"], "expect": null },
+    { "comm": "wireplumber", "exe": "/usr/bin/wireplumber", "expect": null },
+    { "comm": "krunner", "exe": "/usr/bin/krunner", "expect": null }
+  ]
+}

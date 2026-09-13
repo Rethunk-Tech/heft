@@ -239,7 +239,7 @@ impl Columns {
     /// `view.hide_columns` and `view.column_order` applied to `COLUMNS`.
     ///
     /// An unknown or duplicate label warns and is ignored, the way a malformed
-    /// `grouping.json` warns and leaves grouping alone: a monitor that refuses
+    /// rules.d file warns and leaves grouping alone: a monitor that refuses
     /// to start over a stale config entry is worse than one with no config.
     /// This is deliberately not `Sort::from_label`'s silent fallback — a
     /// mistyped sort still produces a usable table, a mistyped hide or order

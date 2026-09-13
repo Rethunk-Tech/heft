@@ -1,0 +1,32 @@
+{
+  "stage": "session",
+  "rules": [
+    { "id": "trinity-session", "match": { "any": [
+        { "name_contains": "tdeinit" },
+        { "name_prefix": "tdeio" },
+        { "name": ["starttde", "kwrapper", "dcopserver", "tdelauncher", "kdesktop", "kdesktop_lock", "kicker", "appletproxy", "extensionproxy", "compton-tde", "kdetcompmgr", "artsd", "kweatherservice", "polkit-agent-tde", "tdepowersave"] },
+        { "all": [ { "any": [ { "exe_prefix": "/opt/trinity/" }, { "exe_suffix": "/tdeinit" } ] },
+                   { "name": ["twin", "ksmserver", "kded", "knotify", "kaccess", "khotkeys", "kxkb", "klipper", "kcminit", "kcminit_startup", "ksplash", "ksplashsimple", "ksysguardd", "kteatime", "kttsd"] } ] }
+      ] }, "identity": "tdeinit", "folder": "user_services" }
+  ],
+  "examples": [
+    { "comm": "kicker", "exe": "/opt/trinity/bin/tdeinit", "cmdline": ["kicker [tdeinit]"], "expect": { "identity": "tdeinit", "rule": "trinity-session" } },
+    { "comm": "twin", "exe": "/opt/trinity/bin/tdeinit", "cmdline": ["twin [tdeinit]"], "expect": { "identity": "tdeinit", "rule": "trinity-session" } },
+    { "comm": "kded", "exe": "/opt/trinity/bin/tdeinit", "cmdline": ["kded [tdeinit]"], "expect": { "identity": "tdeinit", "rule": "trinity-session" } },
+    { "comm": "tdeio_file", "exe": "/opt/trinity/bin/tdeinit", "cmdline": ["tdeio_file [tdeinit]"], "expect": { "identity": "tdeinit", "rule": "trinity-session" } },
+    { "comm": "tdeinit", "exe": "/opt/trinity/bin/tdeinit", "cmdline": ["tdeinit [tdeinit]"], "expect": { "identity": "tdeinit", "rule": "trinity-session" } },
+    { "comm": "tdeinit_phase1", "exe": "/opt/trinity/bin/tdeinit_phase1", "expect": { "identity": "tdeinit" } },
+    { "comm": "artsd", "exe": "/opt/trinity/bin/artsd", "expect": { "identity": "tdeinit" } },
+    { "comm": "kdesktop", "exe": "/opt/trinity/bin/kdesktop", "expect": { "identity": "tdeinit" } },
+    { "comm": "kdesktop_lock", "exe": "/opt/trinity/bin/kdesktop_lock", "expect": { "identity": "tdeinit" } },
+    { "comm": "ksysguardd", "exe": "/opt/trinity/bin/ksysguardd", "expect": { "identity": "tdeinit" } },
+    { "comm": "kteatime", "exe": "/opt/trinity/bin/kteatime", "expect": { "identity": "tdeinit" } },
+    { "comm": "kweatherservice", "exe": "/opt/trinity/bin/kweatherservice", "expect": { "identity": "tdeinit" } },
+    { "comm": "kwrapper", "exe": "/opt/trinity/bin/kwrapper", "expect": { "identity": "tdeinit" } },
+    { "comm": "polkit-agent-tde", "exe": "/opt/trinity/bin/polkit-agent-tde", "expect": { "identity": "tdeinit" } },
+    { "comm": "konsole", "exe": "/opt/trinity/bin/tdeinit", "cmdline": ["konsole [tdeinit]"], "expect": null },
+    { "comm": "ksnapshot", "exe": "/opt/trinity/bin/ksnapshot", "expect": null },
+    { "comm": "kteatime", "exe": "/usr/bin/kteatime", "cmdline": ["/usr/bin/kteatime"], "expect": null },
+    { "comm": "ksmserver", "exe": "/usr/bin/ksmserver", "cmdline": ["/usr/bin/ksmserver"], "expect": { "identity": "plasmashell", "rule": "50-plasma.json:plasma-workspace" } }
+  ]
+}

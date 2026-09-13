@@ -1,0 +1,14 @@
+{
+  "stage": "session",
+  "rules": [
+    { "id": "plasma-workspace", "match": { "name": ["plasmashell", "plasma_session", "startplasma", "startplasma-wayland", "ksmserver", "ksplashqml", "plasma-shutdown", "xembedsniproxy", "gmenudbusmenuproxy", "plasma_waitforname", "kde-systemd-start-condition", "kcminit", "kcminit_startup", "kaccess", "kactivitymanagerd", "kglobalacceld", "kded", "kded5", "kded6"] }, "identity": "plasmashell", "folder": "user_services" }
+  ],
+  "examples": [
+    { "comm": "ksmserver", "exe": "/usr/bin/ksmserver", "cmdline": ["/usr/bin/ksmserver"], "expect": { "identity": "plasmashell", "rule": "plasma-workspace" } },
+    { "comm": "kded6", "exe": "/usr/bin/kded6", "cmdline": ["/usr/bin/kded6"], "expect": { "identity": "plasmashell", "rule": "plasma-workspace" } },
+    { "comm": "krunner", "exe": "/usr/bin/krunner", "cmdline": ["/usr/bin/krunner"], "expect": null },
+    { "comm": "plasma-discover", "exe": "/usr/bin/plasma-discover", "cmdline": ["plasma-discover"], "expect": null },
+    { "comm": "kwindowprop", "exe": "/usr/bin/kwindowprop", "cmdline": ["kwindowprop"], "expect": null },
+    { "comm": "plasma-nm", "exe": "/usr/bin/plasma-nm", "expect": null }
+  ]
+}

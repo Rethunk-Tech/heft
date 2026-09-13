@@ -1,0 +1,26 @@
+{
+  "stage": "session",
+  "rules": [
+    { "id": "gnome-shell", "match": { "any": [ { "name_prefix": ["gdm-", "gnome-session", "gnome-keyring", "gnome-shell-"] }, { "name": ["gnome-calendar", "gnome-clocks", "xwayland"] }, { "all": [ { "name": ["gjs", "gjs-console"] }, { "arg_contains": ["gnome-shell", "org.gnome.shell"] } ] } ] }, "identity": "gnome-shell", "folder": "user_services" },
+    { "id": "goa", "match": { "name_prefix": "goa-" }, "identity": "goa-daemon", "folder": "user_services" },
+    { "id": "gsd-disk-utility-notify", "match": { "any": [ { "name_prefix": "gsd-disk-utilit" }, { "exe_contains": "gsd-disk-utility-notify" }, { "cgroup_contains": "diskutilitynotify" } ] }, "identity": "gsd-disk-utility-notify", "folder": "user_services" },
+    { "id": "gsd", "match": { "name_prefix": "gsd-" }, "identity": "gnome-settings-daemon", "folder": "user_services" },
+    { "id": "gvfs", "match": { "any": [ { "name": "gvfsd" }, { "name_prefix": ["gvfsd-", "gvfs-"] }, { "all": [ { "name": "wsdd" }, { "cgroup_contains": "gvfs-" } ] } ] }, "identity": "gvfs", "folder": "user_services" }
+  ],
+  "examples": [
+    { "comm": "gnome-shell-calendar-server", "exe": "/usr/libexec/gnome-shell-calendar-server", "expect": { "identity": "gnome-shell", "rule": "gnome-shell" } },
+    { "comm": "gdm-wayland-ses", "exe": "/usr/libexec/gdm-wayland-session", "expect": { "identity": "gnome-shell", "rule": "gnome-shell" } },
+    { "comm": "gjs", "exe": "/usr/bin/gjs-console", "cmdline": ["/usr/bin/gjs", "/usr/share/gnome-shell/org.gnome.Shell.Notifications"], "expect": { "identity": "gnome-shell", "rule": "gnome-shell" } },
+    { "comm": "Xwayland", "exe": "/usr/bin/Xwayland", "expect": { "identity": "gnome-shell", "rule": "gnome-shell" } },
+    { "comm": "gjs-console", "exe": "/usr/bin/gjs-console", "cmdline": ["gjs", "/home/u/my-app.js"], "expect": null },
+    { "comm": "goa-identity-service", "exe": "/usr/libexec/goa-identity-service", "expect": { "identity": "goa-daemon", "rule": "goa" } },
+    { "comm": "goa-daemon", "exe": "/usr/libexec/goa-daemon", "expect": { "identity": "goa-daemon", "rule": "goa" } },
+    { "comm": "gvfs-goa-volume-monitor", "exe": "/usr/libexec/gvfs-goa-volume-monitor", "expect": { "identity": "gvfs", "rule": "gvfs" } },
+    { "comm": "gsd-disk-utility-notify", "exe": "/usr/libexec/gsd-disk-utility-notify", "expect": { "identity": "gsd-disk-utility-notify", "rule": "gsd-disk-utility-notify" } },
+    { "comm": "gsd-color", "exe": "/usr/libexec/gsd-color", "expect": { "identity": "gnome-settings-daemon", "rule": "gsd" } },
+    { "comm": "gsd-power", "exe": "/usr/libexec/gsd-power", "expect": { "identity": "gnome-settings-daemon", "rule": "gsd" } },
+    { "comm": "gvfsd", "exe": "/usr/libexec/gvfsd", "expect": { "identity": "gvfs", "rule": "gvfs" } },
+    { "comm": "wsdd", "exe": "/usr/bin/wsdd", "cmdline": ["/usr/bin/python3", "/usr/bin/wsdd"], "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/session.slice/gvfs-daemon.service", "expect": { "identity": "gvfs", "rule": "gvfs" } },
+    { "comm": "wsdd", "exe": "/usr/bin/wsdd", "cmdline": ["/usr/bin/wsdd"], "expect": null }
+  ]
+}

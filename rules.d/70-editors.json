@@ -1,0 +1,19 @@
+{
+  "stage": "app",
+  "rules": [
+    { "id": "vscode", "match": { "exe_contains": ["/.vscode/extensions/", "/usr/share/code/"] }, "identity": "code" },
+    { "id": "vscode-insiders", "match": { "exe_contains": ["/.vscode-insiders/extensions/", "/usr/share/code-insiders/"] }, "identity": "code-insiders" },
+    { "id": "cursor", "match": { "exe_contains": "/.cursor/extensions/" }, "identity": "cursor" },
+    { "id": "deskflow", "match": { "name": "deskflow-core" }, "identity": "deskflow" }
+  ],
+  "examples": [
+    { "comm": "codex", "exe": "~/.vscode/extensions/openai.chatgpt-26.5.0-linux-x64/bin/linux-x86_64/codex", "expect": { "identity": "code", "rule": "vscode" } },
+    { "comm": "vscode-tailscale", "exe": "/home/u/.vscode/extensions/tailscale.vscode-tailscale-1.0.0/bin/vscode-tailscale", "expect": { "identity": "code", "rule": "vscode" } },
+    { "comm": "code-tunnel", "exe": "/usr/share/code/bin/code-tunnel", "expect": { "identity": "code", "rule": "vscode" } },
+    { "comm": "claude", "exe": "/home/u/.local/bin/claude", "expect": null },
+    { "comm": "code-tunnel-insi", "exe": "/usr/share/code-insiders/bin/code-tunnel-insiders", "expect": { "identity": "code-insiders", "rule": "vscode-insiders" } },
+    { "comm": "language_server", "exe": "~/.cursor/extensions/x/bin/language_server_linux_x64", "expect": { "identity": "cursor", "rule": "cursor" } },
+    { "comm": "deskflow-core", "exe": "/usr/bin/deskflow-core", "expect": { "identity": "deskflow", "rule": "deskflow" } },
+    { "comm": "deskflow", "exe": "/usr/bin/deskflow", "expect": null }
+  ]
+}

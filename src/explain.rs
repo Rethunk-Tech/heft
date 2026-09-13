@@ -231,14 +231,10 @@ pub fn run(pid: u32, interval: Duration) -> Result<bool, Error> {
             "  To pin it to a folder, in {}/rules.d/90-mine.json:",
             printable(&crate::config::config_dir().display().to_string())
         )?;
-        // JSON-quoted first, so a quote or backslash in the identity still
-        // pastes as a valid rule; `printable` then covers the C1 controls
-        // JSON leaves raw.
-        let key = serde_json::Value::from(f.ident.as_str()).to_string();
         writeln!(
             out,
             "    {{ \"stage\": \"placement\", \"rules\": [ {{ \"id\": \"pin\", \"match\": {{ \"identity\": {} }}, \"folder\": \"{list}\" }} ] }}",
-            printable(&key)
+            json_key(&f.ident)
         )?;
         writeln!(out)?;
         writeln!(
@@ -262,6 +258,23 @@ pub fn run(pid: u32, interval: Duration) -> Result<bool, Error> {
         writeln!(out, "  container's owning uid by name.")?;
     }
     Ok(true)
+}
+
+/// `ident` as a JSON string that pastes into a rule file and puts no raw
+/// control byte on the terminal. `serde_json` escapes a quote, a backslash and
+/// C0 controls, but leaves DEL and the C1 controls raw.
+fn json_key(ident: &str) -> String {
+    use std::fmt::Write as _;
+    let mut out = String::new();
+    for c in serde_json::Value::from(ident).to_string().chars() {
+        if c.is_control() {
+            // Every control left is at most U+009F, so four digits hold it.
+            let _ = write!(out, "\\u{:04x}", u32::from(c));
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -386,6 +399,14 @@ mod tests {
         for pid in [10, 11, 12] {
             assert_eq!(locate(&tree, pid).expect("found").ident, "cursor", "{pid}");
         }
+    }
+
+    #[test]
+    fn the_suggested_key_is_json_for_any_identity() {
+        let ident = "x\u{9b}y\u{7f}\"\\\u{1b}";
+        let key = json_key(ident);
+        assert!(!key.chars().any(char::is_control), "{key}");
+        assert_eq!(serde_json::from_str::<String>(&key).unwrap(), ident);
     }
 
     #[test]

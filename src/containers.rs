@@ -444,11 +444,11 @@ pub(crate) struct NetworkSettings {
     #[serde(rename = "IPAddress")]
     pub(crate) ip: Option<String>,
     #[serde(rename = "Networks")]
-    pub(crate) networks: Option<HashMap<String, Network>>,
+    pub(crate) networks: Option<HashMap<String, Option<Network>>>,
 }
 
-/// Every field optional and unknown keys ignored, so a runtime's schema
-/// difference costs an address, never the container.
+/// Every field optional, unknown keys ignored and a `null` entry accepted, so
+/// a runtime's schema difference costs an address, never the container.
 #[derive(Clone, Debug, Deserialize, Default)]
 pub(crate) struct Network {
     #[serde(rename = "IPAddress")]
@@ -475,6 +475,7 @@ impl Inspect {
             .networks
             .iter()
             .flat_map(HashMap::values)
+            .flatten()
             .filter_map(|net| net.ip.as_ref())
             .chain(&n.ip)
             .filter(|ip| !ip.is_empty())
@@ -564,7 +565,7 @@ mod tests {
         assert!(bare.ips().is_empty());
         let i: Inspect = serde_json::from_str(
             r#"{"Unknown":1,"NetworkSettings":{"IPAddress":"","Networks":{
-                "bridge":{"IPAddress":"172.17.0.2","Gateway":"172.17.0.1"},"none":{}}}}"#,
+                "bridge":{"IPAddress":"172.17.0.2","Gateway":"172.17.0.1"},"host":{},"none":null}}}"#,
         )
         .unwrap();
         assert_eq!(i.ips(), ["172.17.0.2"]);

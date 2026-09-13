@@ -26,7 +26,10 @@ pub(crate) fn prefix() -> &'static str {
 }
 
 /// An absolute kernel path with the prefix applied. `path("/proc/stat")` is
-/// `/proc/stat` by default and `<root>/proc/stat` under `--proc-root`.
+/// `/proc/stat` by default and `<root>/proc/stat` under `--proc-root`. A path
+/// that interpolates a pid or another runtime value is built with
+/// `format!("{}/proc/{pid}/...", prefix())` instead, since `path(&format!(..))`
+/// allocates twice for every pid on every tick.
 pub(crate) fn path(abs: &str) -> String {
     format!("{}{abs}", prefix())
 }

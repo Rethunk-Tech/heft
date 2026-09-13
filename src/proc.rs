@@ -267,6 +267,7 @@ pub(crate) fn read_pid(
     // TUI ticks between `--pss-interval` reuse last (new PIDs stay blank).
     let rollup = rollup_for(
         want_pss,
+        want_swap,
         parsed.kthread,
         prev,
         (parsed.starttime_ticks, rss_pages),
@@ -324,6 +325,7 @@ struct Rollup {
 /// `now` is this sample's `(starttime_ticks, rss_pages)`.
 fn rollup_for(
     want_pss: bool,
+    want_swap: bool,
     kthread: bool,
     prev: Option<&Process>,
     now: (Option<u64>, Option<u64>),
@@ -343,7 +345,7 @@ fn rollup_for(
             carry(p, p.rollup_periods)
         }
         _ if !want_pss => Rollup::default(),
-        Some(p) if rollup_holds(p, now.0, now.1, cpu::page_size()) => {
+        Some(p) if rollup_holds(p, now.0, now.1, want_swap, cpu::page_size()) => {
             carry(p, p.rollup_periods + 1)
         }
         _ => {
@@ -368,10 +370,15 @@ const ROLLUP_MAX_PERIODS: u32 = 6;
 /// recorded `--follow` session this kept 24% of the rollup CPU; summed PSS
 /// was off by 0.073%, and a carried row by 2.2% at p99 and 4.3% at worst. With
 /// no age bound and a 0.1% threshold the worst row was 5.8%.
+///
+/// `want_swap` must also match what the last read saw, so a `swapon` or
+/// `swapoff` forces one read rather than carrying a blank or a figure from a
+/// host that no longer has swap.
 fn rollup_holds(
     prev: &Process,
     starttime_ticks: Option<u64>,
     rss_pages: Option<u64>,
+    want_swap: bool,
     page_size: u64,
 ) -> bool {
     let (Some(then), Some(now)) = (prev.rollup_rss_pages, rss_pages) else {
@@ -381,6 +388,7 @@ fn rollup_holds(
     prev.starttime_ticks.is_some()
         && prev.starttime_ticks == starttime_ticks
         && prev.rollup_periods + 1 < ROLLUP_MAX_PERIODS
+        && prev.swap_pss_kb.is_some() == want_swap
         && now.abs_diff(then) <= (then / 100).max(floor)
 }
 
@@ -918,18 +926,18 @@ mod tests {
         let unread = || unreachable!("a carried tick reads no rollup");
         let now = (Some(7), None);
         assert_eq!(
-            rollup_for(false, true, Some(&carried), now, unread),
+            rollup_for(false, false, true, Some(&carried), now, unread),
             Rollup::default()
         );
-        let kept = rollup_for(false, false, Some(&carried), now, unread);
+        let kept = rollup_for(false, false, false, Some(&carried), now, unread);
         assert_eq!((kept.pss_kb, kept.swap_pss_kb), (Some(12), Some(3)));
         assert_eq!(
-            rollup_for(false, false, Some(&carried), (Some(8), None), unread),
+            rollup_for(false, false, false, Some(&carried), (Some(8), None), unread),
             Rollup::default(),
             "a reused pid"
         );
         assert_eq!(
-            rollup_for(false, false, None, now, unread),
+            rollup_for(false, false, false, None, now, unread),
             Rollup::default()
         );
     }
@@ -941,11 +949,24 @@ mod tests {
             rollup_rss_pages: Some(100_000),
             ..Process::default()
         };
-        let holds = |p: &Process, start, rss| rollup_holds(p, start, Some(rss), 4096);
+        let holds = |p: &Process, start, rss| rollup_holds(p, start, Some(rss), false, 4096);
         assert!(holds(&prev, Some(7), 101_000));
         assert!(holds(&prev, Some(7), 99_000));
         assert!(!holds(&prev, Some(7), 101_001));
         assert!(!holds(&prev, Some(8), 100_000), "a new process");
+        let swapped = Process {
+            swap_pss_kb: Some(3),
+            ..prev.clone()
+        };
+        assert!(rollup_holds(&swapped, Some(7), Some(100_000), true, 4096));
+        assert!(
+            !rollup_holds(&swapped, Some(7), Some(100_000), false, 4096),
+            "swapoff"
+        );
+        assert!(
+            !rollup_holds(&prev, Some(7), Some(100_000), true, 4096),
+            "swapon"
+        );
         let small = Process {
             rollup_rss_pages: Some(1_000),
             ..prev.clone()
@@ -965,13 +986,23 @@ mod tests {
             !holds(&sixth, Some(7), 100_000),
             "six periods since the read"
         );
-        let reused = rollup_for(true, false, Some(&fifth), (Some(7), Some(100_000)), || {
-            unreachable!("RSS held")
-        });
+        let reused = rollup_for(
+            true,
+            false,
+            false,
+            Some(&fifth),
+            (Some(7), Some(100_000)),
+            || unreachable!("RSS held"),
+        );
         assert_eq!(reused.periods, 5);
-        let read = rollup_for(true, false, Some(&sixth), (Some(7), Some(100_500)), || {
-            (Some(1), None)
-        });
+        let read = rollup_for(
+            true,
+            false,
+            false,
+            Some(&sixth),
+            (Some(7), Some(100_500)),
+            || (Some(1), None),
+        );
         assert_eq!(
             read,
             Rollup {

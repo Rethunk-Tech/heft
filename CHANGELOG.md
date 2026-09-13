@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.11.0 - 2026-09-13
 
 ### Changed
 
@@ -22,8 +22,16 @@
 - `--follow` without `--once` or `--json` is clap's usage error.
 - Containers are indexed by their 12-hex id alone; two running containers
   sharing that prefix bill to one row.
-- A rules.d example carrying `kthread`, `utime` or `stime` fails its file.
-  heft never read them, and `--fixture` rows do not carry them.
+- A rule pinning `containers` or `system` as its folder fails its file with a
+  warning naming the two folders a rule can use.
+
+### Removed
+
+- **Breaking:** a rules.d example carrying `kthread`, `utime` or `stime`
+  fails its file. heft never read them, and `--fixture` rows do not carry
+  them.
+- The warning about a leftover `grouping.json`, and the HUMANS.md table that
+  maps its keys to placement rules. 0.10.0 names the mapping.
 
 ### Fixed
 
@@ -38,6 +46,12 @@
 - `--user ""` no longer matches an `/etc/passwd` line with an empty name.
 - `--help` says `--filter` also matches the argv under a row, and that
   `--follow` honours `--pss-interval`.
+
+### Documentation
+
+- HUMANS.md states each contract once and corrects the keys, column count,
+  `--filter` and `--pss-interval` statements.
+- HUMANS.md says which GPU drivers and fdinfo names heft reads.
 
 ## 0.10.1 - 2026-09-13
 

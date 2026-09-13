@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.10.0 - 2026-09-12
+
 ### Added
 
 - Grouping and classification rules are JSON files. The built-in set is

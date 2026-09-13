@@ -2,22 +2,68 @@
 
 ## Unreleased
 
+## 0.10.1 - 2026-09-12
+
+### Added
+
+- The built-in `10-classes.json` carries `RunC` and `CRun` examples beside
+  `Containerd-Shim-Runc-V2` and `Conmon`, so `--check-rules` proves every
+  container runtime name folds case; the built-in set runs 127 examples.
+- Tests hold rules behaviour grouping.json never had to prove: a user `app`,
+  `session`, `class` or `unit` rule over the GUI fixture; a session rule
+  deciding before the crash-helper check and an app rule after it; a pin
+  listed before a fold hiding the fold; a fold pinning its target in the same
+  rule; `disable: ["40-trinity.json"]` turning a TDE module into an
+  Application; a user file named like a built-in losing its own disabled id;
+  XDG beating `/etc` beating a built-in; and an empty `HEFT_RULES_PATH`
+  loading built-ins only.
+- The leftover-grouping.json test also compares where every live process
+  lands with and without the file, not only the stderr line.
+
 ### Changed
 
 - `--check-rules` prints expected and actual values the way a rules file
-  spells them (`user_services`, `[lying, service]`) rather than as Rust debug
-  values.
+  spells them (`expected folder user_services, got applications`,
+  `[lying, service]`) rather than as Rust debug values.
 - Grouping borrows each process's basename and display name instead of
-  copying them, so a sample allocates less per process.
+  copying them, and the AppImage suffix and `.mount` prefix checks compare
+  ASCII case in place rather than lowercasing a copy, so a sample allocates
+  less per process. A name with a multibyte character at the cut is a miss,
+  never a panic.
+- Container ids are normalised (hex check, then lowercase) by one function at
+  every index insert and lookup.
+- `--explain`'s per-stage trace builds its facts with the same function
+  grouping uses, so the trace cannot disagree with the tree about a process's
+  display name.
+- The `rules_timing` bench runs from the library tests on those same facts:
+  `cargo test --release --lib -- --ignored --nocapture rules_timing`. On a
+  quiet machine the four stages cost 433 to 438 ns per process against a
+  500 ns budget.
+- The pre-push `gate` builds with `--locked`, so a push cannot rewrite
+  `Cargo.lock` first, and scans RustSec advisories once: the `vuln` gate runs
+  `cargo deny --locked check advisories` and the `deny` gate checks bans,
+  licenses and sources, whether or not cargo-audit is installed.
+
+### Removed
+
+- Library items only heft's own tests used: `Rules::check`,
+  `Rules::examples_total`, `Rules::count`, `Classes::contains`,
+  `rules::OwnedFacts`, `rules::STAGES` and the `heft::identity_user_unit`
+  re-export. `Rules::report` answers what `check` did.
 
 ### Documentation
 
 - HUMANS.md says why heft leaves the GPU memory of drm clients inside
   root-owned containers unread: reading it means running a command inside each
   container, which is a POST, and heft's container client only sends GET.
-- CONTRIBUTING.md: the pre-push `gate` builds with `--locked` and scans RustSec
-  advisories once, through `cargo deny`, whether or not cargo-audit is
-  installed.
+- HUMANS.md and AGENTS.md state each measurement once: the kitty inline and
+  sixel transport costs (with the 24-row terminal of 10x20-pixel cells
+  they were measured on) and the GTT gap live in HUMANS.md, and AGENTS.md points there.
+- The `--check-rules` sample in HUMANS.md matches the output.
+- AGENTS.md records why the leftover grouping.json warning stays, states the
+  clippy lint contract without the stale 216/87 count, and names the bench
+  commands for `build_tree_timing` and `rules_timing`.
+- CONTRIBUTING.md lists the split cargo-deny gates.
 
 ## 0.10.0 - 2026-09-12
 

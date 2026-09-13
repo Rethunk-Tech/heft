@@ -932,6 +932,11 @@ fn json_text(tree: &HostTree, view: &View, pretty: bool) -> Result<String, Error
     let mut tree = tree.clone();
     keep_users(&mut tree, &view.users);
     sort_tree(&mut tree, Sort::from_label(&view.sort), view.desc);
+    // The `Value` detour is what sorts every key alphabetically, which is the
+    // byte shape `--json` publishes. Serializing the structs directly measured
+    // 907 us to 314 us per ~300 KB document, but keeping that order needed 93
+    // lines of hand-written `Serialize` in place of `flatten`, for about 0.06%
+    // of a core at one document a second.
     let doc = serde_json::json!({ "host": tree });
     // `println!` panics when the reader closes, and the release profile is
     // `panic = abort`, so `heft --json | head` would abort. Serialize first,

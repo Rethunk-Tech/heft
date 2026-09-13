@@ -9,7 +9,7 @@ Read-only Linux process monitor. Binary name `heft`.
 ## Layout
 
 ```
-src/cli.rs           clap Cli; build.rs includes it so completions/man cannot drift
+src/cli.rs           clap Cli and the one definition of the --trend and --glyphs choices; a library module, and build.rs includes it so completions/man cannot drift
 src/main.rs          dispatch: TUI default, --once, --json
 src/lib.rs           modules
 build.rs             clap_complete + clap_mangen → OUT_DIR/assets (build-deps only); HEFT_VERSION = version~sha; rules.d → OUT_DIR/builtin_rules.rs
@@ -22,7 +22,7 @@ src/mem.rs           meminfo used/Shmem/kernel/cache/Swap, zram mm_stat, unified
 src/io.rs            /proc/pid/io rates and smaps_rollup PSS + SwapPss
 src/net.rs           per-netns rx/tx from /proc/pid/net/dev; container rows only
 src/psi.rs           cgroup cpu/io/memory.pressure; single-cgroup rows only
-src/gpu.rs           amdgpu/i915/xe fdinfo; dri/drm prefilter; no empty-prefilter walk; oversized fdinfo skipped; drm-client-id dedupe
+src/gpu.rs           amdgpu/i915/xe fdinfo; dri/drm prefilter; no empty-prefilter walk; oversized fdinfo skipped; drm-client-id dedupe; fd table rescanned only on PSS ticks
 src/classify.rs      procedures over the rule classes: crash-helper owner, launcher payload hint, interactive shell
 src/identity.rs      cgroup parse, merge key + display name
 src/containers.rs    GET-only docker/podman; project vs per-container
@@ -51,29 +51,29 @@ No `sysinfo` crate. No `nix` unless rustix cannot do it; heft uses `std` + `libc
 plus `rustix` (already built for crossterm) for the dirfd-relative `/proc/<pid>` reads.
 Never read `/proc/pid/mem`. Never ptrace.
 
-The hand-rolled helpers — the `/proc` and fdinfo field parsers,
+The hand-rolled helpers (the `/proc` and fdinfo field parsers,
 `once::scale_1024`, `ui::share_cells`, `identity::systemd_unescape`, and the
-GET-only HTTP client in `containers::unix_get` — have no equivalent in std
+GET-only HTTP client in `containers::unix_get`) have no equivalent in std
 *or in a crate already in the tree*. Both halves are checked, not assumed, so
-replacing them is not pending work. The second half is the one that matters:
-`once::trunc` sat in this list on the strength of the first, and was
-re-implementing `unicode-truncate`, which ratatui-core had already compiled.
-`share_cells` survives it — a partial-fill allocator whose result is meant to
-come up short, which no ratatui `Constraint` expresses — and `unix_get`
-survives it because the tree carries no HTTP client at all.
+replacing them is not pending work. `share_cells` is a partial-fill allocator
+whose result is meant to come up short, which no ratatui `Constraint`
+expresses, and `unix_get` stays because the tree carries no HTTP client at
+all.
 
 Two further consolidations are measured and refused. The `once` and `ui`
-walkers look duplicated — around 40 of 54 lines match — but the row types do
-not: `Flat` carries an `id` and an `expandable` flag that `TableRow` has no
-use for, and that `id` is what keys expand membership, the trend history and
-the cursor's re-anchoring across a resort. Unifying them takes four parameters
-that are each constant on one caller, and makes `--once` and `--follow`
-`format!` an id per row and throw it away. That the row sets differ is the
-consequence — it is why `--filter` is narrower than `/` — not the reason.
+walkers look duplicated, but the row types do not: `Flat` carries an `id` and
+an `expandable` flag that `TableRow` has no use for, and that `id` is what
+keys expand membership, the trend history and the cursor's re-anchoring
+across a resort. Unifying them takes four parameters that are each constant on
+one caller, and makes `--once` and `--follow` `format!` an id per row and
+throw it away. That the row sets differ is the consequence (it is why
+`--filter` is narrower than `/`), not the reason.
 
-`containers::index_ids` keys both the full and the 12-hex id while `get` also falls back through `hex12`; the
-redundancy costs two lines and the alternative silently loses a row if a
-runtime ever reports a truncated id.
+`containers::id_key` is the one `by_id` key, on insert and lookup alike: the
+normalized id cut to 12 hex digits, so a full id and a truncated one reach the
+same row. The ceiling is that two running containers sharing a 12-hex prefix
+bill to one row. Keying the full id alone is refused: a runtime that reports a
+truncated id would silently lose its row.
 
 ## Grouping invariants
 
@@ -277,7 +277,8 @@ rules_timing`, with `HEFT_BENCH_FIXTURE` naming a `--fixture` dump.
 
 `Rules::load`, `rules::load_dir` and `Rules::builtin` carry the load contract.
 The leftover-grouping.json warning stays: without it an upgrader's overrides
-would stop applying with no message. `tests/common::heft` points
+would stop applying with no message. The warning, its `live_proc` test and the
+HUMANS.md migration table are removed at 0.11. `tests/common::heft` points
 `HEFT_RULES_PATH` at a missing directory so a developer's `/etc/heft/rules.d`
 cannot reach a binary-driven test.
 
@@ -428,8 +429,9 @@ in `sixel::encode`. `use_self`, `missing_const_for_fn`, `doc_markdown` and
 `cast_sign_loss` — are the ones that earn their place: a claim that a cast is
 bounded lives as an `#[expect(..., reason = ...)]` at that site naming the
 bound, never as prose, and the compiler checks the expect is still firing.
-`cpu.rs` takes one module-level expect because every cast in it is the same widening of a kernel
-counter into the f64 a rate is divided in. Each lint is at zero, which is what
+`cpu.rs` takes one module-level expect because every cast in it has the same
+bound: one interval's `saturating_sub` delta of a kernel counter, widened into
+the f64 a rate is divided in. Each lint is at zero, which is what
 makes denying it free.
 
 Release profile: LTO, `codegen-units = 1`, strip, `panic = abort`.

@@ -86,10 +86,7 @@ runtime ever reports a truncated id.
   service. Known compositors (the `compositor` class) are user services even
   if the unit looks like an app.
 - `identity::unit_line` picks the one cgroup line a unit name is read from:
-  the `0::` line on v2, else `1:name=systemd:`. A v1 file is a line per
-  controller ending in an empty `0::/`, so taking the leaf of the whole blob
-  read that empty line and `user_unit` returned `None` — which left User
-  Services empty on every v1 host, since that split needs a unit name.
+  the `0::` line on v2, else `1:name=systemd:`. The v1 trap is on that function.
 - Display name is `classify::name_of` (`exe` basename else `comm`), not the
   inherited cgroup. The exception is an `exe` of `tdeinit`, which runs
   programs as in-process modules, so there `comm` names the program. TDE
@@ -146,38 +143,25 @@ runtime ever reports a truncated id.
   workdir path uid, else the first non-root uid owning an `Inspect.Mounts`
   bind source (named volumes are root-owned and skipped), else Host →
   Containers.
-- NETNS RX/TX is the one metric a container row carries and no other row can.
-  `/proc/pid/net/dev` is per network namespace, so `net::netns_pids` reads it
-  only through the lowest pid in that container's own cgroup scope: the shim,
-  `conmon` and `docker-proxy` are billed to the container but run in the root
-  namespace. A container is skipped when `HostConfig.NetworkMode` is `host` or
-  absent (`Inspect::owns_netns`), because that namespace is the machine's.
-  `Metrics::accumulate` never sums the pair, so a folder, User or Host row
-  stays blank rather than reporting one namespace as its own. The three
-  `*_stall_pct` fields are left out of `accumulate` for the same reason;
-  `types.rs` guards both in one test.
+- NETNS RX/TX is the one metric only a container row carries: `net::netns_pids`
+  reads it through the lowest pid in the container's own scope,
+  `Inspect::owns_netns` skips host networking, and `Metrics::accumulate` sums
+  neither the pair nor the three `*_stall_pct` fields (`types.rs` guards both).
 
 ## Surfaces and flags
 
-`proc::sample_stream` primes once and then publishes every `--interval`,
-honouring `--pss-interval` where the one-shot surfaces force PSS: a stream is
-continuous, so it is the TUI's cadence question, not `--once`'s. `once::
-follow_table` and `once::follow_json` share their rendering with the one-shot
-pair through `render_table` and `json_text`; `--json --follow` is compact
-NDJSON, one document per line, because a record that spans lines is not a
-record.
+`proc::sample_stream` is the `--follow` loop and honours `--pss-interval`;
+`once::follow_table` and `once::follow_json` share rendering with the one-shot
+pair through `render_table` and `json_text`.
 
 `main` resolves one `View` and hands it to whichever surface runs, so
 precedence lives in one place: `--sort`, `--asc` / `--desc`, `--filter`,
 `--user`, `--top` and `--order` overwrite whatever the saved view held,
-`--hide` adds to its list, and only `sort`, `desc`, `filter`, `hide_columns` and `column_order` are
-ever read back from it — `users` and `top` are `#[serde(skip)]`. `--once`
-starts from `config::load_view()`; `--json` starts from `View::default()` and
-never reads the file, because a human's saved preference must not reshape a
-documented contract. `--filter` and `--top` are `conflicts_with = "json"`
-because the JSON tree has no folder rows, so "keep the ancestors" has nothing
-to mean there. `--hide` and `--order` are too: a column preference is not
-part of the contract.
+`--hide` adds to its list, and only `sort`, `desc`, `filter`, `hide_columns`
+and `column_order` are ever read back (`users` and `top` are
+`#[serde(skip)]`). `--once` starts from `config::load_view()`; `--json` starts
+from `View::default()` and never reads the file. `--filter`, `--top`, `--hide`
+and `--order` are `conflicts_with = "json"`: the JSON shape is a contract.
 
 An unknown `--sort` label is a clap `InvalidValue` exit, not
 `Sort::from_label`'s fallback — a stale `view.json` must not stop the monitor,
@@ -185,207 +169,46 @@ an argument just typed can still be corrected. `once::sort_labels` feeds that
 error; `src/cli.rs` cannot reach `COLUMNS` because `build.rs` includes it
 standalone to generate the completions and man page.
 
-`main` rejects a non-terminal stdout before sampling: the TUI cannot open a
-terminal it has not got, and reporting that after a `/proc` walk would burn an
-`--interval` first. Non-zero, and never a silent fall back to `--once`. The
-`--follow` usage check runs ahead of even that, because a flag combination that
-cannot mean anything is wrong wherever stdout points.
+`once::Filter` (`regex-lite`; the measurement is on it) returns `None` from
+`new` rather than an error, and each caller decides what that means: clap
+`InvalidValue` for `--filter`, warn-and-ignore for a stale `view.json`, and in
+the TUI the last compiling pattern stays live behind a `?` in the footer.
 
-`once::keep_users` prunes User nodes before rows are built, on all three
-surfaces, so the Host row totals what survived; it is not `conflicts_with =
-"json"` the way `--filter` is, because the JSON tree does have User nodes.
-`View::users` is `#[serde(skip)]` — it rides the existing plumbing without ever
-reaching `view.json`.
+`--filter` and `/` match `TableRow::search` / `Flat::search` (`once::haystack`)
+when one is built, else `name`; `keep_matches`, `keep_top` and `Filter` carry
+the rest. `ProcNode::cmdline` is the argv `proc` already read, and is
+serialized (`types.rs`).
 
-`once::Filter` compiles the pattern once — `regex-lite`, not `regex`, measured:
-the full engine takes the stripped binary from 1.53 MB to 2.93 MB and adds four
-crates for a SIMD literal search that matches a few hundred names a tick.
-`(?i)` is prefixed so a saved substring filter keeps behaving as it did.
-`Filter::new` returns `None` rather than an error, and each caller decides what
-that means: clap `InvalidValue` for `--filter`, warn-and-ignore for a stale
-`view.json`, and in the TUI the last compiling pattern stays live behind a `?`
-in the footer.
+`Set::Legacy` differs from `Set::Unicode` in `glyph::spark_ramp` and nowhere
+else; `glyph.rs` carries why that holds and why `detect` never returns it.
 
-`once::keep_top` trims to `--top` after `keep_matches`, generic over the row
-type for the same reason: the TUI trims its flattened rows and `--once` trims
-the ones it prints. Row-level rather than tree-level so an ancestor keeps the
-total it was built with, and `TableRow::trimmable` / `Flat::trimmable` is false
-on Host, User and folder rows — sort never orders `tree.users` or the top-level
-folders, so a "top" of them would cut arbitrarily. `conflicts_with = "json"`,
-same reasoning as `--filter`.
+`--trend kitty`, `--trend sixel` and `--trend auto` live in `src/kgp.rs`,
+`src/sixel.rs` and `src/caps.rs`; each module doc carries its protocol
+decisions, `ui::resolve_trend` the kitty-versus-sixel choice with its
+measurement, and `tty::hold_shm` the signal-safe shm cleanup.
 
-`--filter` and `/` match a row's `search` haystack when one is built: the row
-title followed by the argv of every process beneath it, one per line so `$`
-cannot run off one process's arguments into the next. `TableRow::search` and
-`Flat::search` are `None` on a tick with no filter and on rows the argv cannot
-reach (Host, User, folder headers), so `keep_matches` falls back to `name` and
-an unfiltered tick allocates nothing for it. `ProcNode::cmdline` carries the
-argv `proc` already read, and is serialized (`types.rs`).
-The haystack is built for a collapsed identity too, or `/` would reach only
-what happens to be expanded.
-
-`once::keep_matches` is the one filter for every surface — the TUI over its
-flattened rows, `--once` over `once::table_rows`. Rows are built from the whole
-tree and filtered afterwards, so an ancestor row keeps the total it was built
-with rather than the total of what survived.
-
-The two walkers do not emit the same rows, deliberately: `ui::push_folder`
-descends folder → identity → instance → process, gated on what is expanded,
-while `once::push_folder` stops at folder → identity → member container. So
-`--filter` searches strictly fewer rows than `/` does, and the filter is the
-same function over two different row sets rather than one behaviour on two
-surfaces.
-
-`glyph` resolves the character set once in `main` into a `OnceLock` rather
-than threading it through every render site, since it cannot change while heft
-runs. `Set::Legacy` differs from `Set::Unicode` in `spark_ramp` and nowhere
-else: every other glyph heft draws is one a legacy font carries, which is what
-keeps the third set a branch rather than a second table. That holds only
-because the bar fills are the shade ramp `█▓▒` and `collapsed` is `►` (U+25BA) rather than `▶` (U+25B6) — U+25B6 is the
-play-button emoji base, so a terminal resolving emoji presentation draws it
-double-width and shifts a row whose every column is exact. `glyph::tests`
-asserts that separation, and caught that U+2584 is both a half block and the
-ramp's midpoint, so the gap a legacy font leaves is six steps, not seven.
-`detect` never returns `Legacy`: a locale says the terminal can encode UTF-8,
-never what the font can draw. Every ASCII substitute is one column wide: the header lines are built to
-land on an exact width and `once::trunc` cuts to an exact column count, so a
-three-character `...` for `…` would overflow both. `Cli::Glyphs` lives in
-`src/cli.rs` because `build.rs` compiles that file standalone.
-
-`--trend kitty` draws TREND as a kitty-graphics-protocol image instead of the
-ramp (`src/kgp.rs`). One image for the whole column, never one per row: the
-protocol's row diacritics index into an image, so nine cells of one band cost
-the same transmission as the whole table, and there is no per-row image
-lifecycle to leak. `a=T,U=1` transmits and creates the virtual placement in
-one escape; each row's cell is `U+10EEEE` plus its row and column diacritics,
-with the image id in the foreground colour as a ratatui style rather than an
-escape in the text, because a cell's symbol is written literally. Only the
-first of the nine cells spells out its position; the rest inherit from the
-left, which the protocol allows when the colours match.
-
-Two transports, chosen from `SSH_CONNECTION` / `SSH_TTY` rather than from
-`TERM`: `t=s` hands over a POSIX shared memory object, and `t=d` sends the
-pixels inline for the case the terminal is not on this machine; what each costs
-a sample is measured in HUMANS.md, TREND. Per *frame* the inline cost would be
-twenty times that, which is why `Kgp::send` hashes the pixels and returns
-without writing when nothing changed — the loop draws on every poll timeout,
-not once per sample.
-
-`tty::hold_shm` / `release_shm` exist for that transport alone: the terminal
-unlinks the object once it has read it, but a terminal that never reads one
-leaves it in `/dev/shm`, and a signal would otherwise kill heft before
-`teardown` ran. The handler calls `unlink`, which is async-signal-safe, on a
-path built ahead of time, because `shm_unlink` is not on that list and on
-Linux is this call anyway.
-
-`--trend auto` is the default and does the handshake heft otherwise avoids,
-because this is the one rendering question with no free answer: `TERM` names a
-terminal and not what it implements, and a multiplexer or ssh hop can remove a
-capability underneath it. `caps::probe` writes the kitty `a=q` query and a DA1
-request together, after raw mode and inside the alternate screen so a reply is
-neither echoed nor left on the user's scrollback. DA1 is the sentinel that
-makes the read terminable — universally answered, and answered last, so its
-arrival proves the graphics query has been dealt with; without it every start
-on a non-graphics terminal would wait out the timeout. Only a terminal that
-answers neither does. `caps::drain` then swallows a late reply,
-because a DA1 answer carries `?` and `?` opens the help overlay.
-`ui::resolve_trend` prefers kitty locally (cell-grid placement, shm transport)
-and sixel when `kgp::is_remote`, on the inline kitty against sixel cost gap
-measured in HUMANS.md, TREND. An explicit `--trend` value asks nothing. It is also
-`conflicts_with` `--once` and `--json`, which have no history to draw and are
-not drawing to a terminal. A terminal that reports no `ws_xpixel` cannot have
-an image sized for it, so `cell_px` returns `None` and the frame falls back to
-the ramp rather than blanking the column.
-
-`--trend sixel` (`src/sixel.rs`) sends the same `kgp::paint` image to the
-terminals the kitty protocol misses. Two things differ. Sixel has no
-placeholder mechanism, so the image must be positioned: the TREND cells are
-rendered as spaces carrying `SIXEL_MARK` and `ui::marked_corner` reads the
-rectangle back out of the frame buffer after `render_widget` — computing it
-would be a second copy of ratatui's column layout, and TREND's width moves
-with the table's slack. And it is written after `terminal.draw` returns rather than
-inside the closure, because sixel paints over cells instead of into them, so a
-cell ratatui rewrites erases the pixels; it is repainted every frame rather
-than hashed. That is affordable where the `f=32` kitty inline transport was
-not (both measured in HUMANS.md, TREND), because a line is mostly empty and
-sixel run-length-encodes the empty part. `P2=1` in the introducer is what keeps the
-zero pixels transparent so the cursor highlight still shows.
-
-`src/keys.rs` is the one TUI key list. `build.rs` includes it the way it
-includes `src/cli.rs`, so the man page's KEYS section and the `?` overlay are
-the same table — they had already drifted once, when `i` reached only the
-overlay. `{up}`/`{down}`/`{left}`/`{right}` are placeholders: the TUI
-substitutes the resolved `glyph` arrows, the man page spells them out. The man
-page is rendered piecewise in `build.rs` rather than through `generate_to`, so
-KEYS, FILES and ENVIRONMENT land between OPTIONS and VERSION.
-
-`p` sets `App::paused` to an `Instant`; the loop still drains the sampler's
-slot but skips the swap into `tree`, so the slot never backs up and unpausing
-shows the current machine. The footer prints how long the view has been held,
-because a frozen monitor that does not say so reads as a live one.
-
-`i` toggles `ui::draw_detail`, which renders `COLUMNS` in full for the selected
-row — hidden columns included, since the pane exists to answer what the table
-is too narrow to show — and then, when `ui::row_pid` finds a `…/p/<pid>` id,
-the seven `/proc` facts from `proc::detail`. The metrics go through
-`ui::metric_grid`, column-major across as many 19-column cells as the pane is
-wide: stacked one per line they were a twenty-row column of two-character
-values beside an empty half-screen, and pushed `EXE`, `CGROUP` and `CMDLINE`
-past the bottom, where `Paragraph` cuts them. `proc::detail` caps the command
-line for the same reason. Those are read on the keypress
-rather than carried on `ProcNode`: five more strings per process per tick would
-be paid on every tick to serve one row of one keystroke. `ui::popup` is shared
-with `draw_help` so the two overlays cannot drift, and only one draws at a
-time, which is why `i` clears `help`.
+`i` (`ui::draw_detail`, `ui::metric_grid`, `proc::detail`) and `?` share
+`ui::popup`, and only one draws at a time, which is why `i` clears `help`.
 
 ## Columns
 
-`ui::trend_scale` gives a frame one scale for every row: `Sort::trend_full`
-where the metric is a percentage, else the largest history among `trimmable`
-rows — the same "is this an entry" test `--top` uses, which is what keeps Host
-out of it, since scaling against the machine's own sum draws every real row
-flat on the floor. Aggregate rows still draw and pin to the top. Against each
-row's own peak instead, which is what this did first, a row flat at 2% had
-every sample equal to its own maximum and drew nine full-height marks, so most
-of the column was solid and two rows could not be compared. `kgp::sample_y`
-and `ui::spark` share that scale so the image and the ramp say the same thing;
-`kgp` draws a line joined to the previous sample rather than a filled bar.
+`ui::trend_scale` is the one TREND scale per frame, and says why it is not
+each row's own peak; `ui::spark` and `kgp::paint` both draw against it.
 
-`spark` is the one column whose cell is not a function of the current sample,
-so its `Column::fmt` returns empty and `ui::draw` substitutes `ui::spark` from
-`App::history` — a `VecDeque` per row id, `App::trend_w` deep (`name` first
-grows to the longest row title in the tree, TREND takes the slack after that up to
-`TREND_MAX`, and `name` absorbs whatever is left), appended once per
-published sample rather than once per frame. `Sort::value` gives the buffer the
-same number the sort uses, so the two cannot disagree. The buffers clear when
-the sort label changes (two units in one picture) and rows that stop appearing
-are dropped on the same pass. `Columns::for_tui` is the only constructor that
-includes it: `--once` and `--json` take two walks, so a permanently blank
-column there would be noise rather than heft's blank contract. `key: None`, and
-`Sort::next` skips a key-less column that is not `name` — a trend has no order.
+`spark` is the one column whose cell is not a function of the current sample:
+its `Column::fmt` returns empty and `ui::draw` substitutes `ui::spark` from
+`App::history`, `App::trend_w` deep. `Columns::for_tui` is the only
+constructor that includes it, and `Sort::next` skips it (`key: None`).
 `--order` validates against `column_labels()` rather than `sort_labels()`,
-since moving a column is presentation and not everything movable is sortable.
+since not everything movable is sortable.
 
 `once::COLUMNS` is the one column model; `once::Columns` is that list with
-`view.hide_columns` and `view.column_order` applied. The TUI and `--once`
-resolve it at start; the TUI rebuilds it when `H` / `u` change the list, so
-no render site branches on visibility. Listed order labels come first, in that
-sequence; unlisted keep compiled order after them; `name` stays first unless
-the list names it. `name` is refused for hide and an unknown label in
-`view.json` warns (`config::view_path()` named); an unknown `--hide` or
-`--order` is a clap `InvalidValue`, the same split as `--sort`. `Sort::next`
-cycles over the visible list only, which is also how `H` picks the next sort
-so hiding PSS lands on RSS in the default table rather than `name`.
-`View::default` and an absent `hide_columns` key hide the stall trio
-(`config::default_hidden`); `--hide` extends the list rather than replacing
-it, so `--hide vram` cannot bring them back.
-
-Visibility is a **view** preference, so it lives in `view.json` beside sort and
-filter, never in the read-only `rules.d`, which is about identity. It
-never reaches sampling: heft reads `/proc` files, not columns, so the roll-up
-invariants in `tests/live_proc.rs` and `tests/reconcile.rs` are untouched.
-`--json` ignores it — a consumer parsing the tree did not ask for a human's
-column preference, and the JSON shape is a contract.
+`view.hide_columns` and `view.column_order` applied, resolved at start and
+rebuilt when `H` / `u` change it, so no render site branches on visibility
+and nothing reaches sampling. `Sort::next` cycles over the visible list only.
+`config::default_hidden` hides the stall trio when `hide_columns` is absent.
+Visibility is a view preference, so it lives in `view.json`, never in
+`rules.d`, and `--json` ignores it.
 
 ## Rules
 
@@ -424,13 +247,11 @@ The contract, which a change may extend but not alter:
   classes are exactly `[anonymous_script]`: `judged` never sets
   `Facts::script`, so it would be a silent miss. Half a file loaded is a rule
   set nobody wrote.
-- Placement is two lists by output kind: a container subject sees `owner_uid`
-  rules, an identity sees `fold_to` and `folder` rules (`Rules::deciding`).
-  `group::override_place` looks up the old identity for `fold_to`, then takes
-  that rule's `folder`, else the folded key's. It runs only on Applications and
-  User Services and says nothing about a rule naming anything else, because it
-  runs per process per tick. `owner_uid` is consulted before workdir and
-  bind-mount inference in `containers::insert_resolved`.
+- Placement is two lists by output kind (`Rules::deciding`): a container
+  subject sees `owner_uid` rules, an identity sees `fold_to` and `folder`
+  rules. `group::override_place` runs only on Applications and User Services.
+  `owner_uid` is consulted before workdir and bind-mount inference in
+  `containers::insert_resolved`.
 - Built-in file names and rule ids are what `disable`, `--check-rules` and
   `--explain` print, so renaming one is a breaking change for the changelog.
 
@@ -454,53 +275,22 @@ and the four stages 433 to 438 ns per process on facts built by
 build_tree_timing` and `cargo test --release --lib -- --ignored --nocapture
 rules_timing`, with `HEFT_BENCH_FIXTURE` naming a `--fixture` dump.
 
-`Rules::load` resolves once behind a `OnceLock`, the way `glyph` and `root`
-do, and prints its warnings inside the init, so `--explain`'s second use stays
-quiet. Only regular files by `fs::metadata` ending `.json` are read, so a
-symlink counts and `.JSON` does not; a missing directory is silent and an
-unreadable one warns and the rest load. `HEFT_RULES_PATH` splits on bytes, never
-lossily. A leftover grouping.json prints one line naming HUMANS.md and is never
-parsed. That warning stays on purpose: without it an upgrader's grouping.json
-overrides would stop applying with no message. `tests/common::heft` points `HEFT_RULES_PATH` at a missing directory
-so a developer's `/etc/heft/rules.d` cannot reach a binary-driven test.
-`/etc/heft/rules.d` is not under `--proc-root`: it is the host's
-configuration, like `/etc/passwd`. `Rules::builtin` panics on a bad embedded
-file, which is safe only because
-`rules::tests::builtin_files_parse_and_their_examples_pass` parses the same
-table under `cargo test`.
+`Rules::load`, `rules::load_dir` and `Rules::builtin` carry the load contract.
+The leftover-grouping.json warning stays: without it an upgrader's overrides
+would stop applying with no message. `tests/common::heft` points
+`HEFT_RULES_PATH` at a missing directory so a developer's `/etc/heft/rules.d`
+cannot reach a binary-driven test.
 
-`config::strip_comments` blanks `//` and `/* */` out of view.json and every
-rules file before serde sees them, hand-rolled rather than a JSON5 crate for
-the reason the base64 encoder and the `/proc` parsers are. Comment bytes become
-spaces and a block comment keeps its newlines, so a serde error still names the
-line and column of the file the user is editing, and a `//` inside a string is
-left alone: a saved filter is a regex, and `https?://` is a pattern.
-`save_view` writes `view_header()` above the object, whose label list comes
-from `once::column_labels()` so it cannot drift; a save rewrites the file
-whole, so only rules files, which heft never writes, keep a user's comments.
+`--check-rules` (`rules::print_check`, judged in `Rules::report`) never
+samples, so it runs in the bare container. User examples are judged against
+the merged set. Exit 1 on any failure or any file that did not load. An
+example tests one process's facts, so anything an ancestor walk decides stays
+a fixture test.
 
-`--check-rules` (`rules::print_check`) never samples, so it runs in the bare
-container. A built-in example is judged against the built-ins alone, where a
-failure is a bug in the binary, and against the merged set only to print
-`overridden by` or `disabled by`, neither of which fails. Judged against the
-merged set alone, one `disable` of `40-trinity.json` failed 14 of that file's
-18 examples, 9 of them positives with no `rule` key to excuse them by. User
-examples are judged against the merged set. Exit 1 on any failure or any file
-that did not load. An example tests one process's facts, so anything an
-ancestor walk decides stays a fixture test.
-
-`--explain <PID>` (`src/explain.rs`) reports the resolved placement and the
-identity a placement rule keys on, because a wrong key is silent: an identity
-matching nothing is never consulted. It reads the verdict off a built tree,
-then re-reads the pid through `proc::read_pid` for a separately traced
-evaluation of each stage; the tick path carries no reason strings, which would
-be paid per process per tick to serve one invocation. The trace says what each
-stage makes of the process, not why the tree placed it. `locate` recurses
-through `ProcNode::children`, since the pid asked about is usually a folded
-worker rather than a top-level entry, and it offers no key for a container or
-System row because `override_place` cannot move one. It and `--check-rules`
-are exempt from `main`'s stdout-is-a-terminal check for the same reason
-`--once` and `--json` are.
+`--explain <PID>` is `src/explain.rs`, whose module doc carries the design.
+`locate` recurses through `ProcNode::children`, since the pid asked about is
+usually a folded worker, and offers no key for a container or System row
+because `override_place` cannot move one.
 
 `--fixture` (`proc::print_fixture`) is the other half: a grouping report from
 a desktop heft has never run on arrives as the `tests/grouping.rs` fixture
@@ -516,33 +306,24 @@ field there when grouping starts reading one, or reports stop reproducing.
 | `%machine` | `%core / nproc` |
 | RSS | `/proc/pid/statm` |
 | PSS | `/proc/pid/smaps_rollup` — cadence in [HUMANS.md](HUMANS.md) |
-| SWAP | `SwapPss:` from that same rollup read, so it costs no extra file and shares the PSS cadence. `SwapPss`, never `Swap`: a shared swapped page must be apportioned or a summed tree reports it once per mapper. Blank on a `SwapTotal: 0` host |
+| SWAP | `SwapPss:` from that same rollup read, sharing the PSS cadence (why `SwapPss`: `Metrics::swap_bytes`). Blank on a `SwapTotal: 0` host |
 | Host swap | `SwapTotal` − `SwapFree` from `/proc/meminfo` (`SwapCached` is neither, so it is not subtracted) |
-| THR | `num_threads`, field 20 of the `/proc/pid/stat` already parsed for utime/stime. Sums up the tree the way `nproc` does |
-| AGE | `now - (btime + starttime / CLK_TCK)`; `starttime` is field 22 of that same `stat`, `btime` is read from `/proc/stat` once per run and pinned. Aggregates take the OLDEST, never a sum: a duration summed is meaningless, and a max cannot be read as a total |
+| THR | `num_threads`, field 20 of the `/proc/pid/stat` already parsed for utime/stime; sums like `nproc` |
+| AGE | `now - (btime + starttime / CLK_TCK)`; `starttime` is field 22 of that `stat`, `btime` read once per run. Aggregates take the oldest (`Metrics::age_secs`) |
 | Disk R/W | Δ `read_bytes` / `write_bytes` from `/proc/pid/io` |
-| GPU mem | first tier the client publishes of `drm-resident-*`, `drm-total-*`, `drm-memory-*` (`gpu::MEM_PREFIXES`); regions `vram`/`gtt` (amdgpu), `local0`/`system0` (i915), `vram0`/`gtt` (xe). `drm-memory-*` is amdgpu's pre-standard pair and the only memory key a kernel older than its `drm_show_memory_stats` switch prints (measured on a 4750G), while `drm-engine-gfx` is there either way — matching only `drm-resident-*` left those hosts with gfx%/compute% beside a blank VRAM and GTT |
+| GPU mem | first tier the client publishes of `gpu::MEM_PREFIXES`; regions `vram`/`gtt` (amdgpu), `local0`/`system0` (i915), `vram0`/`gtt` (xe). The `drm-memory-*` tier was measured on a 4750G |
 | NETNS RX/TX | Δ non-`lo` bytes from `/proc/<container-scope-pid>/net/dev`; a new pid or a counter that went backwards discards the interval |
-| CPU/IO/MEM ST | Δ `some ... total=` microseconds from that cgroup's `{cpu,io,memory}.pressure` over wall clock. `some`, not `full`: `full` on a one-process cgroup is the same number twice. A counter that went backwards (a recreated cgroup) discards the interval |
-| Host `psi` | `some avg10` from `/proc/pressure/{cpu,io,memory}`, on the `--once` and `--json` host line only. Deliberately a different time base from the columns — a machine-wide trend reads better smoothed, a row's rate has to match the `%core` and disk rates beside it. `psi::header_tail` is not in the TUI header: `ui::cpu_header_line` sized its bar around the tail, so the CPU bar came up short of the MEMORY bar on every PSI-capable kernel |
-| gfx% / compute% | `drm-engine-gfx`/`-render` and `-compute` ns deltas over wall clock. xe has no ns key: `drm-cycles-rcs`/`-ccs` delta over the `drm-total-cycles-*` GPU-clock delta, each divided by `drm-engine-capacity-*`. Two formulas, deliberately not unified |
+| CPU/IO/MEM ST | Δ `some ... total=` microseconds from that cgroup's `{cpu,io,memory}.pressure` over wall clock (`some`, not `full`: `psi.rs`). A counter that went backwards discards the interval |
+| Host `psi` | `some avg10` from `/proc/pressure/{cpu,io,memory}`, on the `--once` and `--json` host line only; `psi.rs` and `psi::header_tail` say why |
+| gfx% / compute% | `drm-engine-gfx`/`-render` and `-compute` ns deltas over wall clock. xe: `drm-cycles-rcs`/`-ccs` delta over the `drm-total-cycles-*` delta, each divided by `drm-engine-capacity-*` (`cpu::cycles_pct`). Two formulas, deliberately not unified |
 
 | surface | rule |
 | --- | --- |
 | CPU bar | `/proc/stat` Δ user+nice / system+irq+softirq / iowait; idle+steal unfilled |
-| MEM bar | one MemTotal width when APU VRAM is unified; `ui::mem_key` order inside `used`: VRAM (unified only) and GTT from the kernel's `mem_info_*_used` where the driver has one, else the visible drm clients; zram `mem_used_total`, Shmem, kernel (`SUnreclaim` + `PageTables` + `KernelStack`), `AnonPages`, then `other` for the unitemised rest; then page cache (`Cached` − `Shmem`), `SReclaimable` and `Buffers` beyond `used`, never inside it (`mem::clip_used` has the measurement); unique colour per segment, full-height fills alternating `█▓▒`, no legend on the row — `ui::bar_key` draws the swatches in `?`; clip so the stack never exceeds `used.min(MemTotal)` (`mem::clip_used`) |
+| MEM bar | one MemTotal width when APU VRAM is unified; segment order in `ui::mem_key`, contents and clipping in `mem::clip_used` (reclaimable cache sits beyond `used`, never inside it); unique colour and alternating `█▓▒` fill per segment, swatches only in `?` (`ui::bar_key`) |
 | Discrete VRAM | own tank against `mem_info_vram_total`, sharing the MEMORY row with the MEM bar; only `vram` drops out of the MEM segments — GTT is pinned system RAM and stays in MEM |
-| Swap | own tank against `SwapTotal`, never a MEM segment: swapped pages are not in RAM. Absent entirely when `SwapTotal` is 0, so a swapless host renders as it did before swap existed |
-| Layout | CPU and MEMORY, unbordered, plus a SWAP row on a machine that has swap (`ui::header_rows`). Swap shared the MEMORY row once and cost MEM half its width, which the CPU bar matches, so both headline bars halved for a readout needing ~24 columns at any terminal size: 84 columns of bar became 24. A swapless host still draws the two rows it always did. Discrete VRAM does still share the MEMORY row, since it is the memory MEM is being compared against, and `ui::tank_widths` gives it a fixed `SIDE_TANK` rather than an equal share, capped at half the row so a narrow terminal degrades to the even split instead of starving MEM; persistent rules: header↔tree and tree↔footer. `ui::bar_prefix` right-aligns every label to the longest one `ui::label_width`
-says is on screen -- 4 where swap or a discrete card brings `SWAP` or `VRAM`,
-3 otherwise -- so the opening bracket lands in one column too. Aligned to
-`SWAP` unconditionally, a machine with neither (the ordinary case: most hosts
-have no swap) spent a column of bar padding a label it never draws — a bar starting further along
-than the one above it reads as a different scale. One helper rather than a
-literal per row: `cpu_header_line` and `swap_header_line` build their own
-prefixes while `bar_group` builds MEM's and VRAM's, so three copies would
-drift the first time a label changed. Every row draws its bar to one width so
-the closing brackets stack: `mem_header_line` returns its first tank's width and `cpu_header_line` and `swap_header_line` take it, clamped to their own slack and padded on the right. `mem_header_line` caps its own bar to the CPU row's slack (`ui::cpu_parts`) as well, so the brackets stack whichever suffix is longer |
+| Swap | own row against `SwapTotal`, never a MEM segment; absent when `SwapTotal` is 0 (`ui::header_rows`) |
+| Layout | CPU and MEMORY, unbordered, plus a SWAP row where there is swap. Discrete VRAM shares the MEMORY row (`ui::tank_widths`). `ui::bar_prefix` aligns the labels and every row draws its bar to `mem_header_line`'s width so the brackets stack; persistent rules header↔tree and tree↔footer |
 | Disk R/W | table columns only (formatted rates change width every tick); after compute, before the stall trio |
 | THR / AGE | beside `N`, before the metric columns: all three say what the row *is* rather than what it is currently costing |
 | CPU/IO/MEM ST | a row carries a figure only when every process under it is in one non-root cgroup; a process row only when it is alone in its cgroup. Folder, User, Host and multi-cgroup rows are blank — a percentage of an interval cannot be summed, and `user-<uid>.slice` is not the User row (a rootful container is billed to its owner from `system.slice`) nor `system.slice` the System row (kernel threads are in the root cgroup). Root-cgroup rows are blank because that pressure is the machine's, the same rule as a `--network=host` container |
@@ -550,26 +331,12 @@ the closing brackets stack: `mem_header_line` returns its first tank's width and
 | Ordering | one comparator in `once.rs` for every level; a `None` metric sorts last in either direction, name breaks ties, stable over `group::proc_forest` pid order |
 
 TUI sampling runs on a background thread; the ratatui loop only swaps in the
-last complete tree and never blocks on `/proc` I/O. `proc::collect` splits the
-pid list across a long-lived pool sized by `available_parallelism` and reused
-every sample (the pool lives on the Sampler, so `--once` / `--json` still pool
-their two walks and `sample_stream` drop joins them), because the walk is
-latency-bound on procfs rather than compute-bound and a `thread::scope` per
-tick grew glibc arenas (~15 MiB every 5s PSS tick to ~488 MiB). Measured
-numbers and which tick actually gains live on that function. PSS/`--once`
-fdinfo reads skip files above 64 KiB (a 16 MiB fanotify dump, not drm) and do
-not walk every fdinfo when the dri/drm prefilter is empty — GPU clients whose
-fd names omit dri/drm stay blank. Sample cadence (`--interval`,
-`--pss-interval`, `--once` / `--json`): [HUMANS.md](HUMANS.md).
+last complete tree and never blocks on `/proc` I/O. `proc::WalkPool` carries
+the walk pool's measurements and why it is a pool; `gpu.rs` the 64 KiB fdinfo
+skip and the empty-prefilter rule.
 
-`src/root.rs` holds the `/proc` and `/sys` prefix in a `OnceLock`, resolved
-once in `main` for the same reason `glyph` is. Empty by default, so every path
-is the literal it always was. `tests/live_proc.rs`
-`a_proc_root_is_the_only_proc_heft_reads` points heft at a root holding an
-empty `proc` and asserts the tree comes back empty: a reader still using a
-literal path would find the real machine through it and fill the tree. The
-container socket and `/etc/passwd` are deliberately not prefixed — one is live
-IPC rather than a file in the tree, the other is the host's.
+`src/root.rs` is the `--proc-root` prefix;
+`tests/live_proc.rs:a_proc_root_is_the_only_proc_heft_reads` guards it.
 
 `ui::alarming` marks the cells that say a row is in trouble — a stall column at or over `STALL_ALARM` — with `ui::alarm_style`: red
 where there is colour, `REVERSED` where there is not, which is the fallback
@@ -578,44 +345,17 @@ where there is colour, `REVERSED` where there is not, which is the fallback
 into the clipping `columns_that_fit` exists to prevent. Nothing else is marked:
 a large `%CORE` is work, not trouble.
 
-`once::coverage_tail` compares `HostTree::kernel_threads` (field 4 of
-`/proc/loadavg`, a global counter that `hidepid` cannot hide) against the Host
-row's summed `THR`, and reports below `VISIBLE_OK`. `kernel_threads` is
-`#[serde(skip)]` and set in `cpu::header_from` beside `sampled_at`: it
-qualifies what the tree reports rather than being part of it.
-
-`main::check_interval` refuses a typed interval below `proc::MIN_INTERVAL`,
-negated so a `NaN` — which `Duration::from_secs_f64` panics on — is refused
-too. `clamp_intervals` still clamps, for library callers and because `max`
-absorbs a NaN. `--pss-interval` is checked against the floor only, never
-against `--interval`: it is documented as "at least `--interval`", so
-`--interval 10` alone would otherwise fail against the default of 5.
-
-`ui::columns_that_fit` lays out only columns whose full width fits the pane.
-ratatui clips a cell that runs out of room, so a 50-column terminal drew
-`20.1G` as `2`; a column is now drawn whole or dropped, and `←` / `→` reach the
-rest, past a `name` that `ui::scrolled` keeps out of the scroll. At least one column always survives, and the name column is a label
-rather than a figure, so cutting it misleads nobody.
-
 JSON shape (`src/types.rs` `HostTree`): `host.sampled_at`,
 `host.users[].applications|user_services|containers`, `host.containers`,
-`host.system`. Project identities include `containers[].processes[]`, each process node carrying `cmdline` so a reader
-can identify a process from the record rather than going back to a `/proc`
-that may have lost the pid.
-`sampled_at` is set in `cpu::header_from`, the one `HostTree` constructor, off
-the `now_epoch` the AGE column already reads; a `--json --follow` line carries
-no other clock, so without it two records cannot be placed in time.
+`host.system`. Project identities include `containers[].processes[]`, each
+process node carrying `cmdline`.
 
 ## Packaging
 
-`packaging/aur/` holds the three AUR packages and is the source of truth for
-them; the AUR repositories are push targets, never edited in place. `heft`
-builds from the release tarball, `heft-bin` installs the release musl binaries
-(`provides`/`conflicts` heft, and no `depends` at all because they are
-static), and `heft-git` builds from main. All three carry
-`options=('!strip' '!debug')`: `[profile.release]` already strips, so makepkg
-otherwise fails to index a binary with no symbols and ships an empty debug
-package.
+`packaging/aur/` holds `heft` (release tarball), `heft-bin` (release musl
+binaries, no `depends`) and `heft-git` (main), and is their source of truth;
+the AUR repositories are push targets, never edited in place. Each PKGBUILD
+says why it carries `options=('!strip' '!debug')`.
 
 `packaging/aur/LICENSE` is 0BSD and covers the packaging sources only, not
 heft itself: the AUR submission guidelines require a package source licence in
@@ -650,12 +390,11 @@ hand: a tag changes nothing in a package whose `pkgver()` is `git describe`.
 
 Contributor commands: [CONTRIBUTING.md](CONTRIBUTING.md) (same as CI / lefthook).
 Suite stays under 30s. No live GPU in CI.
-`live_proc::heft_does_not_grow_while_it_follows` watches heft's own reported
-RSS across a `--follow` window with several PSS ticks in it: growth, not a
-ceiling, because the ceiling that catches a leak in seconds is below what heft
-legitimately uses on a busy host. It guards the `0a9ee0a` class of regression,
-which was found by a person noticing rather than by a gate. Docker sock is optional in CI;
-grouping tests use `tests/fixtures/` via `tests/grouping.rs`.
+`live_proc::heft_does_not_grow_while_it_follows` watches heft's own RSS
+growth across a `--follow` window with several PSS ticks, not a ceiling: one
+tight enough to catch a leak in seconds is below what heft legitimately uses
+on a busy host. It guards the `0a9ee0a` class of regression. Docker sock is
+optional in CI; grouping tests use `tests/fixtures/` via `tests/grouping.rs`.
 
 The gate is `cargo clippy --locked --all-targets -- -D warnings` at the
 default level plus the `[lints.clippy]` list in `Cargo.toml`. The wider groups
@@ -698,5 +437,4 @@ Release profile: LTO, `codegen-units = 1`, strip, `panic = abort`.
 ## Git
 
 Remote is `Rethunk-Tech/heft`, public, Apache-2.0. `publish = false` is a
-decision, not an oversight: the release binaries are static musl, so the
-install path costs no toolchain and no compile. Do not drop it without asking.
+decision (HUMANS.md, Install); do not drop it without asking.

@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+### Added
+
+- Grouping and classification rules are JSON files. The built-in set is
+  compiled in from `05-units.json`, `10-classes.json`, `20-session-bus.json`,
+  `25-a11y-input.json`, `30-gnome.json`, `40-trinity.json`, `50-plasma.json`,
+  `55-kwin.json`, `60-flatpak-portals.json`, `65-pim-audio.json`,
+  `70-editors.json` and `80-apps.json`. Files in
+  `$XDG_CONFIG_HOME/heft/rules.d/`, `/etc/heft/rules.d/` or the directories
+  `HEFT_RULES_PATH` lists add rules ahead of it, or `disable` a built-in file
+  or rule by those names.
+- `--check-rules` runs the examples in every loaded rules file and exits 1 on
+  a failure or a file that did not load.
+- `--explain` prints the rule each stage matched for the process.
+
+### Changed
+
+- Grouping name, path, argument and unit comparisons ignore ASCII case
+  everywhere. `--type=`, the editor install paths, the anonymous script names
+  and grouping.json keys were case-sensitive before.
+
+### Removed
+
+- `grouping.json` is no longer read. This is a breaking change: each of its
+  keys is now a placement rule, mapped in HUMANS.md under Rules, and heft
+  warns once on stderr while the file is still there.
+
 ## 0.9.0 - 2026-09-12
 
 ### Added

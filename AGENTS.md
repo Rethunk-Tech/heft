@@ -12,7 +12,8 @@ Read-only Linux process monitor. Binary name `heft`.
 src/cli.rs           clap Cli; build.rs includes it so completions/man cannot drift
 src/main.rs          dispatch: TUI default, --once, --json
 src/lib.rs           modules
-build.rs             clap_complete + clap_mangen → OUT_DIR/assets (build-deps only); HEFT_VERSION = version~sha
+build.rs             clap_complete + clap_mangen → OUT_DIR/assets (build-deps only); HEFT_VERSION = version~sha; rules.d → OUT_DIR/builtin_rules.rs
+rules.d/             built-in rule files, one stage each, embedded by build.rs
 .git-sha             export-subst commit for tag tarballs, which have no .git for build.rs to ask
 demo.tape            vhs script for README.md's demo.gif; regenerate with `vhs demo.tape`
 src/types.rs         Process, Metrics, HostTree, JSON shape
@@ -23,13 +24,14 @@ src/io.rs            /proc/pid/io rates and smaps_rollup PSS + SwapPss
 src/net.rs           per-netns rx/tx from /proc/pid/net/dev; container rows only
 src/psi.rs           cgroup cpu/io/memory.pressure; single-cgroup rows only
 src/gpu.rs           amdgpu/i915/xe fdinfo; dri/drm prefilter; no empty-prefilter walk; oversized fdinfo skipped; drm-client-id dedupe
-src/classify.rs      launcher / worker / shell / terminal / compositor tables
+src/classify.rs      procedures over the rule classes: crash-helper owner, launcher payload hint, interactive shell
 src/identity.rs      cgroup parse, merge key + display name
 src/containers.rs    GET-only docker/podman; project vs per-container
 src/group.rs         Host → User → Applications | User Services | Containers, System
-src/config.rs        XDG view.json (sort, filter, hide_columns, column_order; write on save) and grouping.json (read-only); both accept // and /* */
+src/rules.rs         rules.d engine: load, compile, evaluate, examples, --check-rules
+src/config.rs        XDG view.json (sort, filter, hide_columns, column_order; write on save); strip_comments for it and rules.d
 src/once.rs          columns, tree ordering, table and JSON
-src/explain.rs       --explain PID: resolved placement and the grouping.json key
+src/explain.rs       --explain PID: resolved placement, the placement key, the rule each stage matched
 src/ui.rs            ratatui header + tree table
 src/tty.rs           panic hook + signal handler; restores the terminal
 src/glyph.rs         unicode vs ascii bar/rule/marker characters; resolved once
@@ -81,7 +83,7 @@ runtime ever reports a truncated id.
   (`in_system_slice` and not `in_user_slice`) → System; else that uid's User.
 - Under a User: user-instance unit `*.service` not starting with `app-` →
   User Services; else Applications. `init.scope` + `systemd --user` is a user
-  service. Known compositors (`classify::is_compositor`) are user services even
+  service. Known compositors (the `compositor` class) are user services even
   if the unit looks like an app.
 - `identity::unit_line` picks the one cgroup line a unit name is read from:
   the `0::` line on v2, else `1:name=systemd:`. A v1 file is a line per
@@ -91,20 +93,20 @@ runtime ever reports a truncated id.
 - Display name is `classify::name_of` (`exe` basename else `comm`), not the
   inherited cgroup. The exception is an `exe` of `tdeinit`, which runs
   programs as in-process modules, so there `comm` names the program. TDE
-  session processes merge as `tdeinit` (`classify::trinity_session`, checked
-  before Plasma because both ship `kded` and `ksmserver`). An editor's
+  session processes merge as `tdeinit` (`rules.d/40-trinity.json`, which sorts
+  before `50-plasma.json` because both ship `kded` and `ksmserver`). An editor's
   install or extension tree bills its binaries to that editor
-  (`classify::bundled_helper_app`), by `exe` path rather than PPID so a real
-  app started from its terminal keeps its row. `identity::lying_unit` skips terminal transients, Chromium
+  (`rules.d/70-editors.json`, the `app` stage), by `exe` path rather than PPID so a real
+  app started from its terminal keeps its row. The `lying` unit flag (`rules.d/05-units.json`) skips terminal transients, Chromium
   toolkit scopes (`org.chromium.chromium`), `dbus:` activation, `run-u*`, and
   `flatpak-session-helper` for unit-based identity. `instance_key` uses a real
   user unit only when it is not lying; otherwise `pgid`.
-- Launchers (`classify.rs` `LAUNCHERS`, plus names ending `.appimage`) have no
+- Launchers (the `launchers` class rule, names ending `.appimage` included) have no
   top-level row; cost bills to the unique payload identity; they still appear
   inside the expanded process list. Nested bwrap folds into the payload. `cat`
   under a launcher or app bills to that parent; it does not break unique-payload
   folding and does not become its own row.
-- Workers (`classify::is_worker`) fold into that app. Walk ancestors skipping
+- Workers (the `worker` class) fold into that app. Walk ancestors skipping
   launchers and other generics; do not invent a script-basename identity
   (`context7-mcp`) when a launching agent (`claude`, `cursor`) is above.
   Processes stay visible on expand. `crash_helper_app` matches exe/cmdline
@@ -116,25 +118,25 @@ runtime ever reports a truncated id.
   to the ancestor walk.
 - User Services grouping is one identity for processes that share a systemd
   unit family, RPM/package family, D-Bus well-known name family, or documented
-  process architecture — not a comm prefix. Mappings live in
-  `classify::session_helper_ident`. Exceptions: prefix lookalikes with a
+  process architecture — not a comm prefix. Mappings live in the `session`
+  stage files, `rules.d/20-session-bus.json` to `80-apps.json`. Exceptions: prefix lookalikes with a
   different product stay out (`gsd-disk-utility-notify`, independent `wsdd`,
   `wireplumber`, `krunner`, `plasma-discover`, `kwindowprop`); independent apps
   never fold into gnome-shell, plasmashell, kwin or these service identities; an arbitrary user CLI is Applications;
   `p11-kit` must not fold into `flatpak-session-helper` (Cursor shares that
   cgroup); user-session `dbus-broker` is User Services, never Applications
-  (`lying_unit` matches `dbus:` activation, not `dbus-broker.service`);
+  (the `lying` rule matches `dbus:` activation, not `dbus-broker.service`);
   app-bound `xdg-dbus-proxy` bills to that app, unbound folds into `flatpak`;
   `gcr-ssh-agent` absorbs `ssh-agent` only in that unit.
 - Split when the child's resolved identity differs and the child is a real app.
-  Idle interactive shells fold into their terminal (`classify::is_terminal`);
+  Idle interactive shells fold into their terminal (the `terminal` class);
   a unique payload child (claude, dstat) takes the owning shell, the same
   walk as a launcher. A shell with no terminal parent and no unique payload
   stays Applications.
-- Generic interpreters (`classify.rs` `GENERICS`) fall back to the user unit or
+- Generic interpreters (the `generics` class rule) fall back to the user unit or
   a distinctive script basename (`identity::generic_fallback`) so they do not
-  collapse into one interpreter row. Non-distinctive script basenames live in
-  that function.
+  collapse into one interpreter row. Non-distinctive script basenames are the
+  `anonymous-scripts` class rule.
 - Containers: never System, never `dockerd`/`containerd`. Project key is
   `com.supabase.cli.project` → `supabase:<name>`, else
   `supabase_<role>_<project>` names, else `com.docker.compose.project`. No
@@ -382,53 +384,122 @@ so hiding PSS lands on RSS in the default table rather than `name`.
 it, so `--hide vram` cannot bring them back.
 
 Visibility is a **view** preference, so it lives in `view.json` beside sort and
-filter, never in the read-only `grouping.json`, which is about identity. It
+filter, never in the read-only `rules.d`, which is about identity. It
 never reaches sampling: heft reads `/proc` files, not columns, so the roll-up
 invariants in `tests/live_proc.rs` and `tests/reconcile.rs` are untouched.
 `--json` ignores it — a consumer parsing the tree did not ask for a human's
 column preference, and the JSON shape is a contract.
 
-## Grouping overrides
+## Rules
 
-`config::strip_comments` blanks `//` and `/* */` out of both config files
-before serde sees them, hand-rolled rather than a JSON5 crate for the reason
-the base64 encoder and the `/proc` parsers are. Comment bytes become spaces
-and a block comment keeps its newlines, so a serde error still names the line
-and column of the file the user is editing, and a `//` inside a string is left
-alone — a saved filter is a regex, and `https?://` is a pattern. `save_view`
-writes `view_header()` above the object, whose label list comes from
-`once::column_labels()` so it cannot drift; a save rewrites the file whole, so
-only `grouping.json`, which heft never writes, keeps a user's own comments.
+`rules.d/*.json` holds every table-shaped grouping decision and `src/rules.rs`
+evaluates it. Procedures stay Rust: the ancestor walks in `group.rs`,
+`classify::crash_helper_app`, `classify::launcher_payload_hint`,
+`classify::is_interactive_shell`, `identity::generic_fallback`, and container,
+machine and System bucketing. `build.rs` embeds the directory through a
+generated `include_str!` table, sorted because `read_dir` order is
+machine-dependent, so a file added there cannot be left out of the binary.
+Embedding costs 100,552 bytes of stripped release binary (5.6%).
 
-`$XDG_CONFIG_HOME/heft/grouping.json` moves local names out of the compiled
-tables. Heft never writes it and never creates the directory for it; absent
-means today's behaviour exactly. Keys are tree identities — the row title, not
-a pid, comm, or unit: `applications` / `user_services` pin an identity to a
-folder, `fold` re-keys one identity onto another, `container_owners` maps a
-container name to a uid.
+The contract, which a change may extend but not alter:
 
-Order is container and System bucketing, then every built-in table, then the
-user's `fold`, then the user's folder pin (`group::override_place`, run on the
-finished `Place`). So an override beats any built-in table, and cannot reach a
-container or a kernel thread: an override naming a System or Containers row is
-**ignored with no message**, because that check runs per process per tick and a
-warning there would repeat every second. `container_owners` is consulted before
-workdir and bind-mount inference in `containers::insert_resolved`.
+- Stages run `unit`, `class`, `session`, `app`, `placement`. `unit` and
+  `class` union every matching rule (`chrome_crashpad_handler` is
+  `crash_helper` and `worker`; `flatpak-session-helper.service` is `lying` and
+  `service`); the other three take the first match. `session` runs before
+  `classify::crash_helper_app` and `app` after it, both in
+  `group::direct_place`, and no built-in example can prove that order, so
+  `tests/grouping.rs` holds it.
+- Every string test folds ASCII case on both sides: patterns are lowercased
+  once at compile, haystacks never. Unicode case is not folded.
+- Sources rank XDG, then `/etc`, then built-ins, whatever the file names;
+  `HEFT_RULES_PATH` replaces the first two with its entries in order. File
+  names sort bytewise within a source. A user rule therefore beats every
+  built-in, and moving a table into a built-in file cannot outrank one.
+- `disable` entries are `<file>.json` or `<file>.json:<id>`, collected from
+  every file that compiled before any rule is kept, applied to that file name
+  in every source, and never undone, so the result is order independent. A
+  file that fails to compile contributes none.
+- Ids are `[a-z0-9-]+`, unique per file. A `match` object carries one key. An
+  empty list, `all`, `any` or string pattern fails the file (`name_prefix ""`
+  matched every process), and so does `script` outside a class rule whose
+  classes are exactly `[anonymous_script]`: `judged` never sets
+  `Facts::script`, so it would be a silent miss. Half a file loaded is a rule
+  set nobody wrote.
+- Placement is two lists by output kind: a container subject sees `owner_uid`
+  rules, an identity sees `fold_to` and `folder` rules (`Rules::deciding`).
+  `group::override_place` looks up the old identity for `fold_to`, then takes
+  that rule's `folder`, else the folded key's. It runs only on Applications and
+  User Services and says nothing about a rule naming anything else, because it
+  runs per process per tick. `owner_uid` is consulted before workdir and
+  bind-mount inference in `containers::insert_resolved`.
+- Built-in file names and rule ids are what `disable`, `--check-rules` and
+  `--explain` print, so renaming one is a breaking change for the changelog.
 
-Malformed JSON or an unknown key (`serde(deny_unknown_fields)`) warns once on
-stderr from `config::load_overrides` and grouping continues built-in.
+`group::Ctx::new` builds `judged` once per pid per tick: the unit, its flags
+and the class set, plus the positional-argv launcher test in `group::judge`.
+Every class and unit question in `group.rs`, `identity::instance_key` and
+`identity::generic_fallback` reads it; asked per call site instead, the name
+lookup alone ran 2,200 times per 293-process tick. Keyed on pid and valid for
+one `Ctx`, which lives one `build_tree`, so `exec` needs no invalidation.
+Session and app rules evaluate on a borrowed `Facts` in `direct_place`, and
+evaluation allocates nothing (`rules::tests::evaluation_allocates_nothing`,
+counted per thread because the other tests allocate on other threads). The
+compiled shape is what makes that affordable: a `Vec<String>` per test with a
+`windows` scan cost 750 ns per process, and equality bucketed by byte length
+with a first-byte scan for contains cost 415 to 450. Against `900a5fc`,
+`build_tree` measured 147 to 151 µs before and 155 to 166 after on the gui
+fixture, 426 to 438 before and 438 to 454 after on a 293-process dump, and the
+four stages 392 to 440 ns per process. The budget is 20% and 500 ns: `cargo test
+--release --test grouping -- --ignored --nocapture timing`, with
+`HEFT_BENCH_FIXTURE` naming a `--fixture` dump.
+
+`Rules::load` resolves once behind a `OnceLock`, the way `glyph` and `root`
+do, and prints its warnings inside the init, so `--explain`'s second use stays
+quiet. Only regular files by `fs::metadata` ending `.json` are read, so a
+symlink counts and `.JSON` does not; a missing directory is silent and an
+unreadable one warns and the rest load. `HEFT_RULES_PATH` splits on bytes, never
+lossily. A leftover grouping.json prints one line naming HUMANS.md and is never
+parsed. `tests/common::heft` points `HEFT_RULES_PATH` at a missing directory
+so a developer's `/etc/heft/rules.d` cannot reach a binary-driven test.
+`/etc/heft/rules.d` is not under `--proc-root`: it is the host's
+configuration, like `/etc/passwd`. `Rules::builtin` panics on a bad embedded
+file, which is safe only because
+`rules::tests::builtin_files_parse_and_their_examples_pass` parses the same
+table under `cargo test`.
+
+`config::strip_comments` blanks `//` and `/* */` out of view.json and every
+rules file before serde sees them, hand-rolled rather than a JSON5 crate for
+the reason the base64 encoder and the `/proc` parsers are. Comment bytes become
+spaces and a block comment keeps its newlines, so a serde error still names the
+line and column of the file the user is editing, and a `//` inside a string is
+left alone: a saved filter is a regex, and `https?://` is a pattern.
+`save_view` writes `view_header()` above the object, whose label list comes
+from `once::column_labels()` so it cannot drift; a save rewrites the file
+whole, so only rules files, which heft never writes, keep a user's comments.
+
+`--check-rules` (`rules::print_check`) never samples, so it runs in the bare
+container. A built-in example is judged against the built-ins alone, where a
+failure is a bug in the binary, and against the merged set only to print
+`overridden by` or `disabled by`, neither of which fails. Judged against the
+merged set alone, one `disable` of `40-trinity.json` failed 14 of that file's
+18 examples, 9 of them positives with no `rule` key to excuse them by. User
+examples are judged against the merged set. Exit 1 on any failure or any file
+that did not load. An example tests one process's facts, so anything an
+ancestor walk decides stays a fixture test.
 
 `--explain <PID>` (`src/explain.rs`) reports the resolved placement and the
-identity that is the override key, because a wrong key is silent: an identity
-matching nothing is never consulted, and nothing else in heft shows what a
-process resolved to. It reads the verdict off a built tree rather than
-narrating which rule fired — a reason string threaded through grouping would
-be paid per process per tick to serve one invocation. `locate` recurses
+identity a placement rule keys on, because a wrong key is silent: an identity
+matching nothing is never consulted. It reads the verdict off a built tree,
+then re-reads the pid through `proc::read_pid` for a separately traced
+evaluation of each stage; the tick path carries no reason strings, which would
+be paid per process per tick to serve one invocation. The trace says what each
+stage makes of the process, not why the tree placed it. `locate` recurses
 through `ProcNode::children`, since the pid asked about is usually a folded
 worker rather than a top-level entry, and it offers no key for a container or
-System row because `override_place` cannot move one. It is exempt from
-`main`'s stdout-is-a-terminal check for the same reason `--once` and `--json`
-are.
+System row because `override_place` cannot move one. It and `--check-rules`
+are exempt from `main`'s stdout-is-a-terminal check for the same reason
+`--once` and `--json` are.
 
 `--fixture` (`proc::print_fixture`) is the other half: a grouping report from
 a desktop heft has never run on arrives as the `tests/grouping.rs` fixture

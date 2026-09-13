@@ -101,7 +101,8 @@ heft --trend chars        # TREND as block characters, never an image
 heft --trend kitty        # draw TREND as an image (kitty, ghostty)
 heft --trend sixel        # the same picture as sixel (xterm, foot, wezterm, …)
 heft --proc-root /mnt/tree   # read /proc and /sys under here instead of /
-heft --explain 1234       # where this pid landed, and the key that moves it
+heft --explain 1234       # where this pid landed, and the rule each stage matched
+heft --check-rules        # run the examples in every rules.d file
 heft --fixture > heft-fixture.json  # what grouping reads, for a bug report
 ```
 
@@ -261,10 +262,11 @@ another mount namespace's procfs, or a tree captured off a machine you cannot
 run heft on. A directory with no `proc` in it is a usage error rather than a
 tree of blanks, which would read as a permissions problem.
 
-Two things stay the host's. The container socket is live IPC, not a file in
-that tree, so container rows describe the runtime heft can reach; and user
-names come from the host's `/etc/passwd`, so a uid with no entry there shows
-as a number. Neither is guesswork heft could do better.
+Three things stay the host's. The container socket is live IPC, not a file in
+that tree, so container rows describe the runtime heft can reach; user names
+come from the host's `/etc/passwd`, so a uid with no entry there shows as a
+number; and `/etc/heft/rules.d` is the host's configuration, read where it
+always is. None of them is guesswork heft could do better.
 
 The header still reads the machine, because a procfs bind-mounted into a PID
 namespace serves the host's own `meminfo` and `stat` — the kernel does not
@@ -666,7 +668,8 @@ container title is `docker-<12hex>`. Stopped containers (no PID) do not appear.
 | tree | path | what |
 | --- | --- | --- |
 | config | `$XDG_CONFIG_HOME/heft/view.json` (default `~/.config/heft/view.json`) | saved sort, direction, filter, hidden columns, and column order (after `s`). `--user` and `--top` are deliberately never saved |
-| config | `$XDG_CONFIG_HOME/heft/grouping.json` | your grouping overrides, if you write one |
+| config | `$XDG_CONFIG_HOME/heft/rules.d/*.json` | your grouping rules, if you write any ([Rules](#rules)) |
+| config | `/etc/heft/rules.d/*.json` | the administrator's grouping rules, read after yours |
 
 v1 creates no `$XDG_STATE_HOME/heft` or `$XDG_CACHE_HOME/heft`. The only file
 heft writes is that config directory; the only other state it touches is the
@@ -697,7 +700,7 @@ usage error; in the file the extra is warned and ignored.
 
 ```jsonc
 {
-  // `//` and `/* */` comments are allowed in both config files
+  // `//` and `/* */` comments are allowed here and in rules.d files
   "sort": "pss",
   "desc": true,
   "hide_columns": ["vram", "gtt", "gfx", "compute"],
@@ -709,7 +712,7 @@ usage error; in the file the extra is warned and ignored.
 the column labels, so you do not have to come back here to edit it by hand.
 The label list is generated from the binary, so it cannot drift from the
 columns heft actually has. A save rewrites the whole file, header included, so
-comments you add elsewhere in it do not survive one — `grouping.json`, which
+comments you add elsewhere in it do not survive one. A rules.d file, which
 heft only ever reads, keeps yours forever.
 
 Labels are `name`, `spark`, `nproc`, `threads`, `age`, `core`,
@@ -728,16 +731,96 @@ Hiding and order are presentation only: heft reads the same `/proc` files
 either way, the sort keys skip over what they cannot show, and `--json` ignores both lists
 entirely. Both flags are refused with `--json`.
 
-## Grouping overrides
+## Rules
 
-Optional. Without the file heft groups exactly as it always has. Write
-`grouping.json` yourself — heft only reads it, and a bad one warns on stderr
-and is ignored rather than taking the monitor down. `//` and `/* */` comments
-are allowed, and since heft never writes this file they stay where you put
-them.
+Grouping is decided by rule files. The built-in set is the repository's
+`rules.d/`, compiled into the binary, so a downloaded heft needs nothing
+installed beside it. heft also reads `$XDG_CONFIG_HOME/heft/rules.d/` and then
+`/etc/heft/rules.d/`, both ahead of the built-ins. It never writes or creates
+either directory, and with neither present it groups exactly as it ships.
+
+`HEFT_RULES_PATH` replaces those two directories with its own colon-separated
+list, earlier entries winning. Set but empty, only the built-ins load.
+
+Each file is one stage:
+
+| stage | decides | when several rules match |
+| --- | --- | --- |
+| `unit` | whether a systemd unit lies about the app in it (`lying`) or is a user service (`service`) | every one adds its flags |
+| `class` | `launcher`, `generic`, `shell`, `terminal`, `compositor`, `worker`, `noise`, `crash_helper`, `no_absorb`, `anonymous_script`, `container_runtime` | every one adds its classes |
+| `session` | an identity and folder for desktop session plumbing | the first wins |
+| `app` | an identity for a helper shipped inside an app's install tree | the first wins |
+| `placement` | `fold_to` another identity, a `folder` pin, or a container's `owner_uid` | the first wins |
+
+Your directory beats `/etc`, and both beat every built-in, whatever the files
+are called. Within one directory files are read in byte order, so keep a
+two-digit prefix: `10-x.json` sorts before `9-x.json`. Only regular files, or
+symlinks to them, whose names end `.json` are read. `//` and `/* */` comments
+are allowed.
+
+```jsonc
+{
+  "stage": "placement",
+  "rules": [
+    // A fold and a pin on the same identity: list the fold first, or the
+    // pin matches and the fold is never reached.
+    { "id": "fold-worker", "match": { "identity": "mydaemon-worker" }, "fold_to": "mydaemon" },
+    { "id": "pin-daemon", "match": { "identity": "mydaemon" }, "folder": "user_services" },
+    { "id": "own-runner", "match": { "container": "scratch-runner" }, "owner_uid": 1000 }
+  ],
+  "examples": [
+    { "identity": "mydaemon", "expect": { "rule": "pin-daemon", "folder": "user_services" } },
+    { "identity": "htop", "expect": null }
+  ]
+}
+```
+
+A `match` holds one test. `name`, `name_prefix`, `name_suffix` and
+`name_contains` look at both `comm` and the display name; `exe_prefix`,
+`exe_suffix` and `exe_contains` at the executable path; `arg_prefix` and
+`arg_contains` at each argument; `cgroup_contains` at the cgroup; `unit`,
+`unit_prefix`, `unit_suffix` and `unit_contains` at the systemd user unit.
+`identity` and `container` are for `placement` rules, and `script` only for a
+`class` rule whose classes are `["anonymous_script"]`. A list means any of
+them, `all`, `any` and `not` combine tests, and every comparison ignores ASCII
+case. A `not` over something the process does not have is a match:
+`{"not": {"exe_prefix": "/usr"}}` matches a process whose `exe` heft cannot
+read.
+
+Placement never moves a container or a kernel thread: those rows ignore it.
+
+A file only ever adds rules. To turn a built-in off, name it:
+`"disable": ["40-trinity.json"]` drops a whole file wherever it is loaded
+from, and `"disable": ["40-trinity.json:trinity-session"]` drops one rule. A
+`disable` that names nothing warns once, which is how a built-in renamed in a
+new release shows up. Built-in file names and rule ids are part of heft's
+interface, and a rename is called out in the changelog. Do not name your own
+file after a built-in: its `disable` of that name applies to your file too.
+
+A file that does not parse, or breaks one of the rules above (a duplicate id,
+an empty pattern, an output its stage does not take), is skipped whole with one
+warning naming it, and the rest still load. A monitor that stopped over a typo
+in a config file would be worse than one ignoring the file.
+
+`examples` are what the file says its rules do: a `--fixture` process row, or
+`{"unit": ...}`, `{"identity": ...}` or `{"container": ...}`, with an `expect`
+that is `null` for no match or the keys to compare. `heft --check-rules` runs
+them all:
+
+```
+$ heft --check-rules
+90-mine.json:pin-daemon#0 (/home/me/.config/heft/rules.d): expected folder UserServices, got Some(Applications)
+30-gnome.json:gsd#9 (built-in): overridden by 90-mine.json:my-gsd (/home/me/.config/heft/rules.d)
+40-trinity.json#3 (built-in): disabled by 40-trinity.json (90-mine.json, /home/me/.config/heft/rules.d)
+141 examples in 13 files: 1 failed, 1 overridden, 14 disabled
+```
+
+It exits 1 on a failed example or a file that did not load. A built-in example
+your rules decide differently is reported as `overridden by` or `disabled by`
+rather than failed, since that difference is what you wrote the file for.
 
 Keys are the identities the tree shows you, not pids or comms. `heft --explain
-<PID>` tells you what a process resolved to, so you do not have to guess one:
+<PID>` tells you what a process resolved to, and what each stage made of it:
 
 ```
 $ heft --explain 156859
@@ -748,36 +831,31 @@ pid 156859
   placed    Host → damonblais (1000) → Applications
   identity  cursor
   instance  pgid:3743373 (3 processes)
-  override  none
+  rules     unit       built-in 05-units.json:lying -> lying
+                       built-in 05-units.json:service -> service
+            class      no match
+            session    no match
+            app        no match
+            placement  none
 
-  "cursor" is the grouping.json key for this row.
-  To pin it to a folder, in ~/.config/heft/grouping.json:
-    { "applications": ["cursor"] }
+  "cursor" is the placement key for this row.
 ```
 
-A wrong key is silent — an identity that matches nothing is simply never
-consulted — so reading the real one off a running heft is the difference
-between writing the file and guessing at it. On a container or a kernel thread
-it says so instead: no override can move those rows.
+A wrong key is silent, since an identity that matches nothing is simply never
+consulted, so reading the real one off a running heft is the difference
+between writing the file and guessing at it. The stage lines say what each
+stage makes of the process on its own; `placed` is the tree's verdict, which
+also depends on the process's parents.
 
-| key | effect |
+`grouping.json` is no longer read. heft says so once on stderr while the file
+is there. Each of its keys is a placement rule:
+
+| grouping.json | rule |
 | --- | --- |
-| `applications` | list of identities pinned under Applications |
-| `user_services` | list of identities pinned under User Services |
-| `fold` | identity → the identity it bills to instead |
-| `container_owners` | container name → the uid that owns it |
-
-```jsonc
-{
-  // the daemon is a service, not an app
-  "user_services": ["mydaemon"],
-  "fold": { "mydaemon-worker": "mydaemon" },
-  "container_owners": { "scratch-runner": 1000 }
-}
-```
-
-An override always beats the built-in tables, but never moves a container or a
-kernel thread: those rows ignore it.
+| `"applications": ["x"]` | `{ "id": "pin-x", "match": { "identity": "x" }, "folder": "applications" }` |
+| `"user_services": ["x"]` | the same, with `"folder": "user_services"` |
+| `"fold": { "a": "b" }` | `{ "id": "fold-a", "match": { "identity": "a" }, "fold_to": "b" }`, listed before the pins |
+| `"container_owners": { "c": 1000 }` | `{ "id": "own-c", "match": { "container": "c" }, "owner_uid": 1000 }` |
 
 If the built-in grouping is what is wrong, attach `heft --fixture >
 heft-fixture.json` to a bug report. It is every process's exe, cgroup, parent

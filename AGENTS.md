@@ -15,7 +15,6 @@ src/lib.rs           modules
 build.rs             clap_complete + clap_mangen → OUT_DIR/assets (build-deps only); HEFT_VERSION = version~sha; rules.d → OUT_DIR/builtin_rules.rs
 rules.d/             built-in rule files, one stage each, embedded by build.rs
 .git-sha             export-subst commit for tag tarballs, which have no .git for build.rs to ask
-demo.tape            vhs script for README.md's demo.gif; regenerate with `vhs demo.tape`
 src/types.rs         Process, Metrics, HostTree, JSON shape
 src/proc.rs          every visible PID; blank metrics on EACCES
 src/cpu.rs           /proc/stat split (usr/sys/wait) + per-pid utime/stime rates

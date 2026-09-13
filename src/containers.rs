@@ -23,11 +23,17 @@ pub(crate) fn hex12(s: &str) -> Option<&str> {
     hex_id(s).and_then(|id| id.get(..12))
 }
 
+/// The key every `by_id` insert and lookup uses, so no caller can key an id in
+/// a case the others do not.
+fn normalized_id(s: &str) -> Option<String> {
+    hex_id(s).map(str::to_ascii_lowercase)
+}
+
 /// Both index builders look an inspect up by this normalized id, in one place
 /// so neither can key differently from the other: a raw `item.id` misses
 /// whenever the daemon reports it in any case but the one the map was built in.
 fn inspect_for<'a>(item: &ListItem, inspects: &'a HashMap<String, Inspect>) -> Option<&'a Inspect> {
-    hex_id(&item.id).and_then(|id| inspects.get(&id.to_ascii_lowercase()))
+    normalized_id(&item.id).and_then(|id| inspects.get(&id))
 }
 
 /// The title a container with no name is shown under. It is also that row's
@@ -41,7 +47,7 @@ fn live_hex_ids(list: &[ListItem]) -> Vec<String> {
     let mut ids: Vec<String> = list
         .iter()
         .filter(|item| !list_skip(item))
-        .filter_map(|item| hex_id(&item.id).map(str::to_ascii_lowercase))
+        .filter_map(|item| normalized_id(&item.id))
         .collect();
     ids.sort();
     ids.dedup();
@@ -146,7 +152,7 @@ impl ContainerIndex {
         workdir_uids: Option<&HashMap<PathBuf, u32>>,
         rules: &Rules,
     ) {
-        let Some(id) = hex_id(&item.id).map(str::to_ascii_lowercase) else {
+        let Some(id) = normalized_id(&item.id) else {
             return;
         };
         let name = item
@@ -206,16 +212,16 @@ impl ContainerIndex {
     }
 
     fn index_ids(&mut self, info: &ContainerInfo) {
-        let Some(id) = hex_id(&info.id) else {
+        let Some(id) = normalized_id(&info.id) else {
             return;
         };
-        self.by_id.insert(id.to_ascii_lowercase(), info.clone());
-        if let Some(short) = hex12(id) {
-            self.by_id.insert(short.to_ascii_lowercase(), info.clone());
+        if let Some(short) = hex12(&id) {
+            self.by_id.insert(short.to_string(), info.clone());
         }
+        self.by_id.insert(id, info.clone());
     }
     pub(crate) fn get(&self, raw: &str) -> Option<&ContainerInfo> {
-        let id = hex_id(raw)?.to_ascii_lowercase();
+        let id = normalized_id(raw)?;
         self.by_id
             .get(&id)
             .or_else(|| hex12(&id).and_then(|s| self.by_id.get(s)))
@@ -246,11 +252,9 @@ pub(crate) fn helper_id(p: &Process, runtime: bool) -> Option<String> {
         return None;
     }
     if let Some(id) = crate::classify::cmdline_flag_value(&p.cmdline, "-id") {
-        return hex_id(id).map(str::to_ascii_lowercase);
+        return normalized_id(id);
     }
-    p.cmdline
-        .iter()
-        .find_map(|arg| hex_id(arg).map(str::to_ascii_lowercase))
+    p.cmdline.iter().find_map(|arg| normalized_id(arg))
 }
 fn project_identity(name: &str, labels: &HashMap<String, String>) -> (String, Option<String>) {
     if let Some(p) = labels.get("com.supabase.cli.project") {

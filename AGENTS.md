@@ -688,8 +688,8 @@ in `sixel::encode`. `use_self`, `missing_const_for_fn`, `doc_markdown` and
 — `cast_precision_loss`, `cast_possible_truncation`, `cast_possible_wrap`,
 `cast_sign_loss` — are the ones that earn their place: a claim that a cast is
 bounded lives as an `#[expect(..., reason = ...)]` at that site naming the
-bound, never as prose, and the compiler checks the expect is still firing. `cpu.rs` takes one
-module-level expect because every cast in it is the same widening of a kernel
+bound, never as prose, and the compiler checks the expect is still firing.
+`cpu.rs` takes one module-level expect because every cast in it is the same widening of a kernel
 counter into the f64 a rate is divided in. Each lint is at zero, which is what
 makes denying it free.
 

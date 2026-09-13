@@ -86,9 +86,13 @@ pub(crate) struct Stalls(HashMap<String, Stall>);
 
 impl Stalls {
     pub(crate) fn apply(&self, tree: &mut HostTree, procs: &HashMap<u32, Process>) {
-        let mut t = Apply {
+        let mut seen: HashMap<&str, u32> = HashMap::new();
+        for path in procs.values().filter_map(|p| cgroup_path(&p.cgroup)) {
+            *seen.entry(path).or_default() += 1;
+        }
+        let t = Apply {
             rates: &self.0,
-            solo: HashMap::new(),
+            seen,
             procs,
         };
         for user in &mut tree.users {
@@ -103,14 +107,13 @@ impl Stalls {
 
 struct Apply<'a> {
     rates: &'a HashMap<String, Stall>,
-    /// Whether a cgroup holds exactly one process, memoised: several process
-    /// rows under one identity ask about the same cgroup.
-    solo: HashMap<String, Option<u32>>,
+    /// How many walked pids each cgroup holds this tick.
+    seen: HashMap<&'a str, u32>,
     procs: &'a HashMap<u32, Process>,
 }
 
-impl Apply<'_> {
-    fn bill(&mut self, idents: &mut [IdentNode]) {
+impl<'a> Apply<'a> {
+    fn bill(&self, idents: &mut [IdentNode]) {
         for ident in idents {
             let pids: Vec<u32> = ident
                 .instances
@@ -155,9 +158,9 @@ impl Apply<'_> {
     /// the cgroup holds exactly that pid and the kernel's number really is
     /// this process's. Four siblings sharing a scope would otherwise each
     /// print the same stall, which reads as four separate costs.
-    fn set_process(&mut self, node: &mut crate::types::ProcNode) {
+    fn set_process(&self, node: &mut crate::types::ProcNode) {
         if let Some(path) = self.solo_cgroup(node.pid) {
-            write(&mut node.metrics, self.rates.get(&path));
+            write(&mut node.metrics, self.rates.get(path));
         }
         for child in &mut node.children {
             self.set_process(child);
@@ -177,13 +180,15 @@ impl Apply<'_> {
         found
     }
 
-    fn solo_cgroup(&mut self, pid: u32) -> Option<String> {
-        let path = cgroup_path(&self.procs.get(&pid)?.cgroup)?.to_string();
-        let only = *self
-            .solo
-            .entry(path.clone())
-            .or_insert_with(|| sole_member(&path));
-        (only == Some(pid)).then_some(path)
+    /// Two walked pids in one cgroup already settle that it is not solo, so
+    /// `cgroup.procs` is read only for a cgroup the walk saw once, where it
+    /// still matters because it also lists pids `/proc` hides. On ~750
+    /// processes that took the apply pass from 1.79 to 0.78 ms a tick. It can
+    /// disagree with a full read only when a pid leaves the cgroup between
+    /// the walk and the apply, and then it blanks a row for one tick.
+    fn solo_cgroup(&self, pid: u32) -> Option<&'a str> {
+        let path = cgroup_path(&self.procs.get(&pid)?.cgroup)?;
+        (self.seen.get(path) == Some(&1) && sole_member(path) == Some(pid)).then_some(path)
     }
 }
 

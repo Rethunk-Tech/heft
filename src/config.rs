@@ -7,21 +7,21 @@ use serde::{Deserialize, Serialize};
 
 use crate::types::Error;
 
+/// Every key is optional: a missing one takes `View::default`'s value, so a
+/// hand-written file keeps what it does say.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
 pub struct View {
     pub sort: String,
     pub desc: bool,
-    #[serde(default)]
     pub filter: String,
     /// Column labels left out of the table. A hide list rather than a show
     /// list: heft grows columns, and a show list would silently withhold every
     /// column added after the file was written.
-    #[serde(default = "default_hidden")]
     pub hide_columns: Vec<String>,
     /// Column labels left to right. Listed columns come first, in this order;
     /// anything not listed keeps its default place after them. `name` stays
     /// first unless this list names it. Empty is the compiled table order.
-    #[serde(default)]
     pub column_order: Vec<String>,
     /// uids from `--user`. Deliberately not serialized: sort, filter, hidden
     /// columns and column order are preferences a `s` press should outlive the
@@ -290,6 +290,15 @@ mod tests {
         assert!(warning.contains("line 3 column 1"), "{warning}");
         let view = parse_view(r#"{"sort": "rss", "desc": true}"#, path).unwrap();
         assert_eq!(view.sort, "rss");
+    }
+
+    /// Every key is optional, so a hand-written file keeps what it does say.
+    #[test]
+    fn a_view_may_leave_out_any_key() {
+        let path = Path::new("/home/me/.config/heft/view.json");
+        let view = parse_view(r#"{"hide_columns": ["vram", "gtt"]}"#, path).unwrap();
+        assert_eq!(view.hide_columns, ["vram", "gtt"]);
+        assert_eq!((view.sort.as_str(), view.desc), ("pss", true));
     }
 
     #[test]

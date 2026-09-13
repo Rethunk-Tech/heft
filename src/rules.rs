@@ -140,20 +140,23 @@ pub enum UnitFlag {
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
 pub struct Classes(pub u16);
 impl Classes {
-    pub const LAUNCHER: u16 = 1 << 0;
-    pub const GENERIC: u16 = 1 << 1;
-    pub const SHELL: u16 = 1 << 2;
-    pub const TERMINAL: u16 = 1 << 3;
-    pub const COMPOSITOR: u16 = 1 << 4;
-    pub const WORKER: u16 = 1 << 5;
-    pub const NOISE: u16 = 1 << 6;
-    pub const CRASH_HELPER: u16 = 1 << 7;
-    pub const NO_ABSORB: u16 = 1 << 8;
-    pub const ANONYMOUS_SCRIPT: u16 = 1 << 9;
-    pub const CONTAINER_RUNTIME: u16 = 1 << 10;
+    pub const LAUNCHER: u16 = Self::bit(Class::Launcher);
+    pub const GENERIC: u16 = Self::bit(Class::Generic);
+    pub const SHELL: u16 = Self::bit(Class::Shell);
+    pub const TERMINAL: u16 = Self::bit(Class::Terminal);
+    pub const COMPOSITOR: u16 = Self::bit(Class::Compositor);
+    pub const WORKER: u16 = Self::bit(Class::Worker);
+    pub const NOISE: u16 = Self::bit(Class::Noise);
+    pub const CRASH_HELPER: u16 = Self::bit(Class::CrashHelper);
+    pub const NO_ABSORB: u16 = Self::bit(Class::NoAbsorb);
+    pub const ANONYMOUS_SCRIPT: u16 = Self::bit(Class::AnonymousScript);
+    pub const CONTAINER_RUNTIME: u16 = Self::bit(Class::ContainerRuntime);
     #[must_use]
     pub const fn bit(c: Class) -> u16 {
         1 << (c as u16)
+    }
+    fn of(cs: &[Class]) -> Self {
+        Self(cs.iter().fold(0, |a, c| a | Self::bit(*c)))
     }
     #[must_use]
     pub const fn has(self, bits: u16) -> bool {
@@ -170,8 +173,15 @@ impl Classes {
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
 pub struct UnitFlags(pub u8);
 impl UnitFlags {
-    pub const LYING: u8 = 1;
-    pub const SERVICE: u8 = 2;
+    pub const LYING: u8 = Self::bit(UnitFlag::Lying);
+    pub const SERVICE: u8 = Self::bit(UnitFlag::Service);
+    #[must_use]
+    pub const fn bit(f: UnitFlag) -> u8 {
+        1 << (f as u8)
+    }
+    fn of(fs: &[UnitFlag]) -> Self {
+        Self(fs.iter().fold(0, |a, f| a | Self::bit(*f)))
+    }
     #[must_use]
     pub const fn lying(self) -> bool {
         self.0 & Self::LYING != 0
@@ -577,17 +587,7 @@ fn compile_rule(stage: Stage, r: Rule, file: &str, source: &Source) -> Result<Co
             r.id
         ));
     }
-    let mut classes = Classes::default();
-    for c in &r.classes {
-        classes.0 |= Classes::bit(*c);
-    }
-    let mut flags = UnitFlags::default();
-    for f in &r.flags {
-        flags.0 |= match f {
-            UnitFlag::Lying => UnitFlags::LYING,
-            UnitFlag::Service => UnitFlags::SERVICE,
-        };
-    }
+    let (classes, flags) = (Classes::of(&r.classes), UnitFlags::of(&r.flags));
     Ok(Compiled {
         source: source.clone(),
         file: file.to_string(),
@@ -887,8 +887,8 @@ impl Rules {
             for (i, ex) in examples.iter().enumerate() {
                 r.examples += 1;
                 let name = example_name(file, ex, i, source);
-                let owned = subject_facts(ex, *stage);
-                let f = owned.facts();
+                let subject = subject_facts(ex, *stage);
+                let f = subject.facts(ex);
                 let hits = self.deciding(*stage, &f);
                 let merged = judge(ex, &hits, file);
                 let decided = if is_builtin {
@@ -1001,9 +1001,7 @@ fn judge(ex: &Example, hits: &[&Compiled], file: &str) -> Vec<String> {
         }
     }
     if let Some(cs) = &e.classes {
-        let want = cs
-            .iter()
-            .fold(Classes::default(), |a, c| Classes(a.0 | Classes::bit(*c)));
+        let want = Classes::of(cs);
         let got = hits
             .iter()
             .fold(Classes::default(), |a, r| Classes(a.0 | r.classes.0));
@@ -1016,14 +1014,7 @@ fn judge(ex: &Example, hits: &[&Compiled], file: &str) -> Vec<String> {
         }
     }
     if let Some(fl) = &e.flags {
-        let want = fl.iter().fold(UnitFlags::default(), |a, f| {
-            UnitFlags(
-                a.0 | match f {
-                    UnitFlag::Lying => UnitFlags::LYING,
-                    UnitFlag::Service => UnitFlags::SERVICE,
-                },
-            )
-        });
+        let want = UnitFlags::of(fl);
         let got = hits
             .iter()
             .fold(UnitFlags::default(), |a, r| UnitFlags(a.0 | r.flags.0));
@@ -1046,69 +1037,53 @@ const fn folder_name(f: FolderName) -> &'static str {
     }
 }
 
-/// Owned facts for an example subject; `Facts` borrows from it.
-pub struct OwnedFacts {
-    pub comm: String,
-    pub name: String,
-    pub exe: Option<String>,
-    pub argv: Vec<String>,
-    pub cgroup: String,
-    pub unit: Option<String>,
-    pub script: Option<String>,
-    pub identity: Option<String>,
-    pub container: Option<String>,
+/// What an example subject needs beyond the fields its `Example` holds.
+struct Subject {
+    name: String,
+    unit: Option<String>,
+    script: Option<String>,
 }
-impl OwnedFacts {
-    #[must_use]
-    pub fn facts(&self) -> Facts<'_> {
+impl Subject {
+    /// The subject as the engine sees it: an explicit `unit` wins over the one
+    /// `identity::user_unit` reads from `cgroup`.
+    fn facts<'a>(&'a self, ex: &'a Example) -> Facts<'a> {
         Facts {
-            comm: &self.comm,
+            comm: ex.comm.as_deref().unwrap_or_default(),
             name: &self.name,
-            exe: self.exe.as_deref(),
-            argv: &self.argv,
-            cgroup: &self.cgroup,
-            unit: self.unit.as_deref(),
+            exe: ex.exe.as_deref(),
+            argv: &ex.cmdline,
+            cgroup: &ex.cgroup,
+            unit: ex.unit.as_deref().or(self.unit.as_deref()),
             script: self.script.as_deref(),
-            identity: self.identity.as_deref(),
-            container: self.container.as_deref(),
+            identity: ex.identity.as_deref(),
+            container: ex.container.as_deref(),
         }
     }
 }
 
-/// An example subject as the engine sees it: an explicit `unit` wins over the
-/// one `identity::user_unit` reads from `cgroup`, and a class-stage subject
-/// carries its script basename, which is how the anonymous-scripts rule is
-/// exampled.
-#[must_use]
-pub fn subject_facts(ex: &Example, stage: Stage) -> OwnedFacts {
+/// The display name `classify::name_ref` gives the example, its cgroup's unit
+/// when it names none, and for a class-stage subject its script basename,
+/// which is how the anonymous-scripts rule is exampled.
+fn subject_facts(ex: &Example, stage: Stage) -> Subject {
     let p = crate::types::Process {
         comm: ex.comm.clone().unwrap_or_default(),
         exe: ex.exe.clone(),
         ..crate::types::Process::default()
     };
-    let name = crate::classify::name_ref(&p).to_string();
-    let unit = ex.unit.clone().or_else(|| {
-        if ex.cgroup.is_empty() {
-            None
-        } else {
-            crate::identity::user_unit(&ex.cgroup)
-        }
-    });
+    let unit = if ex.unit.is_some() || ex.cgroup.is_empty() {
+        None
+    } else {
+        crate::identity::user_unit(&ex.cgroup)
+    };
     let script = if stage == Stage::Class {
         crate::classify::script_basename(&ex.cmdline)
     } else {
         None
     };
-    OwnedFacts {
-        comm: p.comm,
-        name,
-        exe: p.exe,
-        argv: ex.cmdline.clone(),
-        cgroup: ex.cgroup.clone(),
+    Subject {
+        name: crate::classify::name_ref(&p).to_string(),
         unit,
         script,
-        identity: ex.identity.clone(),
-        container: ex.container.clone(),
     }
 }
 
@@ -1271,6 +1246,16 @@ mod tests {
         assert_eq!(r.failed, 0, "{}", r.lines.join("\n"));
         assert!(r.lines.is_empty(), "{}", r.lines.join("\n"));
         assert_eq!(r.examples, 127);
+    }
+
+    /// `Class` discriminants, `CLASS_NAMES` and the serde names are three
+    /// orderings of one list; a reorder of any one prints the wrong name.
+    #[test]
+    fn every_class_name_is_the_name_its_bit_prints() {
+        for name in CLASS_NAMES {
+            let c: Class = serde_json::from_value(name.into()).unwrap();
+            assert_eq!(Classes(Classes::bit(c)).names(), [name]);
+        }
     }
 
     #[test]

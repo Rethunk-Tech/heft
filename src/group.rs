@@ -780,7 +780,9 @@ mod tests {
         // machine.slice has no scope to name and must not become a row.
         assert_ne!(place("0::/machine.slice", 0).folder, Folder::Containers);
     }
+
     const CHAIN: u32 = 10_000;
+
     /// Pid 1 is `root`, and pids 2 to `CHAIN` each run `link` as the child of
     /// the pid before, all in one process group of one app scope.
     fn chain(root: &str, link: &[&str]) -> HashMap<u32, Process> {
@@ -807,6 +809,7 @@ mod tests {
             })
             .collect()
     }
+
     fn tree_of(curr: &HashMap<u32, Process>) -> crate::types::HostTree {
         let consts = crate::types::HostHeader {
             nproc: 1,
@@ -823,6 +826,7 @@ mod tests {
             &Rules::builtin(),
         )
     }
+
     fn placed(tree: &crate::types::HostTree) -> u32 {
         use crate::types::folder_nproc;
         tree.users
@@ -834,6 +838,7 @@ mod tests {
             })
             .sum()
     }
+
     /// A shell chain under a terminal walks the payload search down and the
     /// idle-shell fold up; a worker chain walks the parent fold up; a launcher
     /// chain does both. None of them may cost a stack frame per process.
@@ -842,11 +847,13 @@ mod tests {
         let tree = tree_of(&chain("konsole", &["bash"]));
         assert_eq!(placed(&tree), CHAIN);
     }
+
     #[test]
     fn placing_a_deep_worker_chain_does_not_recurse_per_process() {
         let tree = tree_of(&chain("cursor", &["cursor", "--type=renderer"]));
         assert_eq!(placed(&tree), CHAIN);
     }
+
     #[test]
     fn placing_a_deep_launcher_chain_does_not_recurse_per_process() {
         let tree = tree_of(&chain("konsole", &["bwrap"]));

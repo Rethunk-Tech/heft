@@ -2073,7 +2073,11 @@ mod tests {
         // 137 is the terminal the per-column sizing was reported from.
         let wide = help_lines(137);
         assert_eq!(wide.len(), keys.div_ceil(2) + 1 + bar_key().len());
-        let text: String = wide.iter().map(|l| format!("{l}\n")).collect();
+        let text = wide
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("\n");
         assert!(text.contains("F1") && text.contains("buf"), "{text}");
         assert_eq!(help_lines(60).len(), keys + 1 + bar_key().len());
         // Short descriptions are what let an ordinary 90-column terminal pair them.
@@ -2362,7 +2366,11 @@ mod tests {
         assert!(!text.contains("VRAM ["), "{text}");
         assert_eq!(text.chars().count(), 100);
         // The bars carry no legend; `?` shows a swatch for every segment.
-        let key: String = bar_key().iter().map(|l| format!("{l}\n")).collect();
+        let key = bar_key()
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("\n");
         for label in [
             "usr", "sys", "wait", "vram", "gtt", "zram", "shm", "kernel", "anon", "other", "cache",
             "slab", "buf",

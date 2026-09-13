@@ -171,6 +171,7 @@ pub(crate) fn view_path() -> PathBuf {
     config_dir().join("view.json")
 }
 
+#[must_use]
 pub fn load_view() -> View {
     let path = view_path();
     let Ok(text) = fs::read_to_string(&path) else {

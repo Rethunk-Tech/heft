@@ -118,7 +118,7 @@ fn embed_rules(out: &Path) -> std::io::Result<()> {
     let mut names: Vec<String> = std::fs::read_dir(&dir)?
         .filter_map(Result::ok)
         .filter_map(|e| e.file_name().into_string().ok())
-        .filter(|n| n.ends_with(".json"))
+        .filter(|n| Path::new(n).extension().is_some_and(|e| e == "json"))
         .collect();
     names.sort_by(|a, b| a.as_bytes().cmp(b.as_bytes()));
     let mut s = String::from("pub static BUILTIN: &[(&str, &str)] = &[\n");

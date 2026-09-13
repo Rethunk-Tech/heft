@@ -157,8 +157,8 @@ pub(crate) fn process_metrics(
     let rss_bytes = cur.rss_pages.map(|p| p.saturating_mul(consts.page_size));
     let pss_bytes = cur.pss_kb.map(|k| k.saturating_mul(1024));
     let swap_bytes = cur.swap_pss_kb.map(|k| k.saturating_mul(1024));
-    let disk_r_bps = rate(prev.and_then(|p| p.read_bytes), cur.read_bytes, secs);
-    let disk_w_bps = rate(prev.and_then(|p| p.write_bytes), cur.write_bytes, secs);
+    let read_bps = rate(prev.and_then(|p| p.read_bytes), cur.read_bytes, secs);
+    let write_bps = rate(prev.and_then(|p| p.write_bytes), cur.write_bytes, secs);
     // Two formulas, because the drivers measure two different things: a
     // duration against the wall clock, and a cycle count against the GPU's own
     // clock. `or_else` keeps a driver that publishes ns on the ns path.
@@ -190,8 +190,8 @@ pub(crate) fn process_metrics(
         swap_bytes,
         threads: cur.threads,
         age_secs: age_secs(cur.starttime_ticks, consts.clk_tck, btime(), now_epoch()),
-        disk_r_bps,
-        disk_w_bps,
+        disk_r_bps: read_bps,
+        disk_w_bps: write_bps,
         vram_bytes: cur.gpu.vram_bytes,
         gtt_bytes: cur.gpu.gtt_bytes,
         gfx_pct,

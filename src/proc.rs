@@ -443,6 +443,7 @@ fn parse_rss_pages(statm: &str) -> Option<u64> {
 /// because a uid is always meaningful and a passwd entry is not always there:
 /// a container's uid appears in `/proc` with nothing in `/etc/passwd` to name
 /// it, and `--user 1000` has to reach that branch anyway.
+#[must_use]
 pub fn uid_for(who: &str) -> Option<u32> {
     who.parse().ok().or_else(|| Passwd::read().uid(who))
 }

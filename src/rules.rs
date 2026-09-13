@@ -645,7 +645,7 @@ impl Rules {
                 files.extend(load_dir(path, &source, &mut warnings));
             }
             files.extend(builtin_files());
-            let mut r = Self::from_files(files);
+            let mut r = Self::from_files(&files);
             r.warnings.splice(0..0, warnings);
             for p in &r.problems {
                 eprintln!("heft: skipping {} ({}): {}", p.file, p.source.label, p.what);
@@ -657,21 +657,25 @@ impl Rules {
         })
     }
 
-    /// The embedded `rules.d`. Panics on a malformed file, which is safe only
-    /// because `tests::builtin_files_parse_and_their_examples_pass` parses the
-    /// same table under `cargo test`.
+    /// The embedded `rules.d`.
+    ///
+    /// # Panics
+    ///
+    /// On a malformed built-in file. None ships:
+    /// `tests::builtin_files_parse_and_their_examples_pass` parses the same
+    /// table under `cargo test`.
     #[must_use]
     pub fn builtin() -> Self {
-        let r = Self::from_files(builtin_files().collect());
+        let r = Self::from_files(&builtin_files().collect::<Vec<_>>());
         assert!(r.problems.is_empty(), "built-in rules: {:?}", r.problems);
         r
     }
 
     #[must_use]
-    pub fn from_files(files: Vec<LoadedFile>) -> Self {
+    pub fn from_files(files: &[LoadedFile]) -> Self {
         let mut problems = vec![];
         let mut units: Vec<FileUnit> = vec![];
-        for f in &files {
+        for f in files {
             match compile_file(f) {
                 Ok(u) => units.push(u),
                 Err(what) => problems.push(Problem {
@@ -765,6 +769,10 @@ impl Rules {
             ..Facts::default()
         })
     }
+    /// # Panics
+    ///
+    /// Never on a loaded set: `compile_rule` refuses a session rule without
+    /// both `identity` and `folder`, so every rule in this stage carries them.
     #[inline]
     #[must_use]
     pub fn session(&self, f: &Facts) -> Option<(&str, Folder)> {
@@ -1135,7 +1143,7 @@ pub fn load_dir(
         let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
             continue;
         };
-        if !name.ends_with(".json") {
+        if path.extension().is_none_or(|e| e != "json") {
             continue;
         }
         if !std::fs::metadata(&path).is_ok_and(|m| m.is_file()) {
@@ -1221,7 +1229,7 @@ mod tests {
     #[test]
     fn a_rule_folder_of_containers_or_system_fails_the_file() {
         for folder in ["containers", "system"] {
-            let r = Rules::from_files(vec![file(
+            let r = Rules::from_files(&[file(
                 "10-x.json",
                 &format!(
                     r#"{{"stage":"session","rules":[{{"id":"s","match":{{"name":"x"}},"identity":"x","folder":"{folder}"}}]}}"#
@@ -1240,7 +1248,7 @@ mod tests {
 
     #[test]
     fn a_prefix_longer_than_the_haystack_or_inside_a_char_is_a_miss() {
-        let r = Rules::from_files(vec![file(
+        let r = Rules::from_files(&[file(
             "10-x.json",
             r#"{"stage":"class","rules":[{"id":"p","match":{"name_prefix":"café"},"classes":["noise"]}]}"#,
         )]);
@@ -1332,7 +1340,7 @@ mod tests {
             } else {
                 "placement"
             };
-            let r = Rules::from_files(vec![file(
+            let r = Rules::from_files(&[file(
                 "10-x.json",
                 &format!(
                     r#"{{"stage":"{name}","rules":[{{"id":"t","match":{{"{key}":"{}"}},{output}}}]}}"#,
@@ -1360,7 +1368,7 @@ mod tests {
 
     #[test]
     fn lists_all_any_and_not_compose_and_flag_stages_union() {
-        let r = Rules::from_files(vec![file(
+        let r = Rules::from_files(&[file(
             "10-x.json",
             r#"{"stage":"class","rules":[
                 {"id":"list","match":{"name":["a","b"]},"classes":["shell"]},
@@ -1410,14 +1418,14 @@ mod tests {
             name: "x",
             ..Facts::default()
         };
-        let r = Rules::from_files(vec![
+        let r = Rules::from_files(&[
             at("01-z.json", "built", usize::MAX),
             at("10-a.json", "etc", 1),
             at("9-b.json", "nine", 0),
             at("10-c.json", "ten", 0),
         ]);
         assert_eq!(r.app(&f), Some("ten"), "XDG first, and 10-c before 9-b");
-        let r = Rules::from_files(vec![
+        let r = Rules::from_files(&[
             at("01-z.json", "built", usize::MAX),
             at("99-a.json", "etc", 1),
         ]);
@@ -1426,7 +1434,7 @@ mod tests {
 
     #[test]
     fn a_container_rule_cannot_shadow_an_identity_pin() {
-        let r = Rules::from_files(vec![file(
+        let r = Rules::from_files(&[file(
             "90-a.json",
             r#"{"stage":"placement","rules":[
                 {"id":"own","match":{"not":{"container":"x"}},"owner_uid":1},
@@ -1445,7 +1453,7 @@ mod tests {
 
     #[test]
     fn a_fixture_row_is_an_example_subject_and_an_explicit_unit_wins() {
-        let r = Rules::from_files(vec![file(
+        let r = Rules::from_files(&[file(
             "90-a.json",
             r#"{"stage":"unit","rules":[{"id":"svc","match":{"unit":"a.service"},"flags":["service"]}],
                "examples":[{"pid":1,"ppid":0,"pgrp":1,"uid":1000,"comm":"x","exe":"/usr/bin/x",
@@ -1544,7 +1552,7 @@ mod tests {
             r#"{"stage":"session","rules":[{"id":"gsd","match":{"name_prefix":"gsd-"},"identity":"gsd","folder":"user_services"}]}"#,
         );
         builtin.source = Source::builtin();
-        let r = Rules::from_files(vec![builtin, user]);
+        let r = Rules::from_files(&[builtin, user]);
         let f = Facts {
             comm: "gsd-color",
             name: "gsd-color",
@@ -1584,7 +1592,7 @@ mod tests {
 
     fn with_builtins(mut files: Vec<LoadedFile>) -> Rules {
         files.extend(builtin_files());
-        Rules::from_files(files)
+        Rules::from_files(&files)
     }
 
     #[test]
@@ -1635,7 +1643,7 @@ mod tests {
     /// so it builds facts through `group::facts_of`, the tick's own path. Run
     /// with `cargo test --release --lib -- --ignored --nocapture rules_timing`.
     #[test]
-    #[ignore]
+    #[ignore = "timing bench: cargo test --release --lib -- --ignored --nocapture rules_timing"]
     #[expect(
         clippy::cast_precision_loss,
         reason = "a process count and a nanosecond total both fit in 52 bits"

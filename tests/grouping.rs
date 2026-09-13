@@ -115,7 +115,7 @@ fn mine(text: &str) -> LoadedFile {
 fn with_user(text: &str) -> Rules {
     let mut files = vec![mine(text)];
     files.extend(heft::rules::builtin_files());
-    let r = Rules::from_files(files);
+    let r = Rules::from_files(&files);
     assert!(r.problems.is_empty(), "{:?}", r.problems);
     r
 }
@@ -894,7 +894,7 @@ fn disabling_the_trinity_file_makes_a_tde_module_an_application() {
 fn a_malformed_rules_file_is_rejected_rather_than_obeyed() {
     // The loader turns each of these into a stderr warning and built-in
     // behaviour; parsing is where the file is judged.
-    let bad = |text: &str| Rules::from_files(vec![mine(text)]).problems.len() == 1;
+    let bad = |text: &str| Rules::from_files(&[mine(text)]).problems.len() == 1;
     assert!(bad("{ not json }"));
     assert!(
         bad(r#"{"stage":"placement","ruls":[]}"#),
@@ -948,7 +948,7 @@ fn a_container_owner_rule_beats_bind_mount_inference() {
 /// `HEFT_BENCH_FIXTURE`. Run with
 /// `cargo test --release --test grouping -- --ignored --nocapture build_tree_timing`.
 #[test]
-#[ignore]
+#[ignore = "timing bench: cargo test --release --test grouping -- --ignored --nocapture build_tree_timing"]
 fn build_tree_timing() {
     let iters: u32 = std::env::var("HEFT_BENCH_ITERS")
         .ok()

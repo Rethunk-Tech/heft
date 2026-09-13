@@ -105,13 +105,13 @@ pub(crate) fn spark_ramp() -> &'static [char; 8] {
     // The one place `Set::Legacy` parts company with `Set::Unicode`: the
     // eighth blocks are the only characters heft draws that a legacy font
     // reliably lacks while still carrying the bars.
-    if set() != Set::Unicode {
-        &['_', '.', ',', ':', '-', '=', '+', '#']
-    } else {
+    if set() == Set::Unicode {
         &[
             '\u{2581}', '\u{2582}', '\u{2583}', '\u{2584}', '\u{2585}', '\u{2586}', '\u{2587}',
             '\u{2588}',
         ]
+    } else {
+        &['_', '.', ',', ':', '-', '=', '+', '#']
     }
 }
 

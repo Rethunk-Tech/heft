@@ -12,6 +12,9 @@ use crate::types::{
     Process, UserNode,
 };
 
+/// One tick's processes by pid, as `proc` samples them.
+type Procs = HashMap<u32, Process>;
+
 /// The read-only inputs every placement rule needs, bundled so the recursive
 /// walk keeps one parameter instead of several.
 struct Ctx<'a> {
@@ -24,7 +27,7 @@ struct Ctx<'a> {
 }
 
 impl<'a> Ctx<'a> {
-    fn new(containers: &'a ContainerIndex, rules: &'a Rules, curr: &HashMap<u32, Process>) -> Self {
+    fn new(containers: &'a ContainerIndex, rules: &'a Rules, curr: &Procs) -> Self {
         let judged = curr
             .iter()
             .map(|(pid, p)| (*pid, judge(p, rules)))
@@ -102,8 +105,8 @@ struct Place {
 }
 #[must_use]
 pub fn build_tree(
-    prev: &HashMap<u32, Process>,
-    curr: &HashMap<u32, Process>,
+    prev: &Procs,
+    curr: &Procs,
     elapsed: Duration,
     consts: &HostHeader,
     header: HostTree,
@@ -116,8 +119,8 @@ pub fn build_tree(
 }
 
 fn metrics_map(
-    prev: &HashMap<u32, Process>,
-    curr: &HashMap<u32, Process>,
+    prev: &Procs,
+    curr: &Procs,
     elapsed: Duration,
     consts: &HostHeader,
 ) -> HashMap<u32, Metrics> {
@@ -126,7 +129,7 @@ fn metrics_map(
         .collect()
 }
 
-fn resolve(curr: &HashMap<u32, Process>, ctx: &Ctx<'_>) -> HashMap<u32, Place> {
+fn resolve(curr: &Procs, ctx: &Ctx<'_>) -> HashMap<u32, Place> {
     let mut memo: HashMap<u32, Place> = HashMap::new();
     let mut walking = HashSet::new();
     for pid in curr.keys().copied() {
@@ -137,7 +140,7 @@ fn resolve(curr: &HashMap<u32, Process>, ctx: &Ctx<'_>) -> HashMap<u32, Place> {
 
 fn resolve_one(
     pid: u32,
-    curr: &HashMap<u32, Process>,
+    curr: &Procs,
     ctx: &Ctx<'_>,
     memo: &mut HashMap<u32, Place>,
     walking: &mut HashSet<u32>,
@@ -157,7 +160,7 @@ fn resolve_one(
 
 fn compute_place(
     p: &Process,
-    curr: &HashMap<u32, Process>,
+    curr: &Procs,
     ctx: &Ctx<'_>,
     memo: &mut HashMap<u32, Place>,
     walking: &mut HashSet<u32>,
@@ -419,7 +422,7 @@ fn override_place(rules: &Rules, place: Place) -> Place {
 
 fn owning_app_ancestor(
     mut pid: u32,
-    curr: &HashMap<u32, Process>,
+    curr: &Procs,
     ctx: &Ctx<'_>,
     memo: &mut HashMap<u32, Place>,
     walking: &mut HashSet<u32>,
@@ -447,7 +450,7 @@ fn owning_app_ancestor(
 
 fn unique_descendant_ident(
     pid: u32,
-    curr: &HashMap<u32, Process>,
+    curr: &Procs,
     ctx: &Ctx<'_>,
     memo: &mut HashMap<u32, Place>,
     walking: &mut HashSet<u32>,
@@ -489,7 +492,7 @@ fn unique_descendant_ident(
 }
 
 fn assemble(
-    curr: &HashMap<u32, Process>,
+    curr: &Procs,
     places: &HashMap<u32, Place>,
     metrics: &HashMap<u32, Metrics>,
     mut header: HostTree,
@@ -556,7 +559,7 @@ fn ident_node(
     key: &str,
     pids: &[u32],
     members_map: &HashMap<String, Vec<u32>>,
-    curr: &HashMap<u32, Process>,
+    curr: &Procs,
     places: &HashMap<u32, Place>,
     metrics: &HashMap<u32, Metrics>,
 ) -> IdentNode {
@@ -606,11 +609,7 @@ fn sum_metrics(pids: &[u32], metrics: &HashMap<u32, Metrics>) -> Metrics {
     m
 }
 
-fn proc_forest(
-    pids: &[u32],
-    curr: &HashMap<u32, Process>,
-    metrics: &HashMap<u32, Metrics>,
-) -> Vec<ProcNode> {
+fn proc_forest(pids: &[u32], curr: &Procs, metrics: &HashMap<u32, Metrics>) -> Vec<ProcNode> {
     let set: HashSet<u32> = pids.iter().copied().collect();
     let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
     let mut roots = Vec::new();
@@ -632,7 +631,7 @@ fn proc_forest(
 fn proc_node(
     pid: u32,
     children: &HashMap<u32, Vec<u32>>,
-    curr: &HashMap<u32, Process>,
+    curr: &Procs,
     metrics: &HashMap<u32, Metrics>,
 ) -> ProcNode {
     let name = curr.get(&pid).map_or_else(|| pid.to_string(), name_of);

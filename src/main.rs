@@ -178,7 +178,7 @@ fn check_interval(flag: &str, secs: f64) -> Duration {
 /// A typo on the command line is told to the user, where `Sort::from_label`
 /// silently falls back for a saved view: a stale `view.json` must not stop the
 /// monitor, but an argument just typed can still be corrected.
-fn check_column<'a>(flag: &str, label: &'a str, labels: Vec<&'static str>) -> &'a str {
+fn check_column<'a>(flag: &str, label: &'a str, labels: &[&'static str]) -> &'a str {
     if labels.contains(&label) {
         return label;
     }
@@ -194,14 +194,14 @@ fn check_column<'a>(flag: &str, label: &'a str, labels: Vec<&'static str>) -> &'
 }
 
 fn check_sort(label: &str) -> &str {
-    check_column("sort", label, heft::once::sort_labels())
+    check_column("sort", label, &heft::once::sort_labels())
 }
 
 /// Ordering is presentation, so every column can be moved, including `spark`,
 /// which no sort can land on: `--order` validates against every column label,
 /// not the sortable ones `--sort` takes.
 fn check_order(label: &str) -> &str {
-    check_column("order", label, heft::once::column_labels())
+    check_column("order", label, &heft::once::column_labels())
 }
 
 /// Same split as `--sort`: a typo on the command line is a usage error, a
@@ -217,7 +217,7 @@ fn check_hide(label: &str) -> &str {
             )
             .exit()
     }
-    check_column("hide", label, heft::once::hideable_labels())
+    check_column("hide", label, &heft::once::hideable_labels())
 }
 
 /// A pattern that does not compile is reported the way a bad `--sort` is: a

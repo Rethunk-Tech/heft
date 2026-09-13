@@ -487,9 +487,9 @@ fn cmp_row(a: Row<'_>, b: Row<'_>, sort: Sort, desc: bool) -> Ordering {
         return if desc { ord } else { ord.reverse() };
     };
     let ord = match (key(a.1, a.2), key(b.1, b.2)) {
-        (Some(x), Some(y)) => {
-            let o = x.total_cmp(&y);
-            if desc { o.reverse() } else { o }
+        (Some(left), Some(right)) => {
+            let by_metric = left.total_cmp(&right);
+            if desc { by_metric.reverse() } else { by_metric }
         }
         (None, Some(_)) => Ordering::Greater,
         (Some(_), None) => Ordering::Less,
@@ -1022,12 +1022,12 @@ fn fmt_rate(n: Option<f64>) -> String {
 /// point — `2d` beats `191243s` and beats a start timestamp, which would make
 /// the reader do the subtraction.
 fn fmt_age(secs: Option<u64>) -> String {
-    let Some(s) = secs else {
-        return String::new();
-    };
     const MIN: u64 = 60;
     const HOUR: u64 = 60 * MIN;
     const DAY: u64 = 24 * HOUR;
+    let Some(s) = secs else {
+        return String::new();
+    };
     if s >= DAY {
         format!("{}d", s / DAY)
     } else if s >= HOUR {
@@ -1485,8 +1485,8 @@ mod tests {
         assert_eq!(rows[0].metrics.pss_bytes, Some(3072));
         let filter = Filter::new("firefox").expect("test patterns compile");
         keep_matches(&mut rows, &filter, |r| (r.depth, r.name.as_str()));
-        let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
-        assert_eq!(names, ["Host", "u", "Applications (2)", "firefox"]);
+        let kept: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(kept, ["Host", "u", "Applications (2)", "firefox"]);
         assert_eq!(rows[0].metrics.pss_bytes, Some(3072));
     }
 

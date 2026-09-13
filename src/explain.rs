@@ -198,28 +198,25 @@ pub fn run(pid: u32, interval: Duration) -> Result<(), Error> {
     }
 
     println!();
-    match f.pinnable {
-        Some(list) => {
-            println!("  \"{}\" is the placement key for this row.", f.ident);
-            println!();
-            println!(
-                "  To pin it to a folder, in {}/rules.d/90-mine.json:",
-                crate::config::config_dir().display()
-            );
-            println!(
-                "    {{ \"stage\": \"placement\", \"rules\": [ {{ \"id\": \"pin\", \"match\": {{ \"identity\": \"{}\" }}, \"folder\": \"{list}\" }} ] }}",
-                f.ident
-            );
-            println!();
-            println!("  To bill it to another row instead, `\"fold_to\": \"<other identity>\"`");
-            println!("  in place of `folder`.");
-        }
-        None => {
-            println!("  No placement rule can move this row. A container is placed by its");
-            println!("  runtime labels and a kernel thread by the cgroup it is in, so");
-            println!("  `fold_to` and `folder` skip them. A rule with `owner_uid` sets a");
-            println!("  container's owning uid by name.");
-        }
+    if let Some(list) = f.pinnable {
+        println!("  \"{}\" is the placement key for this row.", f.ident);
+        println!();
+        println!(
+            "  To pin it to a folder, in {}/rules.d/90-mine.json:",
+            crate::config::config_dir().display()
+        );
+        println!(
+            "    {{ \"stage\": \"placement\", \"rules\": [ {{ \"id\": \"pin\", \"match\": {{ \"identity\": \"{}\" }}, \"folder\": \"{list}\" }} ] }}",
+            f.ident
+        );
+        println!();
+        println!("  To bill it to another row instead, `\"fold_to\": \"<other identity>\"`");
+        println!("  in place of `folder`.");
+    } else {
+        println!("  No placement rule can move this row. A container is placed by its");
+        println!("  runtime labels and a kernel thread by the cgroup it is in, so");
+        println!("  `fold_to` and `folder` skip them. A rule with `owner_uid` sets a");
+        println!("  container's owning uid by name.");
     }
     Ok(())
 }

@@ -101,34 +101,30 @@ pub enum Pat {
     Many(Vec<String>),
 }
 
-#[derive(Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
-#[serde(rename_all = "snake_case")]
-pub enum Class {
-    Launcher,
-    Generic,
-    Shell,
-    Terminal,
-    Compositor,
-    Worker,
-    Noise,
-    CrashHelper,
-    NoAbsorb,
-    AnonymousScript,
-    ContainerRuntime,
+/// `Class` and `CLASS_NAMES` come from one table, so neither can gain an
+/// entry the other lacks or list them in another order.
+macro_rules! classes {
+    ($($variant:ident = $name:literal,)*) => {
+        #[derive(Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+        pub enum Class {
+            $(#[serde(rename = $name)] $variant,)*
+        }
+        pub const CLASS_NAMES: &[&str] = &[$($name,)*];
+    };
 }
-pub const CLASS_NAMES: [&str; 11] = [
-    "launcher",
-    "generic",
-    "shell",
-    "terminal",
-    "compositor",
-    "worker",
-    "noise",
-    "crash_helper",
-    "no_absorb",
-    "anonymous_script",
-    "container_runtime",
-];
+classes! {
+    Launcher = "launcher",
+    Generic = "generic",
+    Shell = "shell",
+    Terminal = "terminal",
+    Compositor = "compositor",
+    Worker = "worker",
+    Noise = "noise",
+    CrashHelper = "crash_helper",
+    NoAbsorb = "no_absorb",
+    AnonymousScript = "anonymous_script",
+    ContainerRuntime = "container_runtime",
+}
 
 #[derive(Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 #[serde(rename_all = "snake_case")]
@@ -1248,11 +1244,11 @@ mod tests {
         assert_eq!(r.examples, 127);
     }
 
-    /// `Class` discriminants, `CLASS_NAMES` and the serde names are three
-    /// orderings of one list; a reorder of any one prints the wrong name.
+    /// A class's bit is its discriminant and `names` indexes `CLASS_NAMES`
+    /// by bit, so the name printed must be the name the file spells.
     #[test]
     fn every_class_name_is_the_name_its_bit_prints() {
-        for name in CLASS_NAMES {
+        for &name in CLASS_NAMES {
             let c: Class = serde_json::from_value(name.into()).unwrap();
             assert_eq!(Classes(Classes::bit(c)).names(), [name]);
         }

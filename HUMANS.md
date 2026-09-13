@@ -244,9 +244,14 @@ and the footer reads `PAUSED 8s`.
   `machine-qemu\x2d3\x2dfedora.scope` reads `fedora`. Rootful Podman shares
   that slice but is a `libpod-` scope, so it keeps its real name and owner.
 
-The GPU columns (VRAM, GTT, GFX, CMP) read DRM fdinfo from `amdgpu`, `i915`
-and `xe` only. Other drivers (`nvidia-drm`, `nouveau`, `panfrost`, `v3d`,
-`msm`) are refused rather than guessed at, so those columns stay blank there.
+The GPU columns (VRAM, GTT, GFX, CMP) read DRM fdinfo. A client counts when
+its driver is `amdgpu`, `i915` or `xe`, or when its fdinfo publishes both
+`drm-client-id` and a `drm-resident-*` key, whatever the driver. Only the
+names those three drivers use are read: memory in a `vram`, `vram0`, `vram1`,
+`local0`, `gtt` or `system0` region, and time on a `gfx`, `render` or
+`compute` engine, or xe's `rcs` and `ccs` cycles. A region or engine under any
+other name is not guessed at, so on another driver those columns stay blank
+unless it uses the same names.
 heft looks for a process's GPU file descriptors on PSS reads, so a GPU a
 running process opens can take up to `--pss-interval` to show.
 

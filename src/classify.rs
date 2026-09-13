@@ -125,14 +125,6 @@ pub(crate) fn is_interactive_shell(p: &Process, classes: Classes) -> bool {
     !has_c && !has_path
 }
 
-/// Launchers and shells share unique-payload folding: the helper has no
-/// top-level row when a single child identity exists. Interactive shells
-/// are included so a `bash` that launched `claude` bills there; an idle
-/// leftover folds into the terminal in `group`, not here.
-pub(crate) fn is_foldable_helper(classes: Classes) -> bool {
-    classes.intersects(Classes::LAUNCHER | Classes::SHELL)
-}
-
 pub(crate) fn launcher_payload_hint(p: &Process, rules: &Rules) -> Option<String> {
     // Case-folded the way the `launchers` class rule folds it: real AppImages ship as
     // `Cursor-x86_64.AppImage`, and `name_ref` does not lowercase. A launcher

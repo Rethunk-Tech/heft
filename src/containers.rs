@@ -24,7 +24,7 @@ pub(crate) fn hex12(s: &str) -> Option<&str> {
 
 /// The key every `by_id` insert and lookup uses, so no caller can key an id in
 /// a case the others do not.
-fn normalized_id(s: &str) -> Option<String> {
+pub(crate) fn normalized_id(s: &str) -> Option<String> {
     hex_id(s).map(str::to_ascii_lowercase)
 }
 

@@ -13,8 +13,10 @@ fn scope_hex(cgroup: &str, prefix: &str) -> Option<String> {
         let i = start + rel + prefix.len();
         let rest = &cgroup[i..];
         let n = rest.bytes().take_while(u8::is_ascii_hexdigit).count();
-        if n >= 12 && rest[n..].starts_with(".scope") {
-            return Some(rest[..n].to_ascii_lowercase());
+        if rest[n..].starts_with(".scope")
+            && let Some(id) = crate::containers::normalized_id(&rest[..n])
+        {
+            return Some(id);
         }
         start = i;
     }
@@ -130,18 +132,12 @@ fn systemd_unescape(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-fn unit_stem(unit: &str) -> String {
-    let mut s = unit.to_string();
-    if let Some(stripped) = s.strip_suffix(".scope") {
-        s = stripped.to_string();
-    } else if let Some(stripped) = s.strip_suffix(".service") {
-        s = stripped.to_string();
-    }
-    if let Some((name, _)) = s.split_once('@') {
-        name.to_string()
-    } else {
-        s
-    }
+fn unit_stem(unit: &str) -> &str {
+    let s = unit
+        .strip_suffix(".scope")
+        .or_else(|| unit.strip_suffix(".service"))
+        .unwrap_or(unit);
+    s.split_once('@').map_or(s, |(name, _)| name)
 }
 
 /// `PF_KTHREAD` is the kernel's own answer, so nothing here re-derives it from
@@ -161,7 +157,7 @@ pub(crate) fn generic_fallback(p: &Process, j: &Judged, rules: &Rules) -> String
     {
         let stem = unit_stem(u);
         if !stem.is_empty() && stem != "app" {
-            return stem;
+            return stem.to_string();
         }
     }
     if let Some(script) = script_basename(&p.cmdline) {

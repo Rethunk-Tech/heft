@@ -28,12 +28,13 @@
   overlay is open at a time.
 - A rules.d file named exactly `.json` is not read.
 - A crash handler whose install directory names no running process bills to
-  the app binary beside it: Vivaldi's `chrome_crashpad_handler` joins
+  its own user's app binary beside it: Vivaldi's `chrome_crashpad_handler` joins
   `vivaldi-bin` rather than taking a `vivaldi` row of its own.
 - `--explain PID` exits 1 when the pid is not visible.
 - `--help` for `--hide` names the labels it takes.
 - Container lookups share a 2 s budget per sample. Inspects past it are
-  skipped and retried on the next sample.
+  skipped and retried on the next sample; an inspect that fails is retried
+  once the set of running containers changes.
 
 ### Removed
 
@@ -83,7 +84,8 @@
 - The TUI shows a warning for a skipped rules.d file instead of drawing over
   it.
 - A `view.json` that does not parse prints its path, line and column before
-  heft falls back to defaults.
+  heft falls back to defaults. One that leaves out `sort` or `desc` keeps its
+  other settings.
 - `--explain` draws its placement path in the `--glyphs` set.
 - The `i` pane cuts a long command line by display width and never splits a
   character from its combining mark; the `?` overlay aligns keys by display

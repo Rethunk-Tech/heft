@@ -112,8 +112,9 @@ truncated id would silently lose its row.
   and never an identity; a stable directory nested under it
   (`…/usr/share/cursor/chrome_crashpad_handler`) names the app the same way
   `/opt/cursor/…` does. When no process carries that directory name, the
-  helper bills to the display name of a non-helper process whose `exe` sits
-  in the same directory, lowest pid first
+  helper bills to the display name of a non-helper process of its own uid,
+  outside `system.slice` and container or machine scopes, whose `exe` sits in
+  the same directory, lowest pid first
   (`/opt/vivaldi/chrome_crashpad_handler` → `vivaldi-bin`). A helper whose
   parent dir is the mount falls back to the ancestor walk.
 - User Services grouping is one identity for processes that share a systemd

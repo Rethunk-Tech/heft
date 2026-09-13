@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### Changed
+
+- `--check-rules` prints expected and actual values the way a rules file
+  spells them (`user_services`, `[lying, service]`) rather than as Rust debug
+  values.
+- Grouping borrows each process's basename and display name instead of
+  copying them, so a sample allocates less per process.
+
+### Documentation
+
+- HUMANS.md says why heft leaves the GPU memory of drm clients inside
+  root-owned containers unread: reading it means running a command inside each
+  container, which is a POST, and heft's container client only sends GET.
+- CONTRIBUTING.md: the pre-push `gate` builds with `--locked` and scans RustSec
+  advisories once, through `cargo deny`, whether or not cargo-audit is
+  installed.
+
 ## 0.10.0 - 2026-09-12
 
 ### Added

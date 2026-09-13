@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::ffi::CStr;
 use std::fs;
@@ -185,13 +186,20 @@ pub(crate) fn read_at(
     Some(buf)
 }
 
-/// `read_at` uncapped, as text. Invalid UTF-8 is `None`, as `fs::read_to_string` has it.
+/// `read_at` uncapped, as text. Invalid UTF-8 is replaced rather than `None`:
+/// a process chooses its own name bytes, and `status` carries that name, so a
+/// strict read would let one `PR_SET_NAME` reset its uid to 0.
 pub(crate) fn read_str(
     dir: impl AsFd,
     name: impl rustix::path::Arg,
     buf: &mut Vec<u8>,
-) -> Option<&str> {
-    std::str::from_utf8(read_at(dir, name, buf, usize::MAX)?).ok()
+) -> Option<Cow<'_, str>> {
+    Some(String::from_utf8_lossy(read_at(
+        dir,
+        name,
+        buf,
+        usize::MAX,
+    )?))
 }
 
 /// A kernel symlink target never exceeds `PATH_MAX` (4096 with its NUL), so a
@@ -215,9 +223,9 @@ pub(crate) fn read_pid(
     buf: &mut Vec<u8>,
 ) -> Option<Process> {
     let dir = open_pid(pid)?;
-    let parsed = parse_stat(read_str(&dir, c"stat", buf)?)?;
+    let parsed = parse_stat(read_at(&dir, c"stat", buf, usize::MAX)?)?;
     let uid = read_str(&dir, c"status", buf)
-        .and_then(parse_uid)
+        .and_then(|s| parse_uid(&s))
         .unwrap_or(0);
     let exe = read_exe(&dir);
     let cmdline = read_cmdline(&dir, buf);
@@ -225,7 +233,7 @@ pub(crate) fn read_pid(
         .unwrap_or_default()
         .trim()
         .to_string();
-    let rss_pages = read_str(&dir, c"statm", buf).and_then(parse_rss_pages);
+    let rss_pages = read_str(&dir, c"statm", buf).and_then(|s| parse_rss_pages(&s));
     // PSS is a level, not a rate. Kernel threads have no rollup. Prime and
     // TUI ticks between `--pss-interval` reuse last (new PIDs stay blank).
     let rollup = rollup_for(
@@ -366,15 +374,19 @@ struct StatFields {
     kthread: bool,
 }
 
-fn parse_stat(stat: &str) -> Option<StatFields> {
-    let open = stat.find('(')?;
-    let close = stat.rfind(')')?;
+/// Bytes, because the name between the parentheses is whatever the process
+/// set and need not be UTF-8; only the name is converted, lossily.
+fn parse_stat(stat: &[u8]) -> Option<StatFields> {
+    let open = stat.iter().position(|&b| b == b'(')?;
+    let close = stat.iter().rposition(|&b| b == b')')?;
     if close <= open {
         return None;
     }
-    let comm = stat[open + 1..close].to_string();
-    let rest = stat[close + 1..].split_whitespace();
-    let fields: Vec<&str> = rest.collect();
+    let comm = String::from_utf8_lossy(&stat[open + 1..close]).into_owned();
+    let fields: Vec<&str> = std::str::from_utf8(&stat[close + 1..])
+        .ok()?
+        .split_whitespace()
+        .collect();
     // after comm: state ppid pgrp ... flags ... utime stime ...
     // num_threads ... starttime (0-based: 0,1,2,6,11,12,17,19)
     let ppid = fields.get(1)?.parse().ok()?;
@@ -752,7 +764,7 @@ mod tests {
         for _ in 0..20 {
             tail.push_str(" 0");
         }
-        let p = parse_stat(&tail).unwrap();
+        let p = parse_stat(tail.as_bytes()).unwrap();
         assert_eq!(p.comm, "my app");
         assert_eq!(p.ppid, 1);
         assert_eq!(p.pgrp, 10);
@@ -768,12 +780,12 @@ mod tests {
     fn threads_and_starttime_come_from_their_own_fields() {
         let stat =
             "10 (bash) S 1 10 10 0 -1 4194304 91 0 0 0 30 40 0 0 25 5 17 0 221093059 236335104 474";
-        let p = parse_stat(stat).unwrap();
+        let p = parse_stat(stat.as_bytes()).unwrap();
         assert_eq!(p.utime, 30);
         assert_eq!(p.threads, Some(17));
         assert_eq!(p.starttime_ticks, Some(221_093_059));
         // A truncated tail costs those two columns, not the process.
-        let short = parse_stat("10 (bash) S 1 10 10 0 -1 0 0 0 0 0 30 40").unwrap();
+        let short = parse_stat(b"10 (bash) S 1 10 10 0 -1 0 0 0 0 0 30 40").unwrap();
         assert_eq!(short.utime, 30);
         assert_eq!(short.threads, None);
         assert_eq!(short.starttime_ticks, None);
@@ -785,9 +797,34 @@ mod tests {
         for _ in 0..20 {
             tail.push_str(" 0");
         }
-        let p = parse_stat(&tail).unwrap();
+        let p = parse_stat(tail.as_bytes()).unwrap();
         assert!(p.kthread);
         assert_eq!(p.ppid, 2);
+    }
+
+    /// Any process can give itself a name that is not UTF-8 with one
+    /// `PR_SET_NAME`, and must not vanish from the walk for it. A thread is
+    /// enough: `/proc/<tid>` resolves by lookup though readdir never lists it.
+    #[test]
+    fn a_name_that_is_not_utf8_keeps_the_process() {
+        let (tx, rx) = mpsc::channel();
+        let (done_tx, done_rx) = mpsc::channel::<()>();
+        let named = thread::spawn(move || {
+            // SAFETY: PR_SET_NAME copies at most 16 bytes from a NUL-terminated
+            // buffer that outlives the call, and renames only this thread.
+            unsafe { libc::prctl(libc::PR_SET_NAME, c"\xff\xfehidden".as_ptr()) };
+            // SAFETY: gettid has no side effects.
+            tx.send(unsafe { libc::gettid() }).unwrap();
+            let _ = done_rx.recv();
+        });
+        let tid = u32::try_from(rx.recv().unwrap()).unwrap();
+        let p = read_pid(tid, false, false, None, &mut Vec::new());
+        drop(done_tx);
+        named.join().unwrap();
+        let p = p.expect("the process is kept");
+        assert_eq!(p.comm, "\u{fffd}\u{fffd}hidden");
+        assert_eq!(p.uid, cpu::euid());
+        assert!(!p.cgroup.is_empty());
     }
 
     #[test]

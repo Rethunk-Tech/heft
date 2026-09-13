@@ -14,6 +14,7 @@
 use std::time::Duration;
 
 use crate::glyph;
+use crate::once::printable;
 use crate::proc;
 use crate::rules::{Facts, Rules, Stage, folder_name};
 use crate::types::{Error, Folder, HostTree, IdentNode, ProcNode, Process};
@@ -169,7 +170,7 @@ pub fn run(pid: u32, interval: Duration) -> Result<(), Error> {
 
     println!("pid {pid}");
     for (k, v) in &facts {
-        println!("  {k:<9} {v}");
+        println!("  {k:<9} {}", printable(v));
     }
 
     let Some(f) = found else {
@@ -180,12 +181,15 @@ pub fn run(pid: u32, interval: Duration) -> Result<(), Error> {
         return Ok(());
     };
 
+    // The tree keeps raw strings; process-chosen text is escaped only here,
+    // where it reaches a terminal.
+    let ident = printable(&f.ident);
     println!();
-    println!("  placed    {}", f.path);
-    println!("  identity  {}", f.ident);
+    println!("  placed    {}", printable(&f.path));
+    println!("  identity  {ident}");
     println!(
         "  instance  {} ({} process{})",
-        f.instance,
+        printable(&f.instance),
         f.siblings,
         if f.siblings == 1 { "" } else { "es" }
     );
@@ -194,20 +198,24 @@ pub fn run(pid: u32, interval: Duration) -> Result<(), Error> {
     // facts, and a pid that exited since the sample says so here.
     let p = proc::read_pid(pid, false, false, None, &mut Vec::new());
     for line in trace(Rules::load(), p.as_ref(), &f.ident) {
-        println!("{line}");
+        println!("{}", printable(&line));
     }
 
     println!();
     if let Some(list) = f.pinnable {
-        println!("  \"{}\" is the placement key for this row.", f.ident);
+        println!("  \"{ident}\" is the placement key for this row.");
         println!();
         println!(
             "  To pin it to a folder, in {}/rules.d/90-mine.json:",
-            crate::config::config_dir().display()
+            printable(&crate::config::config_dir().display().to_string())
         );
+        // JSON-quoted first, so a quote or backslash in the identity still
+        // pastes as a valid rule; `printable` then covers the C1 controls
+        // JSON leaves raw.
+        let key = serde_json::Value::from(f.ident.as_str()).to_string();
         println!(
-            "    {{ \"stage\": \"placement\", \"rules\": [ {{ \"id\": \"pin\", \"match\": {{ \"identity\": \"{}\" }}, \"folder\": \"{list}\" }} ] }}",
-            f.ident
+            "    {{ \"stage\": \"placement\", \"rules\": [ {{ \"id\": \"pin\", \"match\": {{ \"identity\": {} }}, \"folder\": \"{list}\" }} ] }}",
+            printable(&key)
         );
         println!();
         println!("  To bill it to another row instead, `\"fold_to\": \"<other identity>\"`");

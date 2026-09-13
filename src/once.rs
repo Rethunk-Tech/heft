@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::io::{self, Write};
 use std::time::Duration;
@@ -956,7 +957,7 @@ fn write_rows(out: &mut impl Write, cols: &Columns, rows: &[TableRow]) -> io::Re
         // The name column pads but never clips, so the label is cut to fit
         // first.
         let label = trunc(
-            &format!("{indent}{}", r.name),
+            &format!("{indent}{}", printable(&r.name)),
             usize::from(COLUMNS[0].width),
         );
         writeln!(
@@ -966,6 +967,26 @@ fn write_rows(out: &mut impl Write, cols: &Columns, rows: &[TableRow]) -> io::Re
         )?;
     }
     Ok(())
+}
+
+/// Text a process chose, made safe for a terminal: every C0 control, DEL and
+/// C1 control (`char::is_control`) is written as its escape (`\u{1b}`, `\t`),
+/// so a name or argv cannot send a sequence to whoever reads heft's stdout.
+/// Applied where text is printed, never to the tree: `--json` is escaped by
+/// serde, and the TUI's ratatui drops control characters itself.
+pub(crate) fn printable(s: &str) -> Cow<'_, str> {
+    if !s.chars().any(char::is_control) {
+        return Cow::Borrowed(s);
+    }
+    let mut out = String::with_capacity(s.len() + 8);
+    for c in s.chars() {
+        if c.is_control() {
+            out.extend(c.escape_default());
+        } else {
+            out.push(c);
+        }
+    }
+    Cow::Owned(out)
 }
 
 /// Cut to an exact number of terminal *columns*, not chars: a CJK or emoji
@@ -1669,6 +1690,31 @@ mod tests {
         assert_eq!(
             String::from_utf8(out).unwrap(),
             "  Applications (1)              7    19    3h    12.2     1.5     1.5K     2.0K            1.0M            3.0       1006.8K/s                                                \n    an-identity-name-long-e\u{2026}    7    19    3h    12.2     1.5     1.5K     2.0K            1.0M            3.0       1006.8K/s             0.5   12.0                         \n"
+        );
+    }
+
+    /// A process picks its own name, so another user can plant an escape
+    /// sequence in whatever `--once` prints to someone else's terminal.
+    #[test]
+    fn a_control_character_in_a_name_prints_visibly() {
+        let mut rows = folder_rows(0.0);
+        rows[1].name = "e\x1b[\u{9b}".into();
+        let mut out = Vec::new();
+        write_rows(&mut out, &every_column(), &rows).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains(r"    e\u{1b}[\u{9b} "), "{text:?}");
+        assert!(
+            !text.chars().any(|c| c.is_control() && c != '\n'),
+            "{text:?}"
+        );
+    }
+
+    #[test]
+    fn printable_escapes_every_control_and_borrows_clean_text() {
+        assert!(matches!(printable("zoë 日本\u{a0}"), Cow::Borrowed(_)));
+        assert_eq!(
+            printable("a\x1bb\x7f\u{9b}\tc\n"),
+            r"a\u{1b}b\u{7f}\u{9b}\tc\n"
         );
     }
 

@@ -1,0 +1,84 @@
+{
+  "nproc": 4,
+  "clk_tck": 100,
+  "page_size": 4096,
+  "processes": [
+    {
+      "pid": 50,
+      "ppid": 1,
+      "uid": 1000,
+      "comm": "systemd",
+      "exe": "/usr/lib/systemd/systemd",
+      "cmdline": [
+        "/usr/lib/systemd/systemd",
+        "--user"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/init.scope"
+    },
+    {
+      "pid": 200,
+      "ppid": 50,
+      "uid": 1000,
+      "comm": "foo-bin",
+      "exe": "/opt/foo/foo-bin",
+      "cmdline": [
+        "/opt/foo/foo-bin"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-gnome-foo-200.scope"
+    },
+    {
+      "pid": 201,
+      "ppid": 200,
+      "pgrp": 200,
+      "uid": 1000,
+      "comm": "foo-bin",
+      "exe": "/opt/foo/foo-bin",
+      "cmdline": [
+        "/opt/foo/foo-bin",
+        "--type=renderer",
+        "--crashpad-handler-pid=210"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-gnome-foo-200.scope"
+    },
+    {
+      "pid": 202,
+      "ppid": 200,
+      "pgrp": 200,
+      "uid": 1000,
+      "comm": "foo-bin",
+      "exe": "/opt/foo/foo-bin",
+      "cmdline": [
+        "/opt/foo/foo-bin",
+        "--type=gpu-process",
+        "--crashpad-handler-pid=210"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-gnome-foo-200.scope"
+    },
+    {
+      "pid": 210,
+      "ppid": 50,
+      "uid": 1000,
+      "comm": "chrome_crashpad",
+      "exe": "/opt/foo/chrome_crashpad_handler",
+      "cmdline": [
+        "/opt/foo/chrome_crashpad_handler",
+        "--monitor-self",
+        "--database=/home/u/.config/foo/Crash Reports"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/session.slice/org.gnome.Shell@user.service"
+    },
+    {
+      "pid": 211,
+      "ppid": 50,
+      "uid": 1000,
+      "comm": "chrome_crashpad",
+      "exe": "/opt/foo/chrome_crashpad_handler",
+      "cmdline": [
+        "/opt/foo/chrome_crashpad_handler",
+        "--no-periodic-tasks",
+        "--database=/home/u/.config/foo/Crash Reports"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/session.slice/org.gnome.Shell@user.service"
+    }
+  ]
+}

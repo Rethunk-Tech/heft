@@ -4,7 +4,7 @@ use crate::proc::{field_u64, read_str};
 
 /// `dir` is the process's `/proc/<pid>`; `buf` is the walk's reused buffer.
 pub(crate) fn read_io(dir: impl AsFd, buf: &mut Vec<u8>) -> (Option<u64>, Option<u64>) {
-    read_str(dir, c"io", buf).map_or((None, None), parse_io)
+    read_str(dir, c"io", buf).map_or((None, None), |t| parse_io(&t))
 }
 
 fn parse_io(text: &str) -> (Option<u64>, Option<u64>) {
@@ -30,8 +30,8 @@ pub(crate) fn read_rollup_kb(
 ) -> (Option<u64>, Option<u64>) {
     read_str(dir, c"smaps_rollup", buf).map_or((None, None), |text| {
         (
-            parse_pss_kb(text),
-            want_swap.then(|| parse_swap_pss_kb(text)).flatten(),
+            parse_pss_kb(&text),
+            want_swap.then(|| parse_swap_pss_kb(&text)).flatten(),
         )
     })
 }

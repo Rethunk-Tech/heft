@@ -730,6 +730,28 @@ fn a_lone_crash_helper_under_a_launcher_bills_to_its_app() {
 }
 
 #[test]
+fn a_crash_handler_bills_to_the_app_binary_in_its_install_directory() {
+    // `/opt/foo` names no process, so the helper takes the identity of the
+    // binary beside it, which is what the app's own row is called.
+    let tree = tree_of("tests/fixtures/install-dir/world.json", &Rules::builtin());
+    let user = user_of(&tree, 1000);
+    assert_eq!(
+        titles(&user.applications),
+        ["foo-bin"],
+        "one row for the app and its crash handler"
+    );
+    assert_eq!(
+        proc_names(&user.applications[0])
+            .iter()
+            .filter(|n| *n == "chrome_crashpad_handler")
+            .count(),
+        2,
+        "both handlers stay visible under foo-bin: {:?}",
+        proc_names(&user.applications[0])
+    );
+}
+
+#[test]
 fn one_placement_rule_moves_one_row_and_leaves_the_rest_alone() {
     let base = tree_of(GUI, &Rules::builtin());
     let ov = with_user(

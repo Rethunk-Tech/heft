@@ -20,6 +20,8 @@ type Procs = HashMap<u32, Process>;
 struct Ctx<'a> {
     containers: &'a ContainerIndex,
     rules: &'a Rules,
+    /// This tick's processes, for the crash helper's install-directory sibling.
+    procs: &'a Procs,
     /// Per-tick, per-pid facts the stages read. Keyed on pid and valid for one
     /// `Ctx` only: `exec` keeps the pid while changing exe and comm, and a
     /// `Ctx` lives one `build_tree` call, so no invalidation is needed.
@@ -27,7 +29,7 @@ struct Ctx<'a> {
 }
 
 impl<'a> Ctx<'a> {
-    fn new(containers: &'a ContainerIndex, rules: &'a Rules, curr: &Procs) -> Self {
+    fn new(containers: &'a ContainerIndex, rules: &'a Rules, curr: &'a Procs) -> Self {
         let judged = curr
             .iter()
             .map(|(pid, p)| (*pid, judge(p, rules)))
@@ -35,6 +37,7 @@ impl<'a> Ctx<'a> {
         Self {
             containers,
             rules,
+            procs: curr,
             judged,
         }
     }
@@ -352,7 +355,7 @@ fn session_plumbing_place(p: &Process, ctx: &Ctx<'_>) -> Option<Place> {
 }
 
 fn crash_helper_place(p: &Process, ctx: &Ctx<'_>) -> Option<Place> {
-    let owner = classify::crash_helper_app(p, ctx.classes(p), ctx.rules)?;
+    let owner = classify::crash_helper_app(p, ctx.classes(p), ctx.rules, ctx.procs.values())?;
     Some(Place {
         folder: Folder::Applications,
         uid: Some(p.uid),

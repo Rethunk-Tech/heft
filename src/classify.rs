@@ -37,22 +37,54 @@ fn strip_suffix_ignore_ascii_case<'a>(s: &'a str, suffix: &str) -> Option<&'a st
 /// Firefox/Chromium crash helper whose parent is often user systemd.
 /// `classes` is the process's own set; the helper names are the
 /// `crash_helper` class, asked of each path basename through `rules`.
-pub(crate) fn crash_helper_app(p: &Process, classes: Classes, rules: &Rules) -> Option<String> {
+///
+/// The install directory names the app, unless no process in `procs` is
+/// called that while a non-helper whose `exe` sits in the same directory is:
+/// an app row is named after its binary (`/opt/vivaldi/vivaldi-bin`), not its
+/// directory. Several candidates take the lowest pid, the one started first.
+pub(crate) fn crash_helper_app<'p>(
+    p: &Process,
+    classes: Classes,
+    rules: &Rules,
+    procs: impl IntoIterator<Item = &'p Process>,
+) -> Option<String> {
     if !classes.intersects(Classes::CRASH_HELPER) {
         return None;
     }
-    for s in p.exe.iter().chain(p.cmdline.iter()) {
-        if let Some(app) = app_from_crash_helper_path(s, rules) {
-            return Some(app);
+    let (owner, dir) = p
+        .exe
+        .iter()
+        .chain(p.cmdline.iter())
+        .find_map(|s| app_from_crash_helper_path(s, rules))?;
+    let mut sibling: Option<&Process> = None;
+    for q in procs {
+        let name = name_ref(q);
+        if name == owner {
+            return Some(owner);
+        }
+        if q.exe
+            .as_deref()
+            .and_then(|e| e.rsplit_once('/'))
+            .is_some_and(|(d, _)| d == dir)
+            && !rules
+                .classes_of_name(name)
+                .intersects(Classes::CRASH_HELPER)
+            && sibling.is_none_or(|s| q.pid < s.pid)
+        {
+            sibling = Some(q);
         }
     }
-    None
+    Some(sibling.map_or(owner, name_of))
 }
 
-fn app_from_crash_helper_path(s: &str, rules: &Rules) -> Option<String> {
+/// The owning app and the directory the helper was started from.
+fn app_from_crash_helper_path<'s>(s: &'s str, rules: &Rules) -> Option<(String, &'s str)> {
     let lower = s.to_ascii_lowercase();
     if lower.contains("/firefox/") || lower.ends_with("/firefox") {
-        return Some("firefox".to_string());
+        return Some((
+            "firefox".to_string(),
+            s.rsplit_once('/').map_or("", |(d, _)| d),
+        ));
     }
     if !rules
         .classes_of_name(basename(s))
@@ -74,7 +106,7 @@ fn app_from_crash_helper_path(s: &str, rules: &Rules) -> Option<String> {
     if is_temp_unpack_root(&lower) && is_ephemeral_mount_dir(owner) {
         return None;
     }
-    Some(owner.to_string())
+    Some((owner.to_string(), dir))
 }
 
 fn is_temp_unpack_root(lower: &str) -> bool {
@@ -259,7 +291,38 @@ mod tests {
     }
 
     #[test]
+    fn a_crash_helper_takes_the_binary_beside_it_when_its_directory_names_no_process() {
+        let rules = Rules::builtin();
+        let helper = Classes::CRASH_HELPER | Classes::WORKER;
+        let at = |pid, exe: &str| Process {
+            pid,
+            comm: basename(exe).into(),
+            exe: Some(exe.into()),
+            ..Process::default()
+        };
+        let handler = at(20, "/opt/foo/chrome_crashpad_handler");
+        let mut procs = vec![
+            handler.clone(),
+            at(9, "/opt/foo/foo-bin"),
+            at(3, "/opt/foo/foo-helper"),
+            at(1, "/opt/bar/bar"),
+        ];
+        assert_eq!(
+            crash_helper_app(&handler, helper, &rules, &procs).as_deref(),
+            Some("foo-helper"),
+            "no process is called foo, so the lowest pid beside the handler names it"
+        );
+        procs.push(at(30, "/usr/local/bin/foo"));
+        assert_eq!(
+            crash_helper_app(&handler, helper, &rules, &procs).as_deref(),
+            Some("foo"),
+            "a process named after the directory keeps the directory's name"
+        );
+    }
+
+    #[test]
     fn crash_helpers_name_their_app() {
+        const NONE: [&Process; 0] = [];
         let rules = Rules::builtin();
         let helper = Classes::CRASH_HELPER | Classes::WORKER;
         assert_eq!(
@@ -278,7 +341,8 @@ mod tests {
                     ..Process::default()
                 },
                 helper,
-                &rules
+                &rules,
+                NONE
             )
             .as_deref(),
             Some("firefox")
@@ -290,7 +354,8 @@ mod tests {
                     &["/opt/cursor/chrome_crashpad_handler"]
                 ),
                 helper,
-                &rules
+                &rules,
+                NONE
             )
             .as_deref(),
             Some("cursor"),
@@ -310,7 +375,8 @@ mod tests {
                         ..Process::default()
                     },
                     helper,
-                    &rules
+                    &rules,
+                    NONE
                 ),
                 None,
                 "a temp mount directory is not an app identity: {temp}"
@@ -326,7 +392,8 @@ mod tests {
                     ..Process::default()
                 },
                 helper,
-                &rules
+                &rules,
+                NONE
             )
             .as_deref(),
             Some("mounté"),
@@ -346,7 +413,8 @@ mod tests {
                     ..Process::default()
                 },
                 helper,
-                &rules
+                &rules,
+                NONE
             )
             .as_deref(),
             Some("cursor"),

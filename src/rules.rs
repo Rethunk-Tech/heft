@@ -384,8 +384,9 @@ pub fn print_check() -> Result<bool, crate::types::Error> {
     use std::io::Write;
     let r = Rules::load().report(&Rules::builtin());
     let mut out = std::io::stdout().lock();
+    // A line carries file names and example subjects, which are not ours.
     for l in &r.lines {
-        writeln!(out, "{l}")?;
+        writeln!(out, "{}", crate::once::printable(l))?;
     }
     writeln!(
         out,

@@ -1,3 +1,4 @@
+use crate::identity;
 use crate::rules::{Classes, Rules};
 use crate::types::Process;
 
@@ -42,6 +43,8 @@ fn strip_suffix_ignore_ascii_case<'a>(s: &'a str, suffix: &str) -> Option<&'a st
 /// called that while a non-helper whose `exe` sits in the same directory is:
 /// an app row is named after its binary (`/opt/vivaldi/vivaldi-bin`), not its
 /// directory. Several candidates take the lowest pid, the one started first.
+/// Candidates are the helper uid's processes outside `system.slice` and any
+/// container or machine scope.
 pub(crate) fn crash_helper_app<'p>(
     p: &Process,
     classes: Classes,
@@ -57,7 +60,16 @@ pub(crate) fn crash_helper_app<'p>(
         .chain(p.cmdline.iter())
         .find_map(|s| app_from_crash_helper_path(s, rules))?;
     let mut sibling: Option<&Process> = None;
-    for q in procs {
+    // Only the helper's own user's session processes can be its app: a root
+    // daemon, a container or another user's app in the same install directory
+    // would otherwise take the row by pid order.
+    let own = |q: &&Process| {
+        q.uid == p.uid
+            && !(identity::in_system_slice(&q.cgroup) && !identity::in_user_slice(&q.cgroup))
+            && identity::docker_scope_id(&q.cgroup).is_none()
+            && identity::machine_scope_name(&q.cgroup).is_none()
+    };
+    for q in procs.into_iter().filter(own) {
         let name = name_ref(q);
         if name == owner {
             return Some(owner);

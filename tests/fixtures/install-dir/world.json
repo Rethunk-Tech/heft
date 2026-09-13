@@ -4,6 +4,39 @@
   "page_size": 4096,
   "processes": [
     {
+      "pid": 100,
+      "ppid": 1,
+      "uid": 0,
+      "comm": "foo-daemon",
+      "exe": "/opt/foo/foo-daemon",
+      "cmdline": [
+        "/opt/foo/foo-daemon"
+      ],
+      "cgroup": "0::/system.slice/foo-daemon.service"
+    },
+    {
+      "pid": 120,
+      "ppid": 1,
+      "uid": 1000,
+      "comm": "foo-agent",
+      "exe": "/opt/foo/foo-agent",
+      "cmdline": [
+        "/opt/foo/foo-agent"
+      ],
+      "cgroup": "0::/system.slice/docker-abababababababababababababababababababababababababababababababab.scope"
+    },
+    {
+      "pid": 150,
+      "ppid": 1,
+      "uid": 1001,
+      "comm": "foo-app",
+      "exe": "/opt/foo/foo-app",
+      "cmdline": [
+        "/opt/foo/foo-app"
+      ],
+      "cgroup": "0::/user.slice/user-1001.slice/user@1001.service/app.slice/app-gnome-foo-150.scope"
+    },
+    {
       "pid": 50,
       "ppid": 1,
       "uid": 1000,

@@ -732,7 +732,9 @@ fn a_lone_crash_helper_under_a_launcher_bills_to_its_app() {
 #[test]
 fn a_crash_handler_bills_to_the_app_binary_in_its_install_directory() {
     // `/opt/foo` names no process, so the helper takes the identity of the
-    // binary beside it, which is what the app's own row is called.
+    // binary beside it, which is what the app's own row is called. The root
+    // daemon, the container process and the other user's app sit in the same
+    // directory with lower pids, and none of them is this user's app.
     let tree = tree_of("tests/fixtures/install-dir/world.json", &Rules::builtin());
     let user = user_of(&tree, 1000);
     assert_eq!(
@@ -740,6 +742,7 @@ fn a_crash_handler_bills_to_the_app_binary_in_its_install_directory() {
         ["foo-bin"],
         "one row for the app and its crash handler"
     );
+    assert_eq!(titles(&user_of(&tree, 1001).applications), ["foo-app"]);
     assert_eq!(
         proc_names(&user.applications[0])
             .iter()

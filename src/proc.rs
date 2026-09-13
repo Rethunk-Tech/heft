@@ -26,14 +26,19 @@ use crate::{gpu, io as pio, net, psi};
 /// those files one at a time while this process waits. Splitting the pid list
 /// across threads overlaps that wait.
 ///
-/// Measured on a 777-pid host, `--once --interval 0.05` (a plain walk, then a
-/// PSS walk), ten interleaved runs each: 1.02s serial to 0.41s parallel. The
-/// two walks do not gain equally. A plain tick goes 120ms to 20ms, which is
-/// what makes the documented 0.05s `--interval` floor reachable at all; the
-/// PSS tick only goes 850ms to 340ms, because `smaps_rollup` makes the kernel
-/// walk that process's page tables and that is memory-bound rather than
-/// latency-bound. So a PSS tick still stretches its interval, exactly as
-/// HUMANS.md says it does — this made the ordinary tick cheap, not that one.
+/// Measured on a 723-pid, 32-CPU host, pinned with `taskset`, ten interleaved
+/// runs each, median: `--once --interval 0.05` (a plain walk, then a PSS walk)
+/// takes 618 ms on one CPU, 376 ms on four and 170 ms on 32; `--fixture` (one
+/// plain walk) 37.4, 19.0 and 11.2 ms. The PSS walk gains less, because
+/// `smaps_rollup` makes the kernel walk that process's page tables, which is
+/// memory-bound rather than latency-bound, so a PSS tick still stretches its
+/// interval, exactly as HUMANS.md says it does.
+///
+/// Parallel walkers cost kernel time, though: idle `--json --follow` pinned to
+/// 1, 4, 8, 16 and 32 CPUs spent 3.96, 4.19, 4.27, 4.57 and 5.25-5.66 s of CPU
+/// per 30 s. So the continuous modes, which pay that every tick forever, take
+/// `FOLLOW_WALKERS`, while `--once`, one-shot `--json`, `--fixture` and
+/// `--explain`, where latency is the point, take every CPU.
 ///
 /// Workers live on the Sampler (so `--once` / `--json` still pool their two
 /// walks) and `sample_stream` drop joins them. A `thread::scope` per sample
@@ -54,6 +59,9 @@ struct WalkPool {
     handles: Vec<JoinHandle<()>>,
 }
 
+/// Walk workers for the TUI and `--follow`; see `WalkPool`.
+const FOLLOW_WALKERS: usize = 4;
+
 struct WalkJob {
     pids: Vec<u32>,
     want_pss: bool,
@@ -67,8 +75,11 @@ enum WalkChunk {
 }
 
 impl WalkPool {
-    fn new() -> Self {
-        let n = thread::available_parallelism().map_or(1, NonZero::get);
+    /// At most `max` workers, and never more than the CPUs this process may run on.
+    fn new(max: usize) -> Self {
+        let n = thread::available_parallelism()
+            .map_or(1, NonZero::get)
+            .min(max);
         let (result_tx, result_rx) = mpsc::channel();
         let mut job_txs = Vec::with_capacity(n);
         let mut handles = Vec::with_capacity(n);
@@ -580,11 +591,11 @@ struct Sampler {
 }
 
 impl Sampler {
-    fn prime(pss_interval: Duration) -> Self {
+    fn prime(pss_interval: Duration, walkers: usize) -> Self {
         let rules = crate::rules::Rules::load();
         let mut inspect_cache = InspectCache::default();
         let mut net = net::Sampler::default();
-        let pool = WalkPool::new();
+        let pool = WalkPool::new(walkers);
         let prev = Arc::new(pool.collect(false, false, None));
         // Netns counters are levels, so the first published tick needs a
         // baseline here or `--once` and `--json` would always print a blank
@@ -667,7 +678,7 @@ pub(crate) fn sample_stream(
     pss_interval: Duration,
     mut emit: impl FnMut(&HostTree) -> Result<(), crate::types::Error>,
 ) -> Result<(), crate::types::Error> {
-    let mut sampler = Sampler::prime(pss_interval);
+    let mut sampler = Sampler::prime(pss_interval, FOLLOW_WALKERS);
     let mut first = true;
     loop {
         thread::sleep(interval);
@@ -678,7 +689,7 @@ pub(crate) fn sample_stream(
 }
 
 pub(crate) fn sample_world(interval: Duration) -> HostTree {
-    let mut sampler = Sampler::prime(interval);
+    let mut sampler = Sampler::prime(interval, usize::MAX);
     thread::sleep(interval);
     sampler.tick(true)
 }
@@ -696,7 +707,7 @@ pub(crate) fn sample_world(interval: Duration) -> HostTree {
 pub fn print_fixture() -> Result<(), crate::types::Error> {
     use std::io::Write;
     let consts = cpu::host_consts();
-    let procs = WalkPool::new().collect(false, false, None);
+    let procs = WalkPool::new(usize::MAX).collect(false, false, None);
     let home = std::env::var("HOME")
         .ok()
         .filter(|h| h.len() > 1)
@@ -748,7 +759,7 @@ pub(crate) fn spawn_sampler(
     thread::Builder::new()
         .name("heft-sample".into())
         .spawn(move || {
-            let mut sampler = Sampler::prime(pss_interval);
+            let mut sampler = Sampler::prime(pss_interval, FOLLOW_WALKERS);
             loop {
                 let start = Instant::now();
                 let tree = sampler.tick(false);

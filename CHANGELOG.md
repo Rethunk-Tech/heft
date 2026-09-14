@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `[` `]` change the sort column, like `Shift-←` `Shift-→`, for terminals
+  that never pass Shift-arrows through (Konsole, the Linux console, rxvt).
+
 ## 0.11.0 - 2026-09-13
 
 ### Changed

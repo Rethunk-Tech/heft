@@ -170,7 +170,7 @@ because the kernel does not virtualise `meminfo` and `stat` per namespace.
 | `PgUp` `PgDn` / `Home` `End` | page or jump the cursor |
 | Enter / Space | collapse or expand |
 | `←` `→` / `h` `l` | scroll columns when the terminal is narrower than the table |
-| `Shift-←` `Shift-→` | previous or next sort column (default PSS descending) |
+| `Shift-←` `Shift-→` / `[` `]` | previous or next sort column (default PSS descending); `[` `]` for terminals that keep Shift-arrows (Konsole's tab switching, the Linux console, rxvt) |
 | `/` | filter by regex on the name and argv (Enter applies, Esc cancels) |
 | `d` | reverse the sort direction |
 | `H` | hide the current sort column (`name` is refused) |
@@ -427,7 +427,7 @@ survive one; rules.d files, which heft never writes, keep theirs.
 Labels are `name`, `spark`, `nproc`, `threads`, `age`, `core`,
 `machine`, `pss`, `rss`, `swap`, `vram`, `gtt`, `gfx`, `compute`, `diskr`,
 `diskw`, `cpustall`, `iostall`, `memstall`, `netns_rx`, `netns_tx`. `--sort`
-and `Shift-←` `Shift-→` take all of them except `spark`, `--hide` all of
+and `Shift-←` `Shift-→` (`[` `]`) take all of them except `spark`, `--hide` all of
 them except `name`, and `--order` all of them. With no file or no `hide_columns` key, `cpustall`,
 `iostall` and `memstall` are hidden and the rest show in compiled order. An
 unknown label in the file warns on stderr and is ignored; on `--hide` or

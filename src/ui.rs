@@ -714,9 +714,14 @@ fn handle_key(
                 app.cursor += 1;
             }
         }
-        KeyCode::Left | KeyCode::Right if mods.contains(KeyModifiers::SHIFT) => {
+        // `[` `]` because some terminals never deliver Shift-arrow: Konsole
+        // binds it to tab switching, the Linux console sends a bare arrow, and
+        // rxvt's `ESC [ c` / `ESC [ d` is a parse error crossterm drops.
+        KeyCode::Left | KeyCode::Right | KeyCode::Char('[' | ']')
+            if mods.contains(KeyModifiers::SHIFT) || matches!(code, KeyCode::Char(_)) =>
+        {
             let s = Sort::from_label(&app.view.sort);
-            let s = if code == KeyCode::Left {
+            let s = if matches!(code, KeyCode::Left | KeyCode::Char('[')) {
                 s.prev(&app.cols)
             } else {
                 s.next(&app.cols)
@@ -2653,12 +2658,17 @@ mod tests {
         handle_key(&mut app, KeyCode::Char('A'), KeyModifiers::SHIFT, &rows).unwrap();
         assert_eq!(app.view.filter, "A");
 
-        // Shift-arrow is the only way to change the sort, so SHIFT on an arrow
-        // must not fall through to the bare arrow's column scroll.
+        // SHIFT on an arrow changes the sort and must not fall through to the
+        // bare arrow's column scroll; `]` and `[` do the same unshifted.
         let mut app = test_app();
         handle_key(&mut app, KeyCode::Right, KeyModifiers::SHIFT, &rows).unwrap();
-        assert_ne!(app.view.sort, View::default().sort);
+        let shifted = app.view.sort.clone();
+        assert_ne!(shifted, View::default().sort);
         assert_eq!(app.col_off, 0);
+        handle_key(&mut app, KeyCode::Char('['), KeyModifiers::NONE, &rows).unwrap();
+        assert_eq!(app.view.sort, View::default().sort);
+        handle_key(&mut app, KeyCode::Char(']'), KeyModifiers::NONE, &rows).unwrap();
+        assert_eq!(app.view.sort, shifted);
 
         // And Ctrl-C quits out of the filter editor too, rather than typing.
         let mut app = test_app();

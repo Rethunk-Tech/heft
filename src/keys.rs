@@ -16,6 +16,7 @@ pub(crate) const KEYS: &[(&str, &str)] = &[
     ("Enter  Space", "expand / collapse"),
     ("{left} {right}  h l", "scroll columns"),
     ("Shift-{left} Shift-{right}", "change sort column"),
+    ("[ ]", "change sort column"),
     ("/", "filter by regex"),
     ("d", "reverse sort"),
     ("H", "hide sort column"),

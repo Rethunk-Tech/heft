@@ -1203,6 +1203,39 @@ mod tests {
         assert_eq!(r.examples, 127);
     }
 
+    /// Every variant of a derived enum, by index: serde deserializes one from
+    /// its variant index, so there is no list here a new variant could miss.
+    fn variants<T: serde::de::DeserializeOwned>() -> Vec<T> {
+        use serde::de::IntoDeserializer;
+        (0u32..)
+            .map_while(|i| {
+                T::deserialize(IntoDeserializer::<serde::de::value::Error>::into_deserializer(i))
+                    .ok()
+            })
+            .collect()
+    }
+
+    /// A variant with no bitflags constant sets a bit `names` never prints.
+    #[test]
+    fn every_class_variant_has_a_named_bit() {
+        let classes: Vec<Class> = variants();
+        assert!(!classes.is_empty());
+        for c in classes {
+            let names = Classes::of(&[c]).names();
+            assert_eq!(names.len(), 1, "{c:?} has no Classes constant");
+            let back: Class = serde_json::from_value(names[0].clone().into()).unwrap();
+            assert_eq!(back, c, "{c:?} prints as {}", names[0]);
+        }
+        let flags: Vec<UnitFlag> = variants();
+        assert!(!flags.is_empty());
+        for f in flags {
+            let names = UnitFlags::of(&[f]).names();
+            assert_eq!(names.len(), 1, "{f:?} has no UnitFlags constant");
+            let back: UnitFlag = serde_json::from_value(names[0].clone().into()).unwrap();
+            assert_eq!(back, f, "{f:?} prints as {}", names[0]);
+        }
+    }
+
     /// `names` prints the constant's name and a file spells the serde name, so
     /// each printed name must deserialize back to the class on that bit.
     #[test]

@@ -168,17 +168,15 @@ pub fn run(pid: u32, interval: Duration) -> Result<bool, Error> {
     if !visible && found.is_none() {
         // Not an error message: the pid may simply have gone, and that is the
         // answer. Still a miss, so the exit code says so.
-        writeln!(out, "pid {pid}: not visible")?;
-        writeln!(out)?;
+        writeln!(out, "pid {pid}: not visible\n")?;
         writeln!(
             out,
-            "  It exited, or /proc hides it -- another user's process, a"
+            concat!(
+                "  It exited, or /proc hides it -- another user's process, a\n",
+                "  hidepid mount, or a PID namespace. heft can only group what\n",
+                "  it can walk.",
+            )
         )?;
-        writeln!(
-            out,
-            "  hidepid mount, or a PID namespace. heft can only group what"
-        )?;
-        writeln!(out, "  it can walk.")?;
         return Ok(false);
     }
 
@@ -188,16 +186,15 @@ pub fn run(pid: u32, interval: Duration) -> Result<bool, Error> {
     }
 
     let Some(f) = found else {
-        writeln!(out)?;
         writeln!(
             out,
-            "  placed    nowhere: heft read this process but no row holds it."
+            concat!(
+                "\n",
+                "  placed    nowhere: heft read this process but no row holds it.\n",
+                "            A kernel thread with no cgroup, or it exited between\n",
+                "            the two walks a sample takes.",
+            )
         )?;
-        writeln!(
-            out,
-            "            A kernel thread with no cgroup, or it exited between"
-        )?;
-        writeln!(out, "            the two walks a sample takes.")?;
         return Ok(true);
     };
 
@@ -224,8 +221,7 @@ pub fn run(pid: u32, interval: Duration) -> Result<bool, Error> {
 
     writeln!(out)?;
     if let Some(list) = f.pinnable {
-        writeln!(out, "  \"{ident}\" is the placement key for this row.")?;
-        writeln!(out)?;
+        writeln!(out, "  \"{ident}\" is the placement key for this row.\n")?;
         writeln!(
             out,
             "  To pin it to a folder, in {}/rules.d/90-mine.json:",
@@ -236,26 +232,24 @@ pub fn run(pid: u32, interval: Duration) -> Result<bool, Error> {
             "    {{ \"stage\": \"placement\", \"rules\": [ {{ \"id\": \"pin\", \"match\": {{ \"identity\": {} }}, \"folder\": \"{list}\" }} ] }}",
             json_key(&f.ident)
         )?;
-        writeln!(out)?;
         writeln!(
             out,
-            "  To bill it to another row instead, `\"fold_to\": \"<other identity>\"`"
+            concat!(
+                "\n",
+                "  To bill it to another row instead, `\"fold_to\": \"<other identity>\"`\n",
+                "  in place of `folder`.",
+            )
         )?;
-        writeln!(out, "  in place of `folder`.")?;
     } else {
         writeln!(
             out,
-            "  No placement rule can move this row. A container is placed by its"
+            concat!(
+                "  No placement rule can move this row. A container is placed by its\n",
+                "  runtime labels and a kernel thread by the cgroup it is in, so\n",
+                "  `fold_to` and `folder` skip them. A rule with `owner_uid` sets a\n",
+                "  container's owning uid by name.",
+            )
         )?;
-        writeln!(
-            out,
-            "  runtime labels and a kernel thread by the cgroup it is in, so"
-        )?;
-        writeln!(
-            out,
-            "  `fold_to` and `folder` skip them. A rule with `owner_uid` sets a"
-        )?;
-        writeln!(out, "  container's owning uid by name.")?;
     }
     Ok(true)
 }

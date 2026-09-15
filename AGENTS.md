@@ -35,7 +35,7 @@ src/ui.rs            ratatui header + tree table
 src/tty.rs           panic hook + signal handler; restores the terminal
 src/glyph.rs         unicode, legacy or ascii bar/rule/marker characters; resolved once
 src/keys.rs          the one TUI key list; build.rs includes it for the man page
-src/root.rs          the /proc and /sys prefix behind --proc-root, resolved once
+src/root.rs          the /proc and /sys prefix behind --proc-root, resolved once; tests/live_proc.rs:a_proc_root_is_the_only_proc_heft_reads guards it
 src/caps.rs          --trend auto: one round trip asking the terminal what it draws
 src/kgp.rs           --trend kitty: TREND as one graphics-protocol image; shm or inline
 src/sixel.rs         --trend sixel: the same image, RLE sixel, positioned from the frame
@@ -77,14 +77,12 @@ truncated id would silently lose its row.
 
 ## Grouping invariants
 
-- **Host** is the machine, not the compositor or a terminal.
 - Bucket (`src/group.rs`): docker/libpod scope or helper that names that id →
   Containers; `identity::is_kernel` or leftover `system.slice`
-  (`in_system_slice` and not `in_user_slice`) → System; else that uid's User.
-- Under a User: user-instance unit `*.service` not starting with `app-` →
-  User Services; else Applications. `init.scope` + `systemd --user` is a user
-  service. Known compositors (the `compositor` class) are user services even
-  if the unit looks like an app.
+  (`in_system_slice` and not `in_user_slice`) → System; else that uid's User,
+  where a user-instance `*.service` not starting with `app-` is User Services
+  and the rest Applications. `init.scope` + `systemd --user` is a user
+  service; so is the `compositor` class whatever its unit looks like.
 - `identity::unit_line` picks the one cgroup line a unit name is read from:
   the `0::` line on v2, else `1:name=systemd:`. The v1 trap is on that function.
 - Display name is `classify::name_of` (`exe` basename else `comm`), not the
@@ -167,14 +165,13 @@ truncated id would silently lose its row.
 `once::follow_table` and `once::follow_json` share rendering with the one-shot
 pair through `render_table` and `json_text`.
 
-`main::resolve_view` builds one `View` and `main` hands it to whichever surface runs, so
-precedence lives in one place: `--sort`, `--asc` / `--desc`, `--filter`,
-`--user`, `--top` and `--order` overwrite whatever the saved view held,
-`--hide` adds to its list, and only `sort`, `desc`, `filter`, `hide_columns`
-and `column_order` are ever read back (`users` and `top` are
-`#[serde(skip)]`). `--once` starts from `config::load_view()`; `--json` starts
-from `View::default()` and never reads the file. `--filter`, `--top`, `--hide`
-and `--order` are `conflicts_with = "json"`: the JSON shape is a contract.
+`main::resolve_view` builds the one `View` every surface runs on, so
+flag-over-`view.json` precedence lives in one place: `--hide` adds to the saved
+list, every other flag overwrites, and only `sort`, `desc`, `filter`,
+`hide_columns` and `column_order` are read back (`users` and `top` are
+`#[serde(skip)]`). `--once` starts from `config::load_view()`; `--json` from
+`View::default()`, never the file. `--filter`, `--top`, `--hide` and `--order`
+are `conflicts_with = "json"` because the JSON shape is a contract.
 
 An unknown `--sort` label is a clap `InvalidValue` exit, not
 `Sort::from_label`'s fallback — a stale `view.json` must not stop the monitor,
@@ -183,13 +180,12 @@ error; `src/cli.rs` cannot reach `COLUMNS` because `build.rs` includes it
 standalone to generate the completions and man page.
 
 `once::Filter` (`regex-lite`; the measurement is on it) returns `None` from
-`new` rather than an error, and each caller decides what that means: clap
-`InvalidValue` for `--filter`, warn-and-ignore for a stale `view.json`, and in
-the TUI the last compiling pattern stays live behind a `?` in the footer.
+`new` rather than an error, and each caller decides what that means (clap
+`InvalidValue`, a `view.json` warning, the TUI's `?` footer).
 
-`once::printable` is the one place process text is escaped before it reaches
-stdout (`--once`, `--explain`, `--check-rules`); the tree and `--json` keep raw
-strings, and the TUI relies on ratatui dropping control characters.
+`once::printable` is the one place process text is escaped before stdout; the
+tree and `--json` keep raw strings, and the TUI relies on ratatui dropping
+control characters.
 
 `--filter` and `/` match `TableRow::search` / `Flat::search` (`once::haystack`)
 when one is built, else `name`; `keep_matches`, `keep_top` and `Filter` carry
@@ -240,27 +236,22 @@ Embedding costs 25,312 bytes of stripped release binary (1.3%).
 
 The contract, which a change may extend but not alter:
 
-- Stages run `unit`, `class`, `session`, `app`, `placement`. `unit` and
-  `class` union every matching rule (`chrome_crashpad_handler` is
-  `crash_helper` and `worker`; `flatpak-session-helper.service` is `lying` and
-  `service`); the other three take the first match. `session` runs before
+- Stages run `unit`, `class`, `session`, `app`, `placement`; the first two
+  union every match, the rest take the first. `session` runs before
   `classify::crash_helper_app` and `app` after it, both in
-  `group::direct_place`, and no built-in example can prove that order, so
+  `group::direct_place`; no built-in example can prove that order, so
   `tests/grouping.rs:a_user_session_rule_runs_before_the_crash_helper_and_an_app_rule_after_it`
   holds it.
-- Every string test folds ASCII case on both sides: patterns are lowercased
-  once at compile, haystacks never. Unicode case is not folded.
-- Sources rank XDG, then `/etc`, then built-ins, whatever the file names;
-  `HEFT_RULES_PATH` replaces the first two with its entries in order. File
-  names sort bytewise within a source. A user rule therefore beats every
-  built-in, and moving a table into a built-in file cannot outrank one.
-- `disable` entries are `<file>.json` or `<file>.json:<id>`, collected from
-  every file that compiled before any rule is kept, applied to that file name
-  in every source, and never undone, so the result is order independent. A
-  file that fails to compile contributes none.
-- Ids are `[a-z0-9-]+`, unique per file. A `match` object carries one key. An
-  empty list, `all`, `any` or string pattern fails the file (`name_prefix ""`
-  matched every process), and so does `script` outside a class rule whose
+- ASCII case folds on both sides: patterns are lowercased once at compile,
+  haystacks never. Unicode case is not folded.
+- Source order (XDG, `/etc`, built-ins; `HEFT_RULES_PATH` in place of the
+  first two) outranks file name, so moving a table into a built-in file
+  cannot outrank a user rule.
+- `disable` entries are collected from every file that compiled before any
+  rule is kept, applied to that file name in every source, and never undone,
+  so the result is order independent.
+- An empty list, `all`, `any` or string pattern fails the file (`name_prefix
+  ""` matched every process), as does `script` outside a class rule whose
   classes are exactly `[anonymous_script]`: `judged` never sets
   `Facts::script`, so it would be a silent miss. Half a file loaded is a rule
   set nobody wrote.
@@ -269,8 +260,6 @@ The contract, which a change may extend but not alter:
   rules. `group::override_place` runs only on Applications and User Services.
   `owner_uid` is consulted before workdir and bind-mount inference in
   `containers::insert_resolved`.
-- Built-in file names and rule ids are what `disable`, `--check-rules` and
-  `--explain` print, so renaming one is a breaking change for the changelog.
 
 `group::Ctx::new` builds `judged` once per pid per tick: the unit, its flags
 and the class set, plus the positional-argv launcher test in `group::judge`.
@@ -299,10 +288,9 @@ rules_timing`, with `HEFT_BENCH_FIXTURE` naming a `--fixture` dump.
 cannot reach a binary-driven test.
 
 `--check-rules` (`rules::print_check`, judged in `Rules::report`) never
-samples, so it runs in the bare container. User examples are judged against
-the merged set. Exit 1 on any failure or any file that did not load. An
-example tests one process's facts, so anything an ancestor walk decides stays
-a fixture test.
+samples, so it runs in the bare container. An example tests one process's
+facts against the merged set, so anything an ancestor walk decides stays a
+fixture test.
 
 `--explain <PID>` is `src/explain.rs`, whose module doc carries the design.
 `locate` recurses through `ProcNode::children`, since the pid asked about is
@@ -323,37 +311,33 @@ field there when grouping starts reading one, or reports stop reproducing.
 | `%machine` | `%core / nproc` |
 | RSS | `/proc/pid/statm` |
 | PSS | `/proc/pid/smaps_rollup` — cadence in [HUMANS.md](HUMANS.md) |
-| SWAP | `SwapPss:` from that same rollup read, sharing the PSS cadence (why `SwapPss`: `Metrics::swap_bytes`). Blank on a `SwapTotal: 0` host |
+| SWAP | `SwapPss:` from the PSS rollup read (`Metrics::swap_bytes`) |
 | Host swap | `SwapTotal` − `SwapFree` from `/proc/meminfo` (`SwapCached` is neither, so it is not subtracted) |
-| THR | `num_threads`, field 20 of the `/proc/pid/stat` already parsed for utime/stime; sums like `nproc` |
-| AGE | `now - (btime + starttime / CLK_TCK)`; `starttime` is field 22 of that `stat`, `btime` read once per run. Aggregates take the oldest (`Metrics::age_secs`) |
+| THR | `num_threads`, field 20 of the `/proc/pid/stat` already parsed for utime/stime |
+| AGE | `now - (btime + starttime / CLK_TCK)`; `starttime` is field 22 of that `stat`, `btime` read once per run; aggregates in `Metrics::age_secs` |
 | Disk R/W | Δ `read_bytes` / `write_bytes` from `/proc/pid/io` |
 | GPU mem | first tier the client publishes of `gpu::MEM_PREFIXES`; regions `vram`/`gtt` (amdgpu), `local0`/`system0` (i915), `vram0`/`gtt` (xe). The `drm-memory-*` tier was measured on a 4750G |
 | NETNS RX/TX | Δ non-`lo` bytes from `/proc/<container-scope-pid>/net/dev`; a new pid or a counter that went backwards discards the interval |
-| CPU/IO/MEM ST | Δ `some ... total=` microseconds from that cgroup's `{cpu,io,memory}.pressure` over wall clock (`some`, not `full`: `psi.rs`). Several cgroups on an identity/instance row: max of members' `some`, per resource. A counter that went backwards discards the interval |
-| Host `psi` | `some avg10` from `/proc/pressure/{cpu,io,memory}`, on the `--once` and `--json` host line only; `psi.rs` and `psi::header_tail` say why |
+| CPU/IO/MEM ST | Δ `some ... total=` microseconds from that cgroup's `{cpu,io,memory}.pressure` over wall clock; several cgroups on a row: max of members' `some`, per resource (`psi.rs` says why `some` and why max). A counter that went backwards discards the interval |
+| Host `psi` | `some avg10` from `/proc/pressure/{cpu,io,memory}`, `--once` and `--json` host line only (`psi::header_tail`) |
 | gfx% / compute% | `drm-engine-gfx`/`-render` and `-compute` ns deltas over wall clock. xe: `drm-cycles-rcs`/`-ccs` delta over the `drm-total-cycles-*` delta, each divided by `drm-engine-capacity-*` (`cpu::cycles_pct`). Two formulas, deliberately not unified |
 
 | surface | rule |
 | --- | --- |
 | CPU bar | `/proc/stat` Δ user+nice / system+irq+softirq / iowait; idle+steal unfilled |
-| MEM bar | one MemTotal width when APU VRAM is unified; segment order in `ui::mem_key`, contents and clipping in `mem::clip_used` (reclaimable cache sits beyond `used`, never inside it); unique colour and alternating `█▓▒` fill per segment, swatches only in `?` (`ui::bar_key`) |
-| Discrete VRAM | own tank against `mem_info_vram_total`, sharing the MEMORY row with the MEM bar; only `vram` drops out of the MEM segments — GTT is pinned system RAM and stays in MEM |
-| Swap | own row against `SwapTotal`, never a MEM segment; absent when `SwapTotal` is 0 (`ui::header_rows`) |
+| MEM bar | one MemTotal width when APU VRAM is unified; segment order `ui::mem_key`, contents and clipping `mem::clip_used` (reclaimable cache sits beyond `used`, never inside it), swatches `ui::bar_key` |
+| Discrete VRAM | own tank against `mem_info_vram_total` on the MEMORY row; only `vram` leaves the MEM segments, GTT being pinned system RAM |
+| Swap | own row against `SwapTotal`, never a MEM segment (`ui::header_rows`) |
 | Layout | CPU and MEMORY, unbordered, plus a SWAP row where there is swap. Discrete VRAM shares the MEMORY row (`ui::tank_widths`). `ui::bar_prefix` aligns the labels and every row draws its bar to `mem_header_line`'s width so the brackets stack; persistent rules header↔tree and tree↔footer |
 | Disk R/W | table columns only (formatted rates change width every tick); after compute, before the stall trio |
 | THR / AGE | beside `N`, before the metric columns: all three say what the row *is* rather than what it is currently costing |
-| CPU/IO/MEM ST | one non-root cgroup is that cgroup's `some` rate; several is the max of members' `some`, per resource (sum exceeds 100% on overlap; average hides a fully-stalled member). A process row only when it is alone in its cgroup. Folder, User and Host rows are blank — `user-<uid>.slice` is not the User row (a rootful container is billed to its owner from `system.slice`) nor `system.slice` the System row (kernel threads are in the root cgroup). Root-cgroup rows are blank because that pressure is the machine's, the same rule as a `--network=host` container |
-| NETNS RX/TX | last two columns, named for the namespace and not the resource: a blank cell means the row owns no namespace, not that it moved no bytes |
+| CPU/IO/MEM ST | max rather than sum or average across a row's cgroups: sum exceeds 100% on overlap, average hides a fully-stalled member. Folder, User and Host rows are blank because `user-<uid>.slice` is not the User row (a rootful container bills to its owner from `system.slice`) nor `system.slice` the System row (kernel threads are in the root cgroup); root-cgroup pressure is the machine's, the same rule as a `--network=host` container |
 | Ordering | one comparator in `once.rs` for every level; a `None` metric sorts last in either direction, name breaks ties, stable over `group::proc_forest` pid order |
 
 TUI sampling runs on a background thread; the ratatui loop only swaps in the
 last complete tree and never blocks on `/proc` I/O. `proc::WalkPool` carries
 the walk pool's measurements and why it is a pool; `gpu.rs` the 64 KiB fdinfo
 skip and the empty-prefilter rule.
-
-`src/root.rs` is the `--proc-root` prefix;
-`tests/live_proc.rs:a_proc_root_is_the_only_proc_heft_reads` guards it.
 
 `ui::alarming` marks the cells that say a row is in trouble — a stall column at or over `STALL_ALARM` — with `ui::alarm_style`: red
 where there is colour, `REVERSED` where there is not, which is the fallback
@@ -369,100 +353,32 @@ process node carrying `cmdline`.
 
 ## Packaging
 
-`packaging/aur/` holds `heft` (release tarball), `heft-bin` (release musl
-binaries, no `depends`) and `heft-git` (main), and is their source of truth;
-the AUR repositories are push targets, never edited in place. Each PKGBUILD
-says why it carries `options=('!strip' '!debug')`.
-
-`packaging/aur/LICENSE` is 0BSD and covers the packaging sources only, not
-heft itself: the AUR submission guidelines require a package source licence in
-each AUR repository, and one that is not 0BSD makes the package ineligible for
-promotion to the official repositories. The push copies it in beside PKGBUILD
-and .SRCINFO.
-
-Editing a PKGBUILD means re-running `update.sh`: a `.SRCINFO` is generated
-metadata, and a stale one publishes the wrong dependencies and version to
-every AUR consumer while the PKGBUILD beside it looks right. The AUR accepts
-pushes to `master` only.
-
-`update.sh <version>` sets `pkgver`, refreshes the checksums and regenerates
-every `.SRCINFO`. The binary sums are read from the `.sha256` files the
-release publishes rather than from a re-download, because `makepkg -g` hashes
-only the current architecture's sources — `updpkgsums` on an x86_64 machine
-leaves `sha256sums_aarch64` stale and still looking right. It needs makepkg,
-so it runs inside `archlinux:base-devel`.
-
-The `aur` job in `release.yml` runs it after the release exists, since the
-checksums are of assets that did not exist before, commits the refresh back to
-main, and pushes `heft` and `heft-bin` to the AUR when the `AUR_SSH_KEY`
-secret is set (it skips with a notice when it is not).
-
-The secret is deliberately not set, so that step always skips and exits green: once the
-release and the job's refresh commit exist, pull main and push both by hand —
-clone `ssh://aur@aur.archlinux.org/<pkg>.git`, copy `PKGBUILD`, `.SRCINFO` and
-`packaging/aur/LICENSE` in, commit `heft <version>`, push `master`. Check the
-result with a fresh clone, not the RPC or cgit, which lag by minutes.
-
-`heft-git` is pushed by hand: a tag changes nothing in a package whose `pkgver()` is `git describe`.
+`packaging/aur/` is the source of truth for the three AUR packages; the AUR
+repositories are push targets, never edited in place. Editing a PKGBUILD means
+re-running `update.sh`, or the generated `.SRCINFO` publishes stale metadata
+while the PKGBUILD beside it looks right. Release procedure, the 0BSD
+packaging licence and why `AUR_SSH_KEY` stays unset:
+[packaging/aur/README.md](packaging/aur/README.md).
 
 ## Gates
 
-Contributor commands: [CONTRIBUTING.md](CONTRIBUTING.md) (same as CI / lefthook).
-Suite stays under 30s. No live GPU in CI.
+Contributor commands, and the measured refusal of the wider clippy groups:
+[CONTRIBUTING.md](CONTRIBUTING.md) (same as CI / lefthook). Docker sock is
+optional in CI; grouping tests use `tests/fixtures/` via `tests/grouping.rs`.
+
 `live_proc::heft_does_not_grow_while_it_follows` watches heft's own RSS
 growth across a `--follow` window with several PSS ticks, not a ceiling: one
 tight enough to catch a leak in seconds is below what heft legitimately uses
 on a busy host. It guards the walk pool: a fresh thread per walk leaves glibc
-arenas climbing. Docker sock is optional in CI; grouping tests use
-`tests/fixtures/` via `tests/grouping.rs`.
+arenas climbing.
 
-The gate is `cargo clippy --locked --all-targets -- -D warnings` at the
-default level plus the `[lints.clippy]` list in `Cargo.toml`.
-
-The wider groups are measured, not assumed, and the measurement is against that same
-`--all-targets` gate: with the list below in place, `pedantic` + `nursery` +
-`cargo` report 182 warnings across 8 lints, counted as clippy emits them for
-every target.
-
-`pedantic` is one warning short of enabling: `struct_excessive_bools` on
-`cli::Cli`, whose seven bools are clap flags that `--help`, the man page and
-the completions each list on their own line. Folding them into enums changes
-all three, so it is refused, and the group stays off the gate rather than
-carrying an `#[expect]`.
-
-Of the rest, 134 are the nursery lint `redundant_pub_crate` objecting to a
-visibility style this crate keeps deliberately; the others are
-`too_long_first_doc_paragraph`, `option_if_let_else`, `single_option_map`, and
-`multiple_crate_versions` for the two `hashbrown` and two `syn` majors the
-dependencies pull. Adopting those is a mechanical rewrite buying style, and is
-refused. Re-measure before quoting a number here: the counts move with every
-clippy release and every change to this code.
-
-Nothing in the wider groups is a latent bug, which is what makes the refusal
-safe rather than lucky: every lint that looked like one is a false positive.
-`literal_string_with_formatting_args` fires eight times on the `{up}`/`{down}`
-KEYS placeholders, which are literal on purpose; `suboptimal_flops` wants
-`mul_add` in three test assertions.
-
-Twelve lints are denied in `Cargo.toml`'s `[lints]` because each found
-something real. `needless_pass_by_ref_mut`, `assigning_clones`,
-`redundant_clone` and `format_push_string` came first — a `&mut self` on
-`psi::set_row` and `proc::WalkPool::collect` that never mutated, a clone
-assigned over a live `String` once a frame, a temporary formatted once a frame
-in `sixel::encode`. `use_self`, `missing_const_for_fn`, `doc_markdown` and
-`map_unwrap_or` followed, all of them machine-applicable.
-
-The four cast lints
-— `cast_precision_loss`, `cast_possible_truncation`, `cast_possible_wrap`,
-`cast_sign_loss` — are the ones that earn their place: a claim that a cast is
-bounded lives as an `#[expect(..., reason = ...)]` at that site naming the
-bound, never as prose, and the compiler checks the expect is still firing.
-`cpu.rs` takes one module-level expect because every cast in it has the same
-bound: one interval's `saturating_sub` delta of a kernel counter, widened into
-the f64 a rate is divided in. Each lint is at zero, which is what
-makes denying it free.
-
-Release profile: LTO, `codegen-units = 1`, strip, `panic = abort`.
+The four cast lints denied in `Cargo.toml` are at zero, which is what makes
+denying them free. A claim that a cast is bounded lives as an
+`#[expect(..., reason = ...)]` at that site naming the bound, never as prose,
+so the compiler checks the expect is still firing. `cpu.rs` takes one
+module-level expect because every cast in it has the same bound: one
+interval's `saturating_sub` delta of a kernel counter, widened into the f64 a
+rate is divided in.
 
 ## Git
 

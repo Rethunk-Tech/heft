@@ -804,13 +804,11 @@ const STALL_ALARM: f64 = 20.0;
 /// `%CORE` reads a stalled cgroup as quiet, so nothing else on the row
 /// distinguishes a cgroup stuck waiting on the disk from an idle one.
 fn alarming(label: &str, m: &Metrics) -> bool {
-    let over = |v: Option<f64>| v.is_some_and(|v| v >= STALL_ALARM);
-    match label {
-        "cpustall" => over(m.cpu_stall_pct),
-        "iostall" => over(m.io_stall_pct),
-        "memstall" => over(m.mem_stall_pct),
-        _ => false,
-    }
+    crate::once::COLUMNS
+        .iter()
+        .find(|c| c.label == label && c.stall)
+        .and_then(|c| (c.key?)(0, m))
+        .is_some_and(|v| v >= STALL_ALARM)
 }
 
 /// Red where there is colour, reverse video where there is not -- the same

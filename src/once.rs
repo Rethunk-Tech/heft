@@ -20,6 +20,11 @@ pub(crate) struct Column {
     pub(crate) header: &'static str,
     pub(crate) width: u16,
     pub(crate) fmt: fn(&str, u32, &Metrics) -> String,
+    /// A percentage, full at 100 whatever else is on screen (`Sort::trend_full`).
+    pub(crate) pct: bool,
+    /// One of the stall trio: alarmed in the TUI (`ui::alarming`) and hidden
+    /// by default (`config::default_hidden`).
+    pub(crate) stall: bool,
     /// `None` on the name column: it has no numeric key, and it inverts the
     /// sort direction so the numeric default of high-to-low still reads A-Z.
     /// The inner `None` is a metric heft could not read (EACCES), which is not
@@ -38,6 +43,8 @@ pub(crate) const COLUMNS: &[Column] = &[
         header: "NAME",
         width: 28,
         fmt: |name, _, _| name.to_string(),
+        pct: false,
+        stall: false,
         key: None,
     },
     // A picture of the sort metric's recent history, against the scale
@@ -51,6 +58,8 @@ pub(crate) const COLUMNS: &[Column] = &[
         header: "TREND",
         width: 9,
         fmt: |_, _, _| String::new(),
+        pct: false,
+        stall: false,
         key: None,
     },
     Column {
@@ -58,6 +67,8 @@ pub(crate) const COLUMNS: &[Column] = &[
         header: "N",
         width: 4,
         fmt: |_, n, _| n.to_string(),
+        pct: false,
+        stall: false,
         key: Some(|n, _| Some(f64::from(n))),
     },
     // `N` counts processes, so a thread leak was invisible: one process with
@@ -67,6 +78,8 @@ pub(crate) const COLUMNS: &[Column] = &[
         header: "THR",
         width: 5,
         fmt: |_, _, m| m.threads.map(|t| t.to_string()).unwrap_or_default(),
+        pct: false,
+        stall: false,
         key: Some(|_, m| opt_u(m.threads)),
     },
     // Oldest, not a sum — see `Metrics::age_secs`.
@@ -75,6 +88,8 @@ pub(crate) const COLUMNS: &[Column] = &[
         header: "AGE",
         width: 5,
         fmt: |_, _, m| fmt_age(m.age_secs),
+        pct: false,
+        stall: false,
         key: Some(|_, m| opt_u(m.age_secs)),
     },
     Column {
@@ -82,6 +97,8 @@ pub(crate) const COLUMNS: &[Column] = &[
         header: "%CORE",
         width: 7,
         fmt: |_, _, m| fmt_pct(m.cpu_core_pct),
+        pct: true,
+        stall: false,
         key: Some(|_, m| Some(m.cpu_core_pct)),
     },
     Column {
@@ -89,6 +106,8 @@ pub(crate) const COLUMNS: &[Column] = &[
         header: "%MACH",
         width: 7,
         fmt: |_, _, m| fmt_pct(m.cpu_machine_pct),
+        pct: true,
+        stall: false,
         key: Some(|_, m| Some(m.cpu_machine_pct)),
     },
     Column {
@@ -96,6 +115,8 @@ pub(crate) const COLUMNS: &[Column] = &[
         header: "PSS",
         width: 8,
         fmt: |_, _, m| fmt_bytes(m.pss_bytes),
+        pct: false,
+        stall: false,
         key: Some(|_, m| opt_u(m.pss_bytes)),
     },
     Column {
@@ -103,6 +124,8 @@ pub(crate) const COLUMNS: &[Column] = &[
         header: "RSS",
         width: 8,
         fmt: |_, _, m| fmt_bytes(m.rss_bytes),
+        pct: false,
+        stall: false,
         key: Some(|_, m| opt_u(m.rss_bytes)),
     },
     // Blank, not 0, on a machine with no swap: `SwapTotal: 0` means no figure
@@ -113,6 +136,8 @@ pub(crate) const COLUMNS: &[Column] = &[
         header: "SWAP",
         width: 6,
         fmt: |_, _, m| fmt_bytes(m.swap_bytes),
+        pct: false,
+        stall: false,
         key: Some(|_, m| opt_u(m.swap_bytes)),
     },
     Column {
@@ -120,6 +145,8 @@ pub(crate) const COLUMNS: &[Column] = &[
         header: "VRAM",
         width: 8,
         fmt: |_, _, m| fmt_bytes(m.vram_bytes),
+        pct: false,
+        stall: false,
         key: Some(|_, m| opt_u(m.vram_bytes)),
     },
     Column {
@@ -127,6 +154,8 @@ pub(crate) const COLUMNS: &[Column] = &[
         header: "GTT",
         width: 8,
         fmt: |_, _, m| fmt_bytes(m.gtt_bytes),
+        pct: false,
+        stall: false,
         key: Some(|_, m| opt_u(m.gtt_bytes)),
     },
     Column {
@@ -134,6 +163,8 @@ pub(crate) const COLUMNS: &[Column] = &[
         header: "GFX",
         width: 5,
         fmt: |_, _, m| fmt_opt_pct(m.gfx_pct),
+        pct: true,
+        stall: false,
         key: Some(|_, m| m.gfx_pct),
     },
     Column {
@@ -141,6 +172,8 @@ pub(crate) const COLUMNS: &[Column] = &[
         header: "CMP",
         width: 5,
         fmt: |_, _, m| fmt_opt_pct(m.compute_pct),
+        pct: true,
+        stall: false,
         key: Some(|_, m| m.compute_pct),
     },
     Column {
@@ -148,6 +181,8 @@ pub(crate) const COLUMNS: &[Column] = &[
         header: "DISK R",
         width: 8,
         fmt: |_, _, m| fmt_rate(m.disk_r_bps),
+        pct: false,
+        stall: false,
         key: Some(|_, m| m.disk_r_bps),
     },
     Column {
@@ -155,6 +190,8 @@ pub(crate) const COLUMNS: &[Column] = &[
         header: "DISK W",
         width: 8,
         fmt: |_, _, m| fmt_rate(m.disk_w_bps),
+        pct: false,
+        stall: false,
         key: Some(|_, m| m.disk_w_bps),
     },
     // NETNS, not NET: the counter belongs to a network namespace, and a
@@ -173,6 +210,8 @@ pub(crate) const COLUMNS: &[Column] = &[
         header: "CPU ST",
         width: 6,
         fmt: |_, _, m| fmt_opt_pct(m.cpu_stall_pct),
+        pct: true,
+        stall: true,
         key: Some(|_, m| m.cpu_stall_pct),
     },
     Column {
@@ -180,6 +219,8 @@ pub(crate) const COLUMNS: &[Column] = &[
         header: "IO ST",
         width: 6,
         fmt: |_, _, m| fmt_opt_pct(m.io_stall_pct),
+        pct: true,
+        stall: true,
         key: Some(|_, m| m.io_stall_pct),
     },
     Column {
@@ -187,6 +228,8 @@ pub(crate) const COLUMNS: &[Column] = &[
         header: "MEM ST",
         width: 6,
         fmt: |_, _, m| fmt_opt_pct(m.mem_stall_pct),
+        pct: true,
+        stall: true,
         key: Some(|_, m| m.mem_stall_pct),
     },
     Column {
@@ -194,6 +237,8 @@ pub(crate) const COLUMNS: &[Column] = &[
         header: "NETNS RX",
         width: 8,
         fmt: |_, _, m| fmt_rate(m.net_rx_bps),
+        pct: false,
+        stall: false,
         key: Some(|_, m| m.net_rx_bps),
     },
     Column {
@@ -201,6 +246,8 @@ pub(crate) const COLUMNS: &[Column] = &[
         header: "NETNS TX",
         width: 8,
         fmt: |_, _, m| fmt_rate(m.net_tx_bps),
+        pct: false,
+        stall: false,
         key: Some(|_, m| m.net_tx_bps),
     },
 ];
@@ -340,11 +387,7 @@ impl Sort {
     /// Bytes, counts and rates do not, so they return `None` and the caller
     /// scales against the heaviest row it is drawing.
     pub(crate) fn trend_full(self) -> Option<f64> {
-        matches!(
-            self.label(),
-            "core" | "machine" | "gfx" | "compute" | "cpustall" | "iostall" | "memstall"
-        )
-        .then_some(100.0)
+        COLUMNS[self.0].pct.then_some(100.0)
     }
 
     fn exact(s: &str) -> Option<Self> {

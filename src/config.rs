@@ -54,9 +54,11 @@ impl Default for View {
 /// ask, and three more columns crowd out the ones every session reads, so a
 /// view shows them only once `u` or a saved list without them asks.
 fn default_hidden() -> Vec<String> {
-    ["cpustall", "iostall", "memstall"]
-        .map(String::from)
-        .to_vec()
+    crate::once::COLUMNS
+        .iter()
+        .filter(|c| c.stall)
+        .map(|c| c.label.to_string())
+        .collect()
 }
 
 /// Blank out `//` and `/* */` comments so the config files can carry them.

@@ -44,11 +44,14 @@ fn strip_suffix_ignore_ascii_case<'a>(s: &'a str, suffix: &str) -> Option<&'a st
 /// an app row is named after its binary (`/opt/vivaldi/vivaldi-bin`), not its
 /// directory. Several candidates take the lowest pid, the one started first.
 /// Candidates are the helper uid's processes outside `system.slice` and any
-/// container or machine scope.
+/// container or machine scope. A candidate is judged by `classes_of`, its full
+/// class set, since a `crash_helper` rule may test `exe` or argv, which a bare
+/// name lookup never sees.
 pub(crate) fn crash_helper_app<'p>(
     p: &Process,
     classes: Classes,
     rules: &Rules,
+    classes_of: impl Fn(&Process) -> Classes,
     procs: impl IntoIterator<Item = &'p Process>,
 ) -> Option<String> {
     if !classes.intersects(Classes::CRASH_HELPER) {
@@ -78,9 +81,7 @@ pub(crate) fn crash_helper_app<'p>(
             .as_deref()
             .and_then(|e| e.rsplit_once('/'))
             .is_some_and(|(d, _)| d == dir)
-            && !rules
-                .classes_of_name(name)
-                .intersects(Classes::CRASH_HELPER)
+            && !classes_of(q).intersects(Classes::CRASH_HELPER)
             && sibling.is_none_or(|s| q.pid < s.pid)
         {
             sibling = Some(q);
@@ -245,6 +246,11 @@ pub(crate) fn cmdline_flag_value<'a>(cmdline: &'a [String], flag: &str) -> Optio
 mod tests {
     use super::*;
 
+    /// A process's class set from every fact, the lookup `group` passes.
+    fn full(rules: &Rules) -> impl Fn(&Process) -> Classes + '_ {
+        |q| rules.classes(&crate::group::facts_of(q, None))
+    }
+
     fn p(comm: &str, cmd: &[&str]) -> Process {
         Process {
             comm: comm.into(),
@@ -320,15 +326,56 @@ mod tests {
             at(1, "/opt/bar/bar"),
         ];
         assert_eq!(
-            crash_helper_app(&handler, helper, &rules, &procs).as_deref(),
+            crash_helper_app(&handler, helper, &rules, full(&rules), &procs).as_deref(),
             Some("foo-helper"),
             "no process is called foo, so the lowest pid beside the handler names it"
         );
         procs.push(at(30, "/usr/local/bin/foo"));
         assert_eq!(
-            crash_helper_app(&handler, helper, &rules, &procs).as_deref(),
+            crash_helper_app(&handler, helper, &rules, full(&rules), &procs).as_deref(),
             Some("foo"),
             "a process named after the directory keeps the directory's name"
+        );
+    }
+
+    #[test]
+    fn a_sibling_whose_exe_is_a_crash_helper_does_not_name_the_app() {
+        use crate::rules::{LoadedFile, Source};
+
+        let mut files = vec![LoadedFile {
+            source: Source {
+                rank: 0,
+                label: "xdg".into(),
+            },
+            name: "90-mine.json".into(),
+            text: r#"{"stage": "class", "rules": [{"id": "dumper", "match": {"exe_suffix": "/foo-dump"}, "classes": ["crash_helper"]}]}"#.into(),
+        }];
+        files.extend(crate::rules::builtin_files());
+        let rules = Rules::from_files(&files);
+        assert!(rules.problems.is_empty(), "{:?}", rules.problems);
+        let at = |pid, exe: &str| Process {
+            pid,
+            comm: basename(exe).into(),
+            exe: Some(exe.into()),
+            ..Process::default()
+        };
+        let handler = at(20, "/opt/foo/chrome_crashpad_handler");
+        let procs = [
+            handler.clone(),
+            at(3, "/opt/foo/foo-dump"),
+            at(9, "/opt/foo/foo-bin"),
+        ];
+        assert_eq!(
+            crash_helper_app(
+                &handler,
+                Classes::CRASH_HELPER,
+                &rules,
+                full(&rules),
+                &procs
+            )
+            .as_deref(),
+            Some("foo-bin"),
+            "the lower pid is a crash helper by its exe, so it cannot be the app"
         );
     }
 
@@ -354,6 +401,7 @@ mod tests {
                 },
                 helper,
                 &rules,
+                full(&rules),
                 NONE
             )
             .as_deref(),
@@ -367,6 +415,7 @@ mod tests {
                 ),
                 helper,
                 &rules,
+                full(&rules),
                 NONE
             )
             .as_deref(),
@@ -388,6 +437,7 @@ mod tests {
                     },
                     helper,
                     &rules,
+                    full(&rules),
                     NONE
                 ),
                 None,
@@ -405,6 +455,7 @@ mod tests {
                 },
                 helper,
                 &rules,
+                full(&rules),
                 NONE
             )
             .as_deref(),
@@ -426,6 +477,7 @@ mod tests {
                 },
                 helper,
                 &rules,
+                full(&rules),
                 NONE
             )
             .as_deref(),

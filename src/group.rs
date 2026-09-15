@@ -381,7 +381,13 @@ fn session_plumbing_place(p: &Process, ctx: &Ctx<'_>) -> Option<Place> {
 }
 
 fn crash_helper_place(p: &Process, ctx: &Ctx<'_>) -> Option<Place> {
-    let owner = classify::crash_helper_app(p, ctx.classes(p), ctx.rules, ctx.procs.values())?;
+    let owner = classify::crash_helper_app(
+        p,
+        ctx.classes(p),
+        ctx.rules,
+        |q| ctx.classes(q),
+        ctx.procs.values(),
+    )?;
     Some(Place {
         folder: Folder::Applications,
         uid: Some(p.uid),

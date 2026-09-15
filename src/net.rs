@@ -265,11 +265,9 @@ mod tests {
     fn ident(id: &str, member: &str) -> IdentNode {
         IdentNode {
             id: id.into(),
-            title: id.into(),
             nproc: 1,
             containers: vec![MemberContainer {
                 id: member.into(),
-                title: member.into(),
                 nproc: 1,
                 ..MemberContainer::default()
             }],

@@ -121,13 +121,13 @@ fn with_user(text: &str) -> Rules {
 }
 
 fn titles(nodes: &[heft::IdentNode]) -> Vec<String> {
-    let mut v: Vec<String> = nodes.iter().map(|n| n.title.clone()).collect();
+    let mut v: Vec<String> = nodes.iter().map(|n| n.id.clone()).collect();
     v.sort();
     v
 }
 
 fn has(nodes: &[heft::IdentNode], name: &str) -> bool {
-    nodes.iter().any(|n| n.id == name || n.title == name)
+    nodes.iter().any(|n| n.id == name)
 }
 
 fn ident<'a>(nodes: &'a [heft::IdentNode], id: &str) -> &'a heft::IdentNode {
@@ -599,7 +599,7 @@ fn system_holds_kernel_threads_and_daemons() {
     assert!(has(&tree.system, "containerd"));
     assert!(!has(&tree.system, "acme-encoder"));
     assert!(!has(&tree.system, "supabase:demo"));
-    assert!(!tree.system.iter().any(|n| n.title.starts_with("docker-")));
+    assert!(!tree.system.iter().any(|n| n.id.starts_with("docker-")));
 }
 
 #[test]

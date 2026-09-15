@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Removed
+
+- `--json` identity and member-container objects no longer carry `title`; it
+  always equalled `id`.
+
 ## 0.11.1 - 2026-09-13
 
 ### Added

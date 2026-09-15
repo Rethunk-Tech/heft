@@ -543,7 +543,7 @@ fn push_folder(
         rows.push(Flat {
             id: iid.clone(),
             depth: depth + 1,
-            name: ident.title.clone(),
+            name: ident.id.clone(),
             nproc: ident.nproc,
             metrics: ident.metrics.clone(),
             expandable: true,
@@ -558,12 +558,12 @@ fn push_folder(
             rows.push(Flat {
                 id: mid.clone(),
                 depth: depth + 2,
-                name: member.title.clone(),
+                name: member.id.clone(),
                 nproc: member.nproc,
                 metrics: member.metrics.clone(),
                 expandable: true,
                 trimmable: true,
-                search: deep.then(|| haystack(&member.title, &member.processes)),
+                search: deep.then(|| haystack(&member.id, &member.processes)),
             });
             if expand.contains(&mid) {
                 push_procs(rows, expand, depth + 3, &mid, &member.processes, deep);
@@ -2273,7 +2273,6 @@ mod tests {
             mem_cached_bytes: 20 * 1024 * 1024 * 1024,
             system: vec![IdentNode {
                 id: "sys".into(),
-                title: "sys".into(),
                 nproc: 1,
                 metrics: Metrics {
                     disk_r_bps: Some(96.4e6),
@@ -2380,7 +2379,6 @@ mod tests {
         });
         tree.system = vec![IdentNode {
             id: "sys".into(),
-            title: "sys".into(),
             nproc: 1,
             metrics: Metrics {
                 gtt_bytes: Some(2 * g),
@@ -2828,7 +2826,6 @@ mod tests {
     fn ident(id: &str) -> IdentNode {
         IdentNode {
             id: id.into(),
-            title: id.into(),
             nproc: 1,
             metrics: Metrics::default(),
             instances: Vec::new(),

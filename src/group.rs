@@ -626,7 +626,6 @@ fn ident_node(
         .iter()
         .map(|(name, mpids)| MemberContainer {
             id: name.clone(),
-            title: name.clone(),
             nproc: u32::try_from(mpids.len()).unwrap_or(u32::MAX),
             metrics: sum_metrics(mpids, metrics),
             processes: proc_forest(mpids, curr, metrics),
@@ -634,7 +633,6 @@ fn ident_node(
         .collect();
     IdentNode {
         id: key.to_string(),
-        title: key.to_string(),
         nproc: u32::try_from(pids.len()).unwrap_or(u32::MAX),
         metrics: sum_metrics(pids, metrics),
         instances,

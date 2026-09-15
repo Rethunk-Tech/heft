@@ -24,7 +24,7 @@ use crate::types::{Error, Folder, HostTree, IdentNode, ProcNode, Process};
 struct Found {
     /// Host → user → folder, as the tree draws it.
     path: String,
-    /// The identity row's title: the key a placement rule matches.
+    /// The identity row's id: the key a placement rule matches.
     ident: String,
     /// The folder a placement rule would pin, or `None` where no rule can
     /// reach the row.
@@ -50,7 +50,7 @@ fn find_in(idents: &[IdentNode], pid: u32) -> Option<(&IdentNode, String, usize)
         }
         for c in &id.containers {
             if holds(&c.processes, pid) {
-                return Some((id, c.title.clone(), c.processes.len()));
+                return Some((id, c.id.clone(), c.processes.len()));
             }
         }
     }
@@ -60,9 +60,9 @@ fn find_in(idents: &[IdentNode], pid: u32) -> Option<(&IdentNode, String, usize)
 fn locate(tree: &HostTree, pid: u32) -> Option<Found> {
     let arrow = glyph::arrows().3;
     let hit = |idents: &[IdentNode], parent: &str, folder: Folder| {
-        find_in(idents, pid).map(|(id, instance, siblings)| Found {
+        find_in(idents, pid).map(|(node, instance, siblings)| Found {
             path: format!("{parent} {arrow} {}", folder.title()),
-            ident: id.title.clone(),
+            ident: node.id.clone(),
             // A container or System row ignores every placement rule, the same
             // rule the grouping code applies: `override_place` cannot move one.
             pinnable: matches!(folder, Folder::Applications | Folder::UserServices)
@@ -291,7 +291,6 @@ mod tests {
     fn ident(title: &str, pids: &[u32]) -> IdentNode {
         IdentNode {
             id: title.into(),
-            title: title.into(),
             nproc: pids.len() as u32,
             instances: vec![InstanceNode {
                 key: format!("{title}/1"),

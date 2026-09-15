@@ -570,10 +570,10 @@ fn sort_idents(idents: &mut [IdentNode], sort: Sort, desc: bool) {
             sort_procs(&mut m.processes, sort, desc);
         }
         sort_rows(&mut i.containers, sort, desc, |x| {
-            (&x.title, x.nproc, &x.metrics)
+            (&x.id, x.nproc, &x.metrics)
         });
     }
-    sort_rows(idents, sort, desc, |x| (&x.title, x.nproc, &x.metrics));
+    sort_rows(idents, sort, desc, |x| (&x.id, x.nproc, &x.metrics));
 }
 
 fn sort_procs(procs: &mut [ProcNode], sort: Sort, desc: bool) {
@@ -851,7 +851,7 @@ fn push_folder(
     for ident in idents {
         rows.push(TableRow {
             depth: depth + 1,
-            name: ident.title.clone(),
+            name: ident.id.clone(),
             nproc: ident.nproc,
             metrics: ident.metrics.clone(),
             trimmable: true,
@@ -860,11 +860,11 @@ fn push_folder(
         for member in &ident.containers {
             rows.push(TableRow {
                 depth: depth + 2,
-                name: member.title.clone(),
+                name: member.id.clone(),
                 nproc: member.nproc,
                 metrics: member.metrics.clone(),
                 trimmable: true,
-                search: deep.then(|| haystack(&member.title, &member.processes)),
+                search: deep.then(|| haystack(&member.id, &member.processes)),
             });
         }
     }
@@ -880,7 +880,7 @@ pub(crate) fn haystack(title: &str, procs: &[ProcNode]) -> String {
 }
 
 pub(crate) fn ident_haystack(ident: &IdentNode) -> String {
-    let mut s = String::from(ident.title.as_str());
+    let mut s = String::from(ident.id.as_str());
     for inst in &ident.instances {
         push_cmdlines(&mut s, &inst.processes);
     }
@@ -1153,7 +1153,6 @@ mod tests {
         });
         tree.system = vec![IdentNode {
             id: "kthread".into(),
-            title: "kthread".into(),
             nproc: 1,
             metrics: metrics(Some(1), 0.0),
             ..IdentNode::default()
@@ -1185,7 +1184,6 @@ mod tests {
                 name: "u".into(),
                 applications: vec![IdentNode {
                     id: "app".into(),
-                    title: "app".into(),
                     nproc: 4,
                     metrics: metrics(Some(1000), 10.0),
                     instances: vec![
@@ -1501,8 +1499,7 @@ mod tests {
 
     fn sample_ident(disk_r_bps: f64) -> IdentNode {
         IdentNode {
-            id: "a".into(),
-            title: "an-identity-name-long-enough-to-truncate".into(),
+            id: "an-identity-name-long-enough-to-truncate".into(),
             nproc: 7,
             metrics: Metrics {
                 cpu_core_pct: 12.25,
@@ -1542,8 +1539,8 @@ mod tests {
     /// Host line does under `/`.
     #[test]
     fn once_filter_keeps_ancestors_and_their_totals() {
-        let named = |title: &str| IdentNode {
-            title: title.into(),
+        let named = |id: &str| IdentNode {
+            id: id.into(),
             ..sample_ident(1536.0)
         };
         let tree = HostTree {
@@ -1571,8 +1568,7 @@ mod tests {
     #[test]
     fn a_filter_reaches_an_argument_no_row_title_carries() {
         let worker = |port: &str| IdentNode {
-            id: port.into(),
-            title: "python3".into(),
+            id: "python3".into(),
             instances: vec![InstanceNode {
                 key: "1".into(),
                 nproc: 1,

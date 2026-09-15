@@ -265,7 +265,6 @@ pub struct UserNode {
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct IdentNode {
     pub id: String,
-    pub title: String,
     pub(crate) nproc: u32,
     #[serde(flatten)]
     pub(crate) metrics: Metrics,
@@ -277,7 +276,6 @@ pub struct IdentNode {
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct MemberContainer {
     pub(crate) id: String,
-    pub(crate) title: String,
     pub(crate) nproc: u32,
     #[serde(flatten)]
     pub(crate) metrics: Metrics,

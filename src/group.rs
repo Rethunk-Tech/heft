@@ -836,15 +836,7 @@ mod tests {
     }
 
     fn placed(tree: &crate::types::HostTree) -> u32 {
-        use crate::types::folder_nproc;
-        tree.users
-            .iter()
-            .map(|u| {
-                folder_nproc(&u.applications)
-                    + folder_nproc(&u.user_services)
-                    + folder_nproc(&u.containers)
-            })
-            .sum()
+        tree.users.iter().map(crate::types::user_nproc).sum()
     }
 
     /// A shell chain under a terminal walks the payload search down and the

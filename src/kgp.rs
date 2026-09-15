@@ -24,6 +24,7 @@
 
 use std::collections::VecDeque;
 use std::ffi::{CString, OsStr};
+use std::hash::Hasher;
 use std::io::{self, Write};
 
 /// Image id, carried in the placeholder's foreground colour. `0x686566` is
@@ -418,15 +419,14 @@ fn b64(data: &[u8], out: &mut String) {
     }
 }
 
-/// FNV-1a. Only ever compared against itself, so the bar is "does not collide
-/// between two frames", not cryptographic.
+/// Only ever compared against itself, so the bar is "does not collide between
+/// two frames", not cryptographic. `DefaultHasher` over a byte-at-a-time FNV-1a:
+/// medians on a Ryzen AI Max+ 395, release, 0.018 ms against 0.114 ms at 146 KB
+/// and 2.1 ms against 13.2 ms at 16 MiB.
 fn hash(data: &[u8]) -> u64 {
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for b in data {
-        h ^= u64::from(*b);
-        h = h.wrapping_mul(0x1000_0000_01b3);
-    }
-    h
+    let mut h = std::hash::DefaultHasher::new();
+    h.write(data);
+    h.finish()
 }
 
 fn shm_unlink(name: &str) {

@@ -288,12 +288,12 @@ mod tests {
         clippy::cast_possible_truncation,
         reason = "a test builder is handed a handful of pids, never 4 billion"
     )]
-    fn ident(title: &str, pids: &[u32]) -> IdentNode {
+    fn ident(id: &str, pids: &[u32]) -> IdentNode {
         IdentNode {
-            id: title.into(),
+            id: id.into(),
             nproc: pids.len() as u32,
             instances: vec![InstanceNode {
-                key: format!("{title}/1"),
+                key: format!("{id}/1"),
                 nproc: pids.len() as u32,
                 processes: pids.iter().copied().map(proc_node).collect(),
                 ..InstanceNode::default()

@@ -14,10 +14,11 @@ static ROOT: OnceLock<String> = OnceLock::new();
 /// Set the prefix. Called once, before any sampling. A trailing slash is
 /// dropped so `path()` never produces a doubled separator.
 pub fn init(root: Option<&str>) {
-    let r = root
-        .map(|r| r.trim_end_matches('/').to_string())
-        .unwrap_or_default();
-    let _ = ROOT.set(r);
+    let _ = ROOT.set(root.map(trimmed).unwrap_or_default().to_string());
+}
+
+fn trimmed(given: &str) -> &str {
+    given.trim_end_matches('/')
 }
 
 /// The prefix, empty when heft is reading the machine it runs on.
@@ -42,10 +43,12 @@ mod tests {
     #[test]
     fn a_trailing_slash_never_doubles_the_separator() {
         for given in ["/mnt/tree", "/mnt/tree/", "/mnt/tree///"] {
-            let root = given.trim_end_matches('/');
-            assert_eq!(format!("{root}/proc/stat"), "/mnt/tree/proc/stat");
+            assert_eq!(
+                format!("{}/proc/stat", super::trimmed(given)),
+                "/mnt/tree/proc/stat"
+            );
         }
         // The default is empty, so every path is the literal it always was.
-        assert_eq!(format!("{}/proc/stat", ""), "/proc/stat");
+        assert_eq!(format!("{}/proc/stat", super::trimmed("")), "/proc/stat");
     }
 }

@@ -200,12 +200,14 @@ fn compute_place(
     if classes.intersects(Classes::WORKER)
         && let Some(parent) = resolve_one(p.ppid, curr, ctx, memo, walking, depth + 1)
         && parent.folder != Folder::System
-        // `key` is the ppid's RESOLVED Place identity, not its process name, and
-        // the two disagree both ways: a `systemd` that resolved into a container
-        // is a legal fold target here, while a non-systemd process that folded
-        // onto the user-manager row is not. Not interchangeable with the raw-name
-        // check in `classify::absorbs_generic`.
-        && parent.key != "systemd"
+        // Asked of the ppid's RESOLVED identity, not its process: a `systemd`
+        // that resolved into a container is a legal fold target, while any
+        // process that folded onto a no_absorb row is not. Not interchangeable
+        // with `classify::absorbs_generic`, which judges the raw process.
+        && !ctx
+            .rules
+            .classes_of_name(&parent.key)
+            .intersects(Classes::NO_ABSORB)
     {
         return Place {
             instance: ctx.instance(p),
@@ -888,5 +890,45 @@ mod tests {
 
         let text = serde_json::to_string(&serde_json::json!({ "host": tree })).unwrap();
         serde_json::from_str::<serde_json::Value>(&text).unwrap();
+    }
+
+    #[test]
+    fn a_worker_does_not_fold_onto_a_user_no_absorb_identity() {
+        use crate::rules::{LoadedFile, Source};
+
+        let at = |pid, ppid, argv: &[&str]| Process {
+            pid,
+            ppid,
+            uid: 1000,
+            comm: argv[0].into(),
+            exe: Some(format!("/usr/bin/{}", argv[0])),
+            cmdline: argv.iter().map(|&a| a.into()).collect(),
+            cgroup: "0::/user.slice/user-1000.slice/user@1000.service/app.slice".into(),
+            ..Process::default()
+        };
+        let curr = HashMap::from([
+            (1, at(1, 0, &["mgr"])),
+            (2, at(2, 1, &["cursor", "--type=renderer"])),
+        ]);
+        let containers = ContainerIndex::default();
+        let worker_key = |rules: &Rules| {
+            super::resolve(&curr, &Ctx::new(&containers, rules, &curr))[&2]
+                .key
+                .clone()
+        };
+        assert_eq!(worker_key(&Rules::builtin()), "mgr");
+
+        let mut files = vec![LoadedFile {
+            source: Source {
+                rank: 0,
+                label: "xdg".into(),
+            },
+            name: "90-mine.json".into(),
+            text: r#"{"stage": "class", "rules": [{"id": "mgr", "match": {"name": "mgr"}, "classes": ["no_absorb"]}]}"#.into(),
+        }];
+        files.extend(crate::rules::builtin_files());
+        let rules = Rules::from_files(&files);
+        assert!(rules.problems.is_empty(), "{:?}", rules.problems);
+        assert_eq!(worker_key(&rules), "cursor");
     }
 }

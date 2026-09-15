@@ -43,6 +43,8 @@ fn strip_suffix_ignore_ascii_case<'a>(s: &'a str, suffix: &str) -> Option<&'a st
 /// called that while a non-helper whose `exe` sits in the same directory is:
 /// an app row is named after its binary (`/opt/vivaldi/vivaldi-bin`), not its
 /// directory. Several candidates take the lowest pid, the one started first.
+/// A helper whose directory is a per-run `.mount_…` directory has no name to
+/// fall back on, so only such a sibling names its app.
 /// Candidates are the helper uid's processes outside `system.slice` and any
 /// container or machine scope. A candidate is judged by `classes_of`, its full
 /// class set, since a `crash_helper` rule may test `exe` or argv, which a bare
@@ -73,9 +75,8 @@ pub(crate) fn crash_helper_app<'p>(
             && identity::machine_scope_name(&q.cgroup).is_none()
     };
     for q in procs.into_iter().filter(own) {
-        let name = name_ref(q);
-        if name == owner {
-            return Some(owner);
+        if owner.as_deref() == Some(name_ref(q)) {
+            return owner;
         }
         if q.exe
             .as_deref()
@@ -87,15 +88,16 @@ pub(crate) fn crash_helper_app<'p>(
             sibling = Some(q);
         }
     }
-    Some(sibling.map_or(owner, name_of))
+    sibling.map(name_of).or(owner)
 }
 
-/// The owning app and the directory the helper was started from.
-fn app_from_crash_helper_path<'s>(s: &'s str, rules: &Rules) -> Option<(String, &'s str)> {
+/// The owning app the directory names, if it names one, and the directory the
+/// helper was started from.
+fn app_from_crash_helper_path<'s>(s: &'s str, rules: &Rules) -> Option<(Option<String>, &'s str)> {
     let lower = s.to_ascii_lowercase();
     if lower.contains("/firefox/") || lower.ends_with("/firefox") {
         return Some((
-            "firefox".to_string(),
+            Some("firefox".to_string()),
             s.rsplit_once('/').map_or("", |(d, _)| d),
         ));
     }
@@ -113,13 +115,13 @@ fn app_from_crash_helper_path<'s>(s: &'s str, rules: &Rules) -> Option<(String, 
     // AppImage mounts are per-run (`/tmp/mount`, `/tmp/.mount_cursorAb12Cd`)
     // and never an identity. A stable directory nested under the mount
     // (`…/usr/share/cursor/chrome_crashpad_handler`) is the same owner
-    // `/opt/cursor/…` would name. Chromium reparents the helper to user
-    // systemd, so there is no ancestor to fall back to when the parent dir
-    // *is* the mount — declining that case still lets `group` walk PPID.
+    // `/opt/cursor/…` would name. When the parent dir *is* the mount, a
+    // non-helper beside the helper can still name the app; with none, `group`
+    // walks PPID.
     if is_temp_unpack_root(&lower) && is_ephemeral_mount_dir(owner) {
-        return None;
+        return Some((None, dir));
     }
-    Some((owner.to_string(), dir))
+    Some((Some(owner.to_string()), dir))
 }
 
 fn is_temp_unpack_root(lower: &str) -> bool {
@@ -335,6 +337,32 @@ mod tests {
             crash_helper_app(&handler, helper, &rules, full(&rules), &procs).as_deref(),
             Some("foo"),
             "a process named after the directory keeps the directory's name"
+        );
+    }
+
+    #[test]
+    fn a_crash_helper_in_the_mount_dir_takes_its_sibling_app() {
+        let rules = Rules::builtin();
+        let helper = Classes::CRASH_HELPER | Classes::WORKER;
+        let at = |pid, exe: &str| Process {
+            pid,
+            comm: basename(exe).into(),
+            exe: Some(exe.into()),
+            ..Process::default()
+        };
+        let handler = at(320, "/tmp/.mount_grok_bHb2bit/chrome_crashpad_handler");
+        let procs = [
+            handler.clone(),
+            at(310, "/tmp/.mount_grok_bHb2bit/grok-bot"),
+        ];
+        assert_eq!(
+            crash_helper_app(&handler, helper, &rules, full(&rules), &procs).as_deref(),
+            Some("grok-bot")
+        );
+        assert_eq!(
+            crash_helper_app(&handler, helper, &rules, full(&rules), &procs[..1]),
+            None,
+            "with no sibling the mount names nothing, and group walks PPID"
         );
     }
 

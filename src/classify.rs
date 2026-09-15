@@ -65,16 +65,7 @@ pub(crate) fn crash_helper_app<'p>(
         .chain(p.cmdline.iter())
         .find_map(|s| app_from_crash_helper_path(s, rules))?;
     let mut sibling: Option<&Process> = None;
-    // Only the helper's own user's session processes can be its app: a root
-    // daemon, a container or another user's app in the same install directory
-    // would otherwise take the row by pid order.
-    let own = |q: &&Process| {
-        q.uid == p.uid
-            && (!identity::in_system_slice(&q.cgroup) || identity::in_user_slice(&q.cgroup))
-            && identity::docker_scope_id(&q.cgroup).is_none()
-            && identity::machine_scope_name(&q.cgroup).is_none()
-    };
-    for q in procs.into_iter().filter(own) {
+    for q in procs.into_iter().filter(|q| in_own_session(p, q)) {
         if owner.as_deref() == Some(name_ref(q)) {
             return owner;
         }
@@ -89,6 +80,17 @@ pub(crate) fn crash_helper_app<'p>(
         }
     }
     sibling.map(name_of).or(owner)
+}
+
+/// Whether `q` is one of `p`'s user's session processes, the only ones that can
+/// be the app a helper or launcher of `p`'s bills to: a root daemon, a
+/// container or another user's app running from the same directory would
+/// otherwise take the row by pid order.
+pub(crate) fn in_own_session(p: &Process, q: &Process) -> bool {
+    q.uid == p.uid
+        && (!identity::in_system_slice(&q.cgroup) || identity::in_user_slice(&q.cgroup))
+        && identity::docker_scope_id(&q.cgroup).is_none()
+        && identity::machine_scope_name(&q.cgroup).is_none()
 }
 
 /// The owning app the directory names, if it names one, and the directory the
@@ -200,6 +202,28 @@ pub(crate) fn launcher_payload_hint(p: &Process, rules: &Rules) -> Option<String
         }
     }
     None
+}
+
+/// The directory name prefix an `AppImage` runtime mounts its payload under:
+/// `.mount_` and the first six bytes of the file name, followed by six random
+/// characters, in `$TMPDIR` or `/tmp` (`grok_bot.appimage` mounts
+/// `/tmp/.mount_grok_bHb2bit`). A payload that reparented to user systemd is
+/// tied to its launcher by nothing else.
+///
+/// The random half is not visible from the launcher, so two `AppImage`s whose
+/// file names share their first six bytes, run by one user at once, both bill
+/// to the lower pid's app. A file name shorter than six bytes names no prefix.
+pub(crate) fn appimage_mount_prefix(launcher: &Process) -> Option<String> {
+    let name = name_ref(launcher);
+    strip_suffix_ignore_ascii_case(name, ".appimage")?;
+    Some(format!(".mount_{}", name.get(..6)?))
+}
+
+/// Whether `exe` runs from a temp mount named by `appimage_mount_prefix`.
+pub(crate) fn in_appimage_mount(exe: &str, prefix: &str) -> bool {
+    exe.split('/')
+        .any(|c| c.len() == prefix.len() + 6 && c.starts_with(prefix))
+        && is_temp_unpack_root(&exe.to_ascii_lowercase())
 }
 
 fn looks_script(arg: &str) -> bool {

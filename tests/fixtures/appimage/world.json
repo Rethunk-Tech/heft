@@ -1,0 +1,91 @@
+{
+  "nproc": 4,
+  "clk_tck": 100,
+  "page_size": 4096,
+  "processes": [
+    {
+      "pid": 50,
+      "ppid": 1,
+      "uid": 1000,
+      "comm": "systemd",
+      "exe": "/usr/lib/systemd/systemd",
+      "cmdline": [
+        "/usr/lib/systemd/systemd",
+        "--user"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/init.scope"
+    },
+    {
+      "pid": 300,
+      "ppid": 50,
+      "uid": 1000,
+      "comm": "grok_bot.appima",
+      "exe": "/home/u/Apps/grok_bot.appimage",
+      "cmdline": [
+        "/home/u/Apps/grok_bot.appimage"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-gnome-grok_bot-300.scope"
+    },
+    {
+      "pid": 310,
+      "ppid": 50,
+      "uid": 1000,
+      "comm": "grok-bot",
+      "exe": "/tmp/.mount_grok_bHb2bit/grok-bot",
+      "cmdline": [
+        "/tmp/.mount_grok_bHb2bit/grok-bot"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-gnome-grok_bot-300.scope"
+    },
+    {
+      "pid": 311,
+      "ppid": 310,
+      "pgrp": 310,
+      "uid": 1000,
+      "comm": "grok-bot",
+      "exe": "/tmp/.mount_grok_bHb2bit/grok-bot",
+      "cmdline": [
+        "/tmp/.mount_grok_bHb2bit/grok-bot",
+        "--type=renderer",
+        "--crashpad-handler-pid=320"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-gnome-grok_bot-300.scope"
+    },
+    {
+      "pid": 320,
+      "ppid": 50,
+      "uid": 1000,
+      "comm": "chrome_crashpad",
+      "exe": "/tmp/.mount_grok_bHb2bit/chrome_crashpad_handler",
+      "cmdline": [
+        "/tmp/.mount_grok_bHb2bit/chrome_crashpad_handler",
+        "--monitor-self",
+        "--database=/home/u/.config/grok-bot/Crash Reports"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-gnome-grok_bot-300.scope"
+    },
+    {
+      "pid": 400,
+      "ppid": 50,
+      "uid": 1000,
+      "comm": "cursor.appimage",
+      "exe": "/home/u/Apps/cursor.appimage",
+      "cmdline": [
+        "/home/u/Apps/cursor.appimage"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-gnome-cursor-400.scope"
+    },
+    {
+      "pid": 410,
+      "ppid": 400,
+      "pgrp": 400,
+      "uid": 1000,
+      "comm": "cursor",
+      "exe": "/tmp/.mount_cursorAb12Cd/usr/share/cursor/cursor",
+      "cmdline": [
+        "/tmp/.mount_cursorAb12Cd/usr/share/cursor/cursor"
+      ],
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-gnome-cursor-400.scope"
+    }
+  ]
+}

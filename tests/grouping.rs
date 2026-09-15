@@ -690,6 +690,18 @@ fn a_crash_handler_bills_to_the_app_binary_in_its_install_directory() {
 }
 
 #[test]
+fn an_appimage_whose_payload_left_is_one_row() {
+    // grok_bot.appimage's app, renderer and crash handler all reparented to
+    // user systemd, so only the runtime's mount directory ties them together.
+    // cursor.appimage still has its payload as a child.
+    let tree = tree_of("tests/fixtures/appimage/world.json", &Rules::builtin());
+    let apps = &user_of(&tree, 1000).applications;
+    assert_eq!(titles(apps), ["cursor", "grok-bot"]);
+    assert_eq!(proc_names(ident(apps, "grok-bot")).len(), 4);
+    assert_eq!(proc_names(ident(apps, "cursor")).len(), 2);
+}
+
+#[test]
 fn one_placement_rule_moves_one_row_and_leaves_the_rest_alone() {
     let base = tree_of(GUI, &Rules::builtin());
     let ov = with_user(

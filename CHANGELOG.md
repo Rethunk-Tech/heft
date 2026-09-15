@@ -13,6 +13,9 @@
   folding onto it; only a parent named `systemd` was refused before.
 - A user `crash_helper` rule that matches by `exe` or argument now keeps that
   helper from naming its sibling's app.
+- An AppImage whose app outlives its launcher's parentage, and that app's
+  crash handler, now bill to the app's row instead of showing as separate
+  rows.
 
 ## 0.11.1 - 2026-09-13
 

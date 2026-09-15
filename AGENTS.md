@@ -100,7 +100,10 @@ truncated id would silently lose its row.
   user unit only when it is not lying; otherwise `pgid`.
 - Launchers (the `launchers` class rule, names ending `.appimage` included) have no
   top-level row; cost bills to the unique payload identity; they still appear
-  inside the expanded process list. Nested bwrap folds into the payload. `cat`
+  inside the expanded process list. An `.appimage` launcher with no payload
+  child bills to the app running from its `.mount_<first six bytes of the file
+  name>` mount (`classify::appimage_mount_prefix`, which carries the
+  shared-prefix ceiling). Nested bwrap folds into the payload. `cat`
   under a launcher or app bills to that parent; it does not break unique-payload
   folding and does not become its own row.
 - Workers (the `worker` class) fold into that app. Walk ancestors skipping
@@ -116,7 +119,8 @@ truncated id would silently lose its row.
   outside `system.slice` and container or machine scopes, whose `exe` sits in
   the same directory, lowest pid first
   (`/opt/vivaldi/chrome_crashpad_handler` → `vivaldi-bin`). A helper whose
-  parent dir is the mount falls back to the ancestor walk.
+  parent dir is the mount takes that same-directory non-helper, and with none
+  falls back to the ancestor walk.
 - User Services grouping is one identity for processes that share a systemd
   unit family, RPM/package family, D-Bus well-known name family, or documented
   process architecture — not a comm prefix. Mappings live in the `session`

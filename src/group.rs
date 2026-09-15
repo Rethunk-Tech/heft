@@ -239,6 +239,28 @@ fn compute_place(
             };
         }
         if classes.intersects(Classes::LAUNCHER) {
+            if let Some(prefix) = classify::appimage_mount_prefix(p)
+                && let Some(app) = ctx
+                    .procs
+                    .values()
+                    .filter(|q| {
+                        classify::in_own_session(p, q)
+                            && q.exe
+                                .as_deref()
+                                .is_some_and(|e| classify::in_appimage_mount(e, &prefix))
+                            && !ctx.classes(q).intersects(
+                                Classes::LAUNCHER | Classes::CRASH_HELPER | Classes::WORKER,
+                            )
+                    })
+                    .min_by_key(|q| q.pid)
+                && let Some(place) = resolve_one(app.pid, curr, ctx, memo, walking, depth + 1)
+                && !matches!(place.folder, Folder::System | Folder::Containers)
+            {
+                return Place {
+                    instance: ctx.instance(p),
+                    ..place
+                };
+            }
             if let Some(hint) = classify::launcher_payload_hint(p, ctx.rules) {
                 let mut place = user_place(p, ctx);
                 place.key = hint;

@@ -256,6 +256,7 @@ names those three drivers use are read: memory in a `vram`, `vram0`, `vram1`,
 `compute` engine, or xe's `rcs` and `ccs` cycles. A region or engine under any
 other name is not guessed at, so on another driver those columns stay blank
 unless it uses the same names.
+
 heft looks for a process's GPU file descriptors on PSS reads, so a GPU a
 running process opens can take up to `--pss-interval` to show, and on the
 tick a process's set of GPU descriptors changes its GFX and CMP are blank.

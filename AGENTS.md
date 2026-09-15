@@ -51,29 +51,16 @@ No `sysinfo` crate. No `nix` unless rustix cannot do it; heft uses `std` + `libc
 plus `rustix` (already built for crossterm) for the dirfd-relative `/proc/<pid>` reads.
 Never read `/proc/pid/mem`. Never ptrace.
 
-The hand-rolled helpers (the `/proc` and fdinfo field parsers,
-`once::scale_1024`, `ui::share_cells`, `identity::systemd_unescape`, and the
-GET-only HTTP client in `containers::unix_get`) have no equivalent in std
-*or in a crate already in the tree*. Both halves are checked, not assumed, so
-replacing them is not pending work. `share_cells` is a partial-fill allocator
-whose result is meant to come up short, which no ratatui `Constraint`
-expresses, and `unix_get` stays because the tree carries no HTTP client at
-all.
+Consolidations measured and refused; both halves of each are checked, not
+assumed, so none is pending work:
 
-Two further consolidations are measured and refused. The `once` and `ui`
-walkers look duplicated, but the row types do not: `Flat` carries an `id` and
-an `expandable` flag that `TableRow` has no use for, and that `id` is what
-keys expand membership, the trend history and the cursor's re-anchoring
-across a resort. Unifying them takes four parameters that are each constant on
-one caller, and makes `--once` and `--follow` `format!` an id per row and
-throw it away. That the row sets differ is the consequence (it is why
-`--filter` is narrower than `/`), not the reason.
-
-`containers::id_key` is the one `by_id` key, on insert and lookup alike: the
-normalized id cut to 12 hex digits, so a full id and a truncated one reach the
-same row. The ceiling is that two running containers sharing a 12-hex prefix
-bill to one row. Keying the full id alone is refused: a runtime that reports a
-truncated id would silently lose its row.
+| candidate | refused because |
+| --- | --- |
+| the `/proc` and fdinfo field parsers, `once::scale_1024`, `identity::systemd_unescape` | no equivalent in std or in a crate already in the tree |
+| `ui::share_cells` | a partial-fill allocator whose result is meant to come up short, which no ratatui `Constraint` expresses |
+| `containers::unix_get` | the tree carries no HTTP client at all |
+| one walker for `once` and `ui` | `Flat` carries an `id` and an `expandable` flag `TableRow` has no use for, and that `id` keys expand membership, the trend history and the cursor's re-anchoring across a resort. Unifying takes four parameters each constant on one caller and makes `--once` and `--follow` `format!` an id per row to throw away. That the row sets differ (why `--filter` is narrower than `/`) is the consequence, not the reason |
+| keying `containers::by_id` on the full id | `containers::id_key` cuts the normalized id to 12 hex digits on insert and lookup alike, so a full id and a truncated one reach the same row; a runtime that reports a truncated id would otherwise silently lose its row. Ceiling: two running containers sharing a 12-hex prefix bill to one row |
 
 ## Grouping invariants
 
@@ -159,69 +146,24 @@ truncated id would silently lose its row.
   `Inspect::owns_netns` skips host networking, and `Metrics::accumulate` sums
   neither the pair nor the three `*_stall_pct` fields (`types.rs` guards both).
 
-## Surfaces and flags
+## Surfaces, flags and columns
 
-`proc::sample_stream` is the `--follow` loop and honours `--pss-interval`;
-`once::follow_table` and `once::follow_json` share rendering with the one-shot
-pair through `render_table` and `json_text`.
+Each of these has one home; a second copy is the defect.
 
-`main::resolve_view` builds the one `View` every surface runs on, so
-flag-over-`view.json` precedence lives in one place: `--hide` adds to the saved
-list, every other flag overwrites, and only `sort`, `desc`, `filter`,
-`hide_columns` and `column_order` are read back (`users` and `top` are
-`#[serde(skip)]`). `--once` starts from `config::load_view()`; `--json` from
-`View::default()`, never the file. `--filter`, `--top`, `--hide` and `--order`
-are `conflicts_with = "json"` because the JSON shape is a contract.
-
-An unknown `--sort` label is a clap `InvalidValue` exit, not
-`Sort::from_label`'s fallback — a stale `view.json` must not stop the monitor,
-an argument just typed can still be corrected. `once::sort_labels` feeds that
-error; `src/cli.rs` cannot reach `COLUMNS` because `build.rs` includes it
-standalone to generate the completions and man page.
-
-`once::Filter` (`regex-lite`; the measurement is on it) returns `None` from
-`new` rather than an error, and each caller decides what that means (clap
-`InvalidValue`, a `view.json` warning, the TUI's `?` footer).
-
-`once::printable` is the one place process text is escaped before stdout; the
-tree and `--json` keep raw strings, and the TUI relies on ratatui dropping
-control characters.
-
-`--filter` and `/` match `TableRow::search` / `Flat::search` (`once::haystack`)
-when one is built, else `name`; `keep_matches`, `keep_top` and `Filter` carry
-the rest. `ProcNode::cmdline` is the argv `proc` already read, and is
-serialized (`types.rs`).
-
-`Set::Legacy` differs from `Set::Unicode` in `glyph::spark_ramp` and nowhere
-else; `glyph.rs` carries why that holds and why `detect` never returns it.
-
-`--trend kitty`, `--trend sixel` and `--trend auto` live in `src/kgp.rs`,
-`src/sixel.rs` and `src/caps.rs`; each module doc carries its protocol
-decisions, `ui::resolve_trend` the kitty-versus-sixel choice with its
-measurement, and `tty::hold_shm` the signal-safe shm cleanup.
-
-`i` (`ui::draw_detail`, `ui::metric_grid`, `proc::detail`) and `?` share
-`ui::popup`; `ui::Overlay` holds which one is open, so only one draws.
-
-## Columns
-
-`ui::trend_scale` is the one TREND scale per frame, and says why it is not
-each row's own peak; `ui::spark` and `kgp::paint` both draw against it.
-
-`spark` is the one column whose cell is not a function of the current sample:
-its `Column::fmt` returns empty and `ui::draw` substitutes `ui::spark` from
-`App::history`, `App::trend_w` deep. `Columns::for_tui` is the only
-constructor that includes it, and `Sort::step` skips it (`key: None`).
-`--order` validates against `column_labels()` rather than `sort_labels()`,
-since not everything movable is sortable.
-
-`once::COLUMNS` is the one column model; `once::Columns` is that list with
-`view.hide_columns` and `view.column_order` applied, resolved at start and
-rebuilt when `H` / `u` change it, so no render site branches on visibility
-and nothing reaches sampling. `Sort::step` cycles over the visible list only.
-`config::default_hidden` hides the stall trio when `hide_columns` is absent.
-Visibility is a view preference, so it lives in `view.json`, never in
-`rules.d`, and `--json` ignores it.
+| what | where | rule |
+| --- | --- | --- |
+| `--follow` loop | `proc::sample_stream` | honours `--pss-interval`; `once::follow_table` / `follow_json` share `render_table` and `json_text` with the one-shot pair |
+| flag over `view.json` precedence | `main::resolve_view` | `--hide` adds to the saved list, every other flag overwrites; only `sort`, `desc`, `filter`, `hide_columns`, `column_order` are read back (`users`, `top` are `#[serde(skip)]`). `--once` starts from `config::load_view()`, `--json` from `View::default()` and never the file. `--filter`, `--top`, `--hide`, `--order` are `conflicts_with = "json"` because the JSON shape is a contract |
+| unknown `--sort` label | clap `InvalidValue` via `once::sort_labels` | not `Sort::from_label`'s fallback: a stale `view.json` must not stop the monitor, an argument just typed can be corrected. `src/cli.rs` cannot reach `COLUMNS` because `build.rs` includes it standalone for the completions and man page |
+| bad regex | `once::Filter::new` returns `None` (`regex-lite`; the measurement is on it) | each caller decides: clap `InvalidValue`, a `view.json` warning, the TUI's `?` footer |
+| escaping process text for stdout | `once::printable` | the tree and `--json` keep raw strings; the TUI relies on ratatui dropping control characters |
+| `--filter` and `/` haystack | `TableRow::search` / `Flat::search` (`once::haystack`) when built, else `name` | `keep_matches`, `keep_top` and `Filter` carry the rest; `ProcNode::cmdline` is the argv `proc` already read, serialized in `types.rs` |
+| `Set::Legacy` vs `Set::Unicode` | `glyph::spark_ramp`, nowhere else | `glyph.rs` says why, and why `detect` never returns it |
+| `--trend kitty` / `sixel` / `auto` | `src/kgp.rs` / `src/sixel.rs` / `src/caps.rs` | each module doc carries its protocol decisions; `ui::resolve_trend` the kitty-versus-sixel choice with its measurement; `tty::hold_shm` the signal-safe shm cleanup |
+| `i` and `?` overlays | `ui::popup`, `ui::Overlay` | `i` is `ui::draw_detail`, `ui::metric_grid`, `proc::detail`; `Overlay` holds which is open, so only one draws |
+| TREND scale | `ui::trend_scale`, one per frame | says why it is not each row's own peak; `ui::spark` and `kgp::paint` both draw against it |
+| `spark` column | `Column::fmt` returns empty; `ui::draw` substitutes `ui::spark` from `App::history`, `App::trend_w` deep | the one column not a function of the current sample: only `Columns::for_tui` includes it, `Sort::step` skips it (`key: None`), and `--order` validates against `column_labels()` rather than `sort_labels()` since not everything movable is sortable |
+| column model | `once::COLUMNS`; `once::Columns` is it with `view.hide_columns` and `view.column_order` applied | resolved at start, rebuilt on `H` / `u`, so no render site branches on visibility and nothing reaches sampling; `Sort::step` cycles the visible list; `config::default_hidden` hides the stall trio when `hide_columns` is absent. Visibility is a view preference: `view.json`, never `rules.d`, and `--json` ignores it |
 
 ## Rules
 
@@ -250,8 +192,8 @@ The contract, which a change may extend but not alter:
 - `disable` entries are collected from every file that compiled before any
   rule is kept, applied to that file name in every source, and never undone,
   so the result is order independent.
-- An empty list, `all`, `any` or string pattern fails the file (`name_prefix
-  ""` matched every process), as does `script` outside a class rule whose
+- Ids are `[a-z0-9-]+`, unique per file. An empty list, `all`, `any` or
+  string pattern fails the file (`name_prefix ""` matched every process), as does `script` outside a class rule whose
   classes are exactly `[anonymous_script]`: `judged` never sets
   `Facts::script`, so it would be a silent miss. Half a file loaded is a rule
   set nobody wrote.
@@ -261,26 +203,17 @@ The contract, which a change may extend but not alter:
   `owner_uid` is consulted before workdir and bind-mount inference in
   `containers::insert_resolved`.
 
-`group::Ctx::new` builds `judged` once per pid per tick: the unit, its flags
-and the class set, plus the positional-argv launcher test in `group::judge`.
-Every class and unit question in `group.rs`, `identity::instance_key` and
-`identity::generic_fallback` reads it; asked per call site instead, the name
-lookup alone ran 2,200 times per 293-process tick. Keyed on pid and valid for
-one `Ctx`, which lives one `build_tree`, so `exec` needs no invalidation.
+Grouping cost, measured on a quiet machine with `cargo test --release --test
+grouping -- --ignored --nocapture build_tree_timing` and `cargo test --release
+--lib -- --ignored --nocapture rules_timing` (`HEFT_BENCH_FIXTURE` names a
+`--fixture` dump):
 
-Session and app rules evaluate on a borrowed `Facts` in `direct_place`, and
-evaluation allocates nothing (`rules::tests::evaluation_allocates_nothing`,
-counted per thread because the other tests allocate on other threads). The
-compiled shape is what makes that affordable: a `Vec<String>` per test with a
-`windows` scan cost 750 ns per process, and equality bucketed by byte length
-with a first-byte scan for contains cost 415 to 450.
-
-`build_tree` measures 163 to 174 µs on the 102-process gui fixture and 577 to 584 µs on a
-323-process `--fixture` dump, and the four stages 368 to 396 ns per process on facts built by
-`group::facts_of`. The budget is 20% and 500 ns, measured on a quiet machine:
-`cargo test --release --test grouping -- --ignored --nocapture
-build_tree_timing` and `cargo test --release --lib -- --ignored --nocapture
-rules_timing`, with `HEFT_BENCH_FIXTURE` naming a `--fixture` dump.
+| what | measurement |
+| --- | --- |
+| `judged` built once per pid per tick by `group::Ctx::new` (unit, flags, class set, and the positional-argv launcher test in `group::judge`), read by every class and unit question in `group.rs`, `identity::instance_key` and `identity::generic_fallback` | asked per call site instead, the name lookup alone ran 2,200 times per 293-process tick. Keyed on pid and valid for one `Ctx`, which lives one `build_tree`, so `exec` needs no invalidation |
+| session and app rules evaluate on a borrowed `Facts` in `direct_place` and allocate nothing (`rules::tests::evaluation_allocates_nothing`, counted per thread because other tests allocate on other threads) | a `Vec<String>` per test with a `windows` scan cost 750 ns per process; equality bucketed by byte length with a first-byte scan for contains costs 415 to 450 ns |
+| `build_tree` | 163 to 174 µs on the 102-process gui fixture, 577 to 584 µs on a 323-process `--fixture` dump; budget 20% |
+| the four stages on facts from `group::facts_of` | 368 to 396 ns per process; budget 500 ns |
 
 `Rules::load`, `rules::load_dir` and `Rules::builtin` carry the load contract.
 `tests/common::heft` points

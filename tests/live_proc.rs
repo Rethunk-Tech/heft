@@ -19,7 +19,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use serde_json::Value;
 
 mod common;
-use common::{arr, heft, pids};
+use common::{arr, heft, idents, pids, procs_of};
 /// The floor `--interval` allows: the two `/proc` walks this far apart.
 fn fast() -> String {
     heft::proc::MIN_INTERVAL.to_string()
@@ -119,41 +119,6 @@ fn is_kthread(stat: &str) -> bool {
         .nth(6)
         .and_then(|f| f.parse::<u32>().ok())
         .is_some_and(|flags| flags & 0x0020_0000 != 0)
-}
-
-/// Every identity row in the tree, with the folder path that leads to it.
-fn idents(host: &Value) -> Vec<(String, &Value)> {
-    let mut out = Vec::new();
-    for user in arr(host, "users") {
-        let uid = user["uid"].as_u64().expect("a user node carries its uid");
-        for folder in ["applications", "user_services", "containers"] {
-            for ident in arr(user, folder) {
-                out.push((format!("uid{uid}/{folder}"), ident));
-            }
-        }
-    }
-    for folder in ["containers", "system"] {
-        for ident in arr(host, folder) {
-            out.push((format!("host/{folder}"), ident));
-        }
-    }
-    out
-}
-
-/// Flatten one node's process forest. Depth is bounded by the real ancestry
-/// heft copied out of `/proc`, so recursion cannot outrun the stack.
-fn procs_of(parent: &Value) -> Vec<&Value> {
-    fn walk<'a>(node: &'a Value, out: &mut Vec<&'a Value>) {
-        out.push(node);
-        for child in arr(node, "children") {
-            walk(child, out);
-        }
-    }
-    let mut out = Vec::new();
-    for root in arr(parent, "processes") {
-        walk(root, &mut out);
-    }
-    out
 }
 
 /// `types::sum_opt`: blank plus a number is that number, and the result is

@@ -26,7 +26,7 @@ use std::time::{Duration, Instant};
 use serde_json::Value;
 
 mod common;
-use common::{arr, heft, pids};
+use common::{arr, heft, idents, pids, procs_of};
 
 /// heft's CPU window is this sleep and nothing else; the outer window a test
 /// can draw around it adds a full `/proc` walk on either side. Every CPU bound
@@ -199,33 +199,16 @@ fn scan() -> HashMap<u32, Option<u64>> {
 /// promises for a metric heft could not read, which is why the value is an
 /// `Option` and not a zero.
 fn tree_pss(host: &Value) -> HashMap<u32, Option<u64>> {
-    #[expect(
-        clippy::cast_possible_truncation,
-        reason = "a pid is a u32 in /proc and in the tree; the JSON widened it, this narrows it back"
-    )]
-    fn walk(node: &Value, out: &mut HashMap<u32, Option<u64>>) {
-        let pid = node["pid"]
-            .as_u64()
-            .expect("a process node carries its pid");
-        out.insert(pid as u32, node.get("pss_bytes").and_then(Value::as_u64));
-        for c in arr(node, "children") {
-            walk(c, out);
-        }
-    }
-    let mut idents: Vec<&Value> = Vec::new();
-    for user in arr(host, "users") {
-        for f in ["applications", "user_services", "containers"] {
-            idents.extend(arr(user, f));
-        }
-    }
-    for f in ["containers", "system"] {
-        idents.extend(arr(host, f));
-    }
     let mut out = HashMap::new();
-    for ident in idents {
+    for (_, ident) in idents(host) {
         for inst in arr(ident, "instances") {
-            for p in arr(inst, "processes") {
-                walk(p, &mut out);
+            for p in procs_of(inst) {
+                #[expect(
+                    clippy::cast_possible_truncation,
+                    reason = "a pid is a u32 in /proc and in the tree; the JSON widened it, this narrows it back"
+                )]
+                let pid = p["pid"].as_u64().expect("a process node carries its pid") as u32;
+                out.insert(pid, p.get("pss_bytes").and_then(Value::as_u64));
             }
         }
     }

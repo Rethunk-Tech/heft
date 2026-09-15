@@ -130,6 +130,13 @@ fn has(nodes: &[heft::IdentNode], name: &str) -> bool {
     nodes.iter().any(|n| n.id == name || n.title == name)
 }
 
+fn ident<'a>(nodes: &'a [heft::IdentNode], id: &str) -> &'a heft::IdentNode {
+    nodes
+        .iter()
+        .find(|n| n.id == id)
+        .unwrap_or_else(|| panic!("no {id} row"))
+}
+
 fn proc_names(n: &heft::IdentNode) -> Vec<String> {
     fn walk(procs: &[heft::ProcNode], out: &mut Vec<String>) {
         for p in procs {
@@ -303,11 +310,7 @@ fn session_plumbing_is_never_an_application() {
 fn a_launching_agent_keeps_its_workers_visible() {
     let tree = tree_of(GUI, &Rules::builtin());
     let user = user_of(&tree, 1000);
-    let claude = user
-        .applications
-        .iter()
-        .find(|n| n.id == "claude" || n.title == "claude")
-        .expect("claude");
+    let claude = ident(&user.applications, "claude");
     let claude_procs = proc_names(claude);
     assert!(
         claude_procs
@@ -388,11 +391,7 @@ fn session_services_are_user_service_rows() {
 fn session_services_keep_their_helpers_visible() {
     let tree = tree_of(GUI, &Rules::builtin());
     let user = user_of(&tree, 1000);
-    let gnome = user
-        .user_services
-        .iter()
-        .find(|n| n.id == "gnome-shell" || n.title == "gnome-shell")
-        .expect("gnome-shell");
+    let gnome = ident(&user.user_services, "gnome-shell");
     let gnome_procs = proc_names(gnome);
     assert!(
         gnome_procs.iter().any(|n| n == "gjs-console" || n == "gjs"),
@@ -403,11 +402,7 @@ fn session_services_keep_their_helpers_visible() {
         "Xwayland must remain visible under gnome-shell: {gnome_procs:?}"
     );
 
-    let ibus = user
-        .user_services
-        .iter()
-        .find(|n| n.id == "ibus-daemon")
-        .expect("ibus-daemon");
+    let ibus = ident(&user.user_services, "ibus-daemon");
     let ibus_procs = proc_names(ibus);
     assert!(
         ibus_procs.iter().any(|n| n == "ibus-portal")
@@ -416,22 +411,14 @@ fn session_services_keep_their_helpers_visible() {
         "ibus helpers including ibus-x11 (lying GSD unit) fold into ibus-daemon: {ibus_procs:?}"
     );
 
-    let atspi = user
-        .user_services
-        .iter()
-        .find(|n| n.id == "at-spi-bus-launcher")
-        .expect("at-spi-bus-launcher");
+    let atspi = ident(&user.user_services, "at-spi-bus-launcher");
     assert!(
         proc_names(atspi).iter().any(|n| n == "at-spi2-registryd"),
         "at-spi2-registryd must remain visible under at-spi-bus-launcher: {:?}",
         proc_names(atspi)
     );
 
-    let goa = user
-        .user_services
-        .iter()
-        .find(|n| n.id == "goa-daemon")
-        .expect("goa-daemon");
+    let goa = ident(&user.user_services, "goa-daemon");
     let goa_procs = proc_names(goa);
     assert!(
         goa_procs.iter().any(|n| n == "goa-identity-service"),
@@ -442,11 +429,7 @@ fn session_services_keep_their_helpers_visible() {
         "gvfs-goa-volume-monitor must not bill to goa-daemon: {goa_procs:?}"
     );
 
-    let p11 = user
-        .user_services
-        .iter()
-        .find(|n| n.id == "p11-kit")
-        .expect("p11-kit");
+    let p11 = ident(&user.user_services, "p11-kit");
     let p11_procs = proc_names(p11);
     assert!(
         p11_procs.iter().any(|n| n == "p11-kit-server")
@@ -459,11 +442,7 @@ fn session_services_keep_their_helpers_visible() {
 fn service_families_keep_their_members_visible() {
     let tree = tree_of(GUI, &Rules::builtin());
     let user = user_of(&tree, 1000);
-    let gsd = user
-        .user_services
-        .iter()
-        .find(|n| n.id == "gnome-settings-daemon")
-        .expect("gnome-settings-daemon");
+    let gsd = ident(&user.user_services, "gnome-settings-daemon");
     let gsd_procs = proc_names(gsd);
     assert!(
         gsd_procs.iter().any(|n| n == "gsd-color") && gsd_procs.iter().any(|n| n == "gsd-power"),
@@ -473,11 +452,7 @@ fn service_families_keep_their_members_visible() {
         !gsd_procs.iter().any(|n| n.contains("disk-utility")),
         "disk-utility-notify is not gnome-settings-daemon: {gsd_procs:?}"
     );
-    let gvfs = user
-        .user_services
-        .iter()
-        .find(|n| n.id == "gvfs")
-        .expect("gvfs");
+    let gvfs = ident(&user.user_services, "gvfs");
     let gvfs_procs = proc_names(gvfs);
     assert!(
         gvfs_procs.iter().any(|n| n == "gvfsd")
@@ -486,11 +461,7 @@ fn service_families_keep_their_members_visible() {
             && gvfs_procs.iter().any(|n| n == "wsdd" || n == "python3"),
         "gvfs stack must remain visible under gvfs: {gvfs_procs:?}"
     );
-    let flatpak = user
-        .user_services
-        .iter()
-        .find(|n| n.id == "flatpak")
-        .expect("flatpak");
+    let flatpak = ident(&user.user_services, "flatpak");
     let flatpak_procs = proc_names(flatpak);
     assert!(
         flatpak_procs.iter().any(|n| n == "flatpak-session-helper")
@@ -504,11 +475,7 @@ fn service_families_keep_their_members_visible() {
             .any(|n| n == "cursor" || n.starts_with("p11-kit")),
         "Cursor/p11-kit must not bill to flatpak: {flatpak_procs:?}"
     );
-    let portal = user
-        .user_services
-        .iter()
-        .find(|n| n.id == "xdg-desktop-portal")
-        .expect("xdg-desktop-portal");
+    let portal = ident(&user.user_services, "xdg-desktop-portal");
     let portal_procs = proc_names(portal);
     assert!(
         portal_procs.iter().any(|n| n == "xdg-desktop-portal")
@@ -516,11 +483,7 @@ fn service_families_keep_their_members_visible() {
             && portal_procs.iter().any(|n| n == "xdg-document-portal"),
         "portal backends must remain visible under xdg-desktop-portal: {portal_procs:?}"
     );
-    let eds = user
-        .user_services
-        .iter()
-        .find(|n| n.id == "evolution-data-server")
-        .expect("evolution-data-server");
+    let eds = ident(&user.user_services, "evolution-data-server");
     let eds_procs = proc_names(eds);
     assert!(
         eds_procs
@@ -529,11 +492,7 @@ fn service_families_keep_their_members_visible() {
             && eds_procs.iter().any(|n| n == "evolution-calendar-factory"),
         "EDS factories must remain visible: {eds_procs:?}"
     );
-    let pw = user
-        .user_services
-        .iter()
-        .find(|n| n.id == "pipewire")
-        .expect("pipewire");
+    let pw = ident(&user.user_services, "pipewire");
     assert!(
         proc_names(pw).iter().any(|n| n == "pipewire"),
         "pipewire-pulse bills to pipewire (exe basename): {:?}",
@@ -547,11 +506,7 @@ fn an_app_keeps_its_helpers() {
     let user = user_of(&tree, 1000);
     assert!(has(&user.applications, "htop"));
     assert!(!has(&user.user_services, "htop"));
-    let code = user
-        .applications
-        .iter()
-        .find(|n| n.id == "code" || n.title == "code")
-        .expect("code");
+    let code = ident(&user.applications, "code");
     assert!(
         proc_names(code).iter().any(|n| n == "xdg-dbus-proxy"),
         "app-bound xdg-dbus-proxy bills to the flatpak app: {:?}",
@@ -562,11 +517,7 @@ fn an_app_keeps_its_helpers() {
         "pipe helpers under the flatpak launcher bill to the payload: {:?}",
         proc_names(code)
     );
-    let cursor = user
-        .applications
-        .iter()
-        .find(|n| n.id == "cursor" || n.title == "cursor")
-        .expect("cursor");
+    let cursor = ident(&user.applications, "cursor");
     assert!(
         !proc_names(cursor).iter().any(|n| n.starts_with("p11-kit")),
         "p11-kit must not bill to Cursor: {:?}",
@@ -592,11 +543,7 @@ fn an_app_keeps_its_helpers() {
         titles(&user.applications)
     );
 
-    let firefox = user
-        .applications
-        .iter()
-        .find(|n| n.id == "firefox" || n.title == "firefox")
-        .expect("firefox");
+    let firefox = ident(&user.applications, "firefox");
     assert!(
         proc_names(firefox).iter().any(|n| n == "crashhelper"),
         "crashhelper must remain visible under firefox: {:?}",
@@ -631,11 +578,7 @@ fn containers_bill_to_their_project_or_owner() {
     assert!(!has(&user.containers, "dockerd"));
     assert!(!has(&user.containers, "containerd"));
 
-    let demo = user
-        .containers
-        .iter()
-        .find(|c| c.id == "supabase:demo")
-        .unwrap();
+    let demo = ident(&user.containers, "supabase:demo");
     assert!(
         demo.containers.len() >= 2,
         "project should expand to member containers"
@@ -668,11 +611,7 @@ fn idle_interactive_bash_under_ghostty_bills_to_ghostty() {
         "idle --posix bash must not be an Applications row: {:?}",
         titles(&user.applications)
     );
-    let ghostty = user
-        .applications
-        .iter()
-        .find(|n| n.id == "ghostty")
-        .expect("ghostty");
+    let ghostty = ident(&user.applications, "ghostty");
     assert!(
         proc_names(ghostty).iter().any(|n| n == "bash"),
         "idle bash must remain visible under ghostty: {:?}",
@@ -684,11 +623,7 @@ fn idle_interactive_bash_under_ghostty_bills_to_ghostty() {
 fn claude_under_bash_under_ghostty_owns_the_shell() {
     let tree = tree_of(GUI, &Rules::builtin());
     let user = user_of(&tree, 1000);
-    let claude = user
-        .applications
-        .iter()
-        .find(|n| n.id == "claude")
-        .expect("claude");
+    let claude = ident(&user.applications, "claude");
     let claude_procs = proc_names(claude);
     assert!(
         claude_procs.iter().any(|n| n == "bash")
@@ -786,7 +721,7 @@ fn fold_bills_a_named_process_to_another_identity() {
     let tree = tree_of(GUI, &ov);
     let user = &user_of(&tree, 1000).applications;
     assert!(!has(user, "spotify"), "{:?}", titles(user));
-    let media = user.iter().find(|n| n.id == "media").expect("media");
+    let media = ident(user, "media");
     assert!(
         proc_names(media).iter().any(|n| n == "spotify"),
         "{:?}",
@@ -837,7 +772,7 @@ fn a_user_app_rule_places_a_process_by_exe_prefix() {
     let tree = tree_of(GUI, &ov);
     let apps = &user_of(&tree, 1000).applications;
     assert!(!has(apps, "spotify"), "{:?}", titles(apps));
-    let music = apps.iter().find(|n| n.id == "music").expect("music");
+    let music = ident(apps, "music");
     assert!(
         proc_names(music).iter().any(|n| n == "spotify"),
         "{:?}",
@@ -885,11 +820,7 @@ fn a_user_class_rule_makes_a_name_a_compositor() {
     let tree = tree_of(GUI, &ov);
     let user = user_of(&tree, 1000);
     assert!(!has(&user.applications, "easyeffects"));
-    let fx = user
-        .user_services
-        .iter()
-        .find(|n| n.id == "easyeffects")
-        .expect("easyeffects under User Services");
+    let fx = ident(&user.user_services, "easyeffects");
     assert!(
         proc_names(fx).iter().any(|n| n == "bwrap"),
         "its bwrap launcher folds with it: {:?}",

@@ -210,14 +210,14 @@ each row's own peak; `ui::spark` and `kgp::paint` both draw against it.
 `spark` is the one column whose cell is not a function of the current sample:
 its `Column::fmt` returns empty and `ui::draw` substitutes `ui::spark` from
 `App::history`, `App::trend_w` deep. `Columns::for_tui` is the only
-constructor that includes it, and `Sort::next` skips it (`key: None`).
+constructor that includes it, and `Sort::step` skips it (`key: None`).
 `--order` validates against `column_labels()` rather than `sort_labels()`,
 since not everything movable is sortable.
 
 `once::COLUMNS` is the one column model; `once::Columns` is that list with
 `view.hide_columns` and `view.column_order` applied, resolved at start and
 rebuilt when `H` / `u` change it, so no render site branches on visibility
-and nothing reaches sampling. `Sort::next` cycles over the visible list only.
+and nothing reaches sampling. `Sort::step` cycles over the visible list only.
 `config::default_hidden` hides the stall trio when `hide_columns` is absent.
 Visibility is a view preference, so it lives in `view.json`, never in
 `rules.d`, and `--json` ignores it.

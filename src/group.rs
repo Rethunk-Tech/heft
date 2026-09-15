@@ -455,7 +455,7 @@ fn owning_app_ancestor(
     walking: &mut HashSet<u32>,
     depth: usize,
 ) -> Option<Place> {
-    for _ in 0..32 {
+    for _ in depth..MAX_WALK {
         let proc = curr.get(&pid)?;
         let classes = ctx.classes(proc);
         if classes

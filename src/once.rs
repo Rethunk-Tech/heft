@@ -314,7 +314,7 @@ impl Columns {
 pub(crate) struct Sort(usize);
 
 impl Sort {
-    /// Only the tests enumerate the sorts; `next` and `from_label` index
+    /// Only the tests enumerate the sorts; `step` and `from_label` index
     /// `COLUMNS` directly.
     #[cfg(test)]
     fn all() -> Vec<Self> {
@@ -359,17 +359,10 @@ impl Sort {
             .unwrap_or(Self(0))
     }
 
-    /// The next visible column, wrapping. Cycling onto a hidden one would move
-    /// the sort somewhere the reader cannot watch it happen.
-    pub(crate) fn next(self, cols: &Columns) -> Self {
-        self.step(cols, false)
-    }
-
-    pub(crate) fn prev(self, cols: &Columns) -> Self {
-        self.step(cols, true)
-    }
-
-    fn step(self, cols: &Columns, back: bool) -> Self {
+    /// The next visible column, or the previous one when `back`, wrapping.
+    /// Cycling onto a hidden one would move the sort somewhere the reader
+    /// cannot watch it happen.
+    pub(crate) fn step(self, cols: &Columns, back: bool) -> Self {
         let n = cols.0.len();
         // A saved view may legally sort by a column it also hides; the cycle
         // then restarts at the first visible one, or the last going back.
@@ -1294,14 +1287,14 @@ mod tests {
         let mut s = all[0];
         let mut seen = Vec::new();
         for _ in 0..all.len() {
-            s = s.next(&cols);
+            s = s.step(&cols, false);
             seen.push(s);
         }
         let mut expect: Vec<Sort> = all[1..].to_vec();
         expect.push(all[0]);
         assert_eq!(seen, expect);
         for want in seen.iter().rev().skip(1) {
-            s = s.prev(&cols);
+            s = s.step(&cols, true);
             assert_eq!(s, *want);
         }
     }
@@ -1313,7 +1306,7 @@ mod tests {
         let cols = Columns::for_tui(&View::default());
         let mut s = Sort::from_label("name");
         for _ in 0..cols.iter().count() + 2 {
-            s = s.next(&cols);
+            s = s.step(&cols, false);
             assert_ne!(s.label(), "spark", "the sort cycle landed on a picture");
         }
     }
@@ -1414,14 +1407,17 @@ mod tests {
     #[test]
     fn hiding_the_sort_column_lands_on_the_next_in_display_order() {
         let cols = every_column();
-        assert_eq!(Sort::from_label("pss").next(&cols).label(), "rss");
+        assert_eq!(Sort::from_label("pss").step(&cols, false).label(), "rss");
         let cols = Columns::from_view(&View {
             column_order: vec!["pss".into(), "core".into()],
             ..View::default()
         });
-        assert_eq!(Sort::from_label("pss").next(&cols).label(), "core");
+        assert_eq!(Sort::from_label("pss").step(&cols, false).label(), "core");
         let cols = hiding(&["netns_tx"]);
-        assert_eq!(Sort::from_label("netns_tx").next(&cols).label(), "name");
+        assert_eq!(
+            Sort::from_label("netns_tx").step(&cols, false).label(),
+            "name"
+        );
     }
 
     /// Hiding is presentation: the cells disappear, the widths of what is left
@@ -1446,10 +1442,10 @@ mod tests {
     #[test]
     fn sort_cycle_skips_hidden_columns() {
         let cols = hiding(&["nproc", "threads"]);
-        assert_eq!(Sort::from_label("name").next(&cols).label(), "age");
+        assert_eq!(Sort::from_label("name").step(&cols, false).label(), "age");
         // A saved view may sort by a column it also hides; the cycle restarts
         // rather than stalling on it.
-        assert_eq!(Sort::from_label("nproc").next(&cols).label(), "name");
+        assert_eq!(Sort::from_label("nproc").step(&cols, false).label(), "name");
     }
 
     fn sample_ident(disk_r_bps: f64) -> IdentNode {

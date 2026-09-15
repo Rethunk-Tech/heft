@@ -691,7 +691,7 @@ fn handle_key(
         KeyCode::Char('d') => app.view.desc = !app.view.desc,
         KeyCode::Char('H') => {
             let label = app.view.sort.clone();
-            let next = Sort::from_label(&label).next(&app.cols);
+            let next = Sort::from_label(&label).step(&app.cols, false);
             if hide_column(&mut app.view, &label) {
                 refresh_columns(app);
                 if app.cols.iter().all(|c| c.label != app.view.sort) {
@@ -720,13 +720,11 @@ fn handle_key(
         KeyCode::Left | KeyCode::Right | KeyCode::Char('[' | ']')
             if mods.contains(KeyModifiers::SHIFT) || matches!(code, KeyCode::Char(_)) =>
         {
-            let s = Sort::from_label(&app.view.sort);
-            let s = if matches!(code, KeyCode::Left | KeyCode::Char('[')) {
-                s.prev(&app.cols)
-            } else {
-                s.next(&app.cols)
-            };
-            app.view.sort = s.label().into();
+            let back = matches!(code, KeyCode::Left | KeyCode::Char('['));
+            app.view.sort = Sort::from_label(&app.view.sort)
+                .step(&app.cols, back)
+                .label()
+                .into();
         }
         KeyCode::Left | KeyCode::Char('h') => app.col_off = app.col_off.saturating_sub(1),
         KeyCode::Right | KeyCode::Char('l') => app.col_off = app.col_off.saturating_add(1),

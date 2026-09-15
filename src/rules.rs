@@ -87,29 +87,20 @@ pub enum Pat {
     Many(Vec<String>),
 }
 
-/// `Class` and `CLASS_NAMES` come from one table, so neither can gain an
-/// entry the other lacks or list them in another order.
-macro_rules! classes {
-    ($($variant:ident = $name:literal,)*) => {
-        #[derive(Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
-        pub enum Class {
-            $(#[serde(rename = $name)] $variant,)*
-        }
-        pub const CLASS_NAMES: &[&str] = &[$($name,)*];
-    };
-}
-classes! {
-    Launcher = "launcher",
-    Generic = "generic",
-    Shell = "shell",
-    Terminal = "terminal",
-    Compositor = "compositor",
-    Worker = "worker",
-    Noise = "noise",
-    CrashHelper = "crash_helper",
-    NoAbsorb = "no_absorb",
-    AnonymousScript = "anonymous_script",
-    ContainerRuntime = "container_runtime",
+#[derive(Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+#[serde(rename_all = "snake_case")]
+pub enum Class {
+    Launcher,
+    Generic,
+    Shell,
+    Terminal,
+    Compositor,
+    Worker,
+    Noise,
+    CrashHelper,
+    NoAbsorb,
+    AnonymousScript,
+    ContainerRuntime,
 }
 
 #[derive(Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
@@ -120,7 +111,8 @@ pub enum UnitFlag {
 }
 
 bitflags::bitflags! {
-    /// Bit `Class as u16` is that class, which is what `names` indexes by.
+    /// Bit `Class as u16` is that class, and each constant's name lowercased
+    /// is the class's serde name, which is what `names` prints.
     #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
     pub struct Classes: u16 {
         const LAUNCHER = 1 << Class::Launcher as u16;
@@ -150,8 +142,10 @@ impl Classes {
             .collect()
     }
     #[must_use]
-    pub fn names(self) -> Vec<&'static str> {
-        bit_names(self.bits(), CLASS_NAMES)
+    pub fn names(self) -> Vec<String> {
+        self.iter_names()
+            .map(|(n, _)| n.to_ascii_lowercase())
+            .collect()
     }
 }
 
@@ -162,19 +156,11 @@ impl UnitFlags {
             .collect()
     }
     #[must_use]
-    pub fn names(self) -> Vec<&'static str> {
-        bit_names(self.bits().into(), &["lying", "service"])
+    pub fn names(self) -> Vec<String> {
+        self.iter_names()
+            .map(|(n, _)| n.to_ascii_lowercase())
+            .collect()
     }
-}
-
-/// The entries of `names` whose index is a set bit.
-fn bit_names(bits: u16, names: &[&'static str]) -> Vec<&'static str> {
-    names
-        .iter()
-        .enumerate()
-        .filter(|&(i, _)| (bits >> i) & 1 != 0)
-        .map(|(_, n)| *n)
-        .collect()
 }
 
 /// Example: the flat `--fixture` row plus the unit/identity/container subjects.
@@ -278,8 +264,8 @@ impl Compiled {
         v.extend(self.fold_to.iter().map(|k| format!("fold_to {k}")));
         v.extend(self.folder.map(|f| folder_name(f).to_string()));
         v.extend(self.owner_uid.map(|u| format!("owner_uid {u}")));
-        v.extend(self.classes.names().into_iter().map(str::to_string));
-        v.extend(self.flags.names().into_iter().map(str::to_string));
+        v.extend(self.classes.names());
+        v.extend(self.flags.names());
         v.join(" ")
     }
 }
@@ -1217,14 +1203,21 @@ mod tests {
         assert_eq!(r.examples, 127);
     }
 
-    /// A class's bit is its discriminant and `names` indexes `CLASS_NAMES`
-    /// by bit, so the name printed must be the name the file spells.
+    /// `names` prints the constant's name and a file spells the serde name, so
+    /// each printed name must deserialize back to the class on that bit.
     #[test]
     fn every_class_name_is_the_name_its_bit_prints() {
-        for &name in CLASS_NAMES {
-            let c: Class = serde_json::from_value(name.into()).unwrap();
-            assert_eq!(Classes::of(&[c]).names(), [name]);
+        for (constant, bit) in Classes::all().iter_names() {
+            let name = constant.to_ascii_lowercase();
+            let c: Class = serde_json::from_value(name.clone().into()).unwrap();
+            assert_eq!(Classes::of(&[c]), bit);
+            assert_eq!(bit.names(), [name]);
         }
+        for (constant, bit) in UnitFlags::all().iter_names() {
+            let f: UnitFlag = serde_json::from_value(constant.to_ascii_lowercase().into()).unwrap();
+            assert_eq!(UnitFlags::of(&[f]), bit);
+        }
+        assert!(serde_json::from_value::<Class>("crashhelper".into()).is_err());
     }
 
     #[test]

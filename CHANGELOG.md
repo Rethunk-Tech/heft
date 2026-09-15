@@ -7,6 +7,13 @@
 - `--json` identity and member-container objects no longer carry `title`; it
   always equalled `id`.
 
+### Fixed
+
+- A user `class` rule that makes an identity `no_absorb` now stops workers
+  folding onto it; only a parent named `systemd` was refused before.
+- A user `crash_helper` rule that matches by `exe` or argument now keeps that
+  helper from naming its sibling's app.
+
 ## 0.11.1 - 2026-09-13
 
 ### Added

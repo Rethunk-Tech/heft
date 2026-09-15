@@ -412,8 +412,9 @@ Suite stays under 30s. No live GPU in CI.
 `live_proc::heft_does_not_grow_while_it_follows` watches heft's own RSS
 growth across a `--follow` window with several PSS ticks, not a ceiling: one
 tight enough to catch a leak in seconds is below what heft legitimately uses
-on a busy host. It guards the `0a9ee0a` class of regression. Docker sock is
-optional in CI; grouping tests use `tests/fixtures/` via `tests/grouping.rs`.
+on a busy host. It guards the walk pool: a fresh thread per walk leaves glibc
+arenas climbing. Docker sock is optional in CI; grouping tests use
+`tests/fixtures/` via `tests/grouping.rs`.
 
 The gate is `cargo clippy --locked --all-targets -- -D warnings` at the
 default level plus the `[lints.clippy]` list in `Cargo.toml`.

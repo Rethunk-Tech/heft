@@ -4,7 +4,7 @@ Read-only Linux process monitor. Binary name `heft`.
 
 ## Start here
 
-@HUMANS.md — install, keys, XDG, sample cadence, live verify.
+[HUMANS.md](HUMANS.md) — install, keys, XDG, sample cadence, rules file format, live verify. Read it before touching a flag, column, key or rule.
 
 ## Layout
 

@@ -737,7 +737,10 @@ pub fn print_fixture() -> Result<(), crate::types::Error> {
         home.as_deref()
             .map_or_else(|| s.to_string(), |h| s.replace(h, "~/"))
     };
-    let mut rows: Vec<&Process> = procs.values().filter(|p| !p.kthread).collect();
+    let mut rows: Vec<&Process> = procs
+        .values()
+        .filter(|p| !crate::identity::is_kernel(p))
+        .collect();
     rows.sort_by_key(|p| p.pid);
     let processes: Vec<serde_json::Value> = rows
         .iter()

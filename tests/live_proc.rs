@@ -20,8 +20,10 @@ use serde_json::Value;
 
 mod common;
 use common::{arr, heft, pids};
-/// The floor `--interval` allows (`proc::MIN_INTERVAL`): the two `/proc` walks this far apart.
-const FAST: &str = "0.05";
+/// The floor `--interval` allows: the two `/proc` walks this far apart.
+fn fast() -> String {
+    heft::proc::MIN_INTERVAL.to_string()
+}
 
 /// Keys `Metrics` skips when the value is `None`. A missing key is the blank
 /// cell HUMANS.md promises; `0` would be a lie about a metric heft could not
@@ -67,7 +69,7 @@ fn sample() -> &'static Sample {
     SAMPLE.get_or_init(|| {
         let before = kthread_pids();
         let alive_before = pids();
-        let child = heft(&["--json", "--interval", FAST])
+        let child = heft(&["--json", "--interval", &fast()])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
@@ -350,7 +352,7 @@ fn heft_does_not_grow_while_it_follows() {
         "--json",
         "--follow",
         "--interval",
-        FAST,
+        &fast(),
         "--pss-interval",
         "0.1",
     ])
@@ -394,7 +396,7 @@ fn a_proc_root_is_the_only_proc_heft_reads() {
     let proc = dir.join("proc");
     std::fs::create_dir_all(&proc).expect("make an empty proc root");
 
-    let out = heft(&["--json", "--interval", FAST, "--proc-root"])
+    let out = heft(&["--json", "--interval", &fast(), "--proc-root"])
         .arg(&dir)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -418,12 +420,13 @@ fn a_proc_root_is_the_only_proc_heft_reads() {
 }
 
 /// A typed argument below the floor is a usage error, not a silent clamp:
-/// heft ran at 0.05 either way, so a caller asking for 0.001 computed rates
+/// heft ran at the floor either way, so a caller asking for less computed rates
 /// against a cadence heft was never using. `nan` parses as a float and would
 /// panic in `Duration::from_secs_f64`, so it has to be refused too.
 #[test]
 fn an_interval_below_the_floor_is_refused() {
-    for bad in ["0", "0.001", "nan"] {
+    let below = (heft::proc::MIN_INTERVAL / 2.0).to_string();
+    for bad in ["0", below.as_str(), "nan"] {
         let out = heft(&["--once", "--interval", bad])
             .output()
             .expect("run heft");
@@ -433,10 +436,13 @@ fn an_interval_below_the_floor_is_refused() {
             String::from_utf8_lossy(&out.stdout)
         );
         let err = String::from_utf8_lossy(&out.stderr);
-        assert!(err.contains("0.05"), "the error must name the floor: {err}");
+        assert!(
+            err.contains(&fast()),
+            "the error must name the floor: {err}"
+        );
     }
     // The floor itself, and a value above it, still run.
-    for ok in ["0.05", "0.2"] {
+    for ok in [fast().as_str(), "0.2"] {
         let out = heft(&["--once", "--interval", ok])
             .output()
             .expect("run heft");
@@ -594,7 +600,7 @@ fn a_pid_vanishing_mid_walk_is_skipped_not_fatal() {
         }
         spawned
     });
-    let out = heft(&["--once", "--interval", FAST])
+    let out = heft(&["--once", "--interval", &fast()])
         .output()
         .expect("run heft --once");
     stop.store(true, Ordering::Relaxed);
@@ -661,7 +667,7 @@ fn heft_rules_path_replaces_the_rules_directories() {
     )
     .expect("write rule");
     let run = |xdg: &std::path::Path, isolated: bool| {
-        let mut cmd = heft(&["--json", "--interval", FAST]);
+        let mut cmd = heft(&["--json", "--interval", &fast()]);
         cmd.env("XDG_CONFIG_HOME", xdg);
         if !isolated {
             cmd.env_remove("HEFT_RULES_PATH");
@@ -759,7 +765,7 @@ fn explain_names_the_placement_rule_for_its_identity() {
     let explain = |cmd: &mut std::process::Command| {
         String::from_utf8_lossy(&cmd.output().expect("run heft --explain").stdout).into_owned()
     };
-    let first = explain(&mut heft(&["--explain", &me, "--interval", FAST]));
+    let first = explain(&mut heft(&["--explain", &me, "--interval", &fast()]));
     let ident = first
         .lines()
         .find_map(|l| l.trim_start().strip_prefix("identity"))
@@ -773,7 +779,7 @@ fn explain_names_the_placement_rule_for_its_identity() {
         {"id": "pin", "match": {"identity": ident}, "folder": "applications"}]});
     std::fs::write(dir.join("90-mine.json"), rule.to_string()).expect("write rule");
     let second =
-        explain(heft(&["--explain", &me, "--interval", FAST]).env("HEFT_RULES_PATH", &dir));
+        explain(heft(&["--explain", &me, "--interval", &fast()]).env("HEFT_RULES_PATH", &dir));
     std::fs::remove_dir_all(&dir).ok();
     assert!(
         second
@@ -787,7 +793,7 @@ fn explain_names_the_placement_rule_for_its_identity() {
 /// 2^22, so this pid can never exist.
 #[test]
 fn explain_exits_non_zero_for_a_pid_it_cannot_see() {
-    let out = heft(&["--explain", "999999999", "--interval", FAST])
+    let out = heft(&["--explain", "999999999", "--interval", &fast()])
         .output()
         .expect("run heft --explain");
     let stdout = String::from_utf8_lossy(&out.stdout);
@@ -819,7 +825,7 @@ fn explain_ends_quietly_when_the_reader_closes() {
 #[test]
 fn explain_draws_its_path_in_the_glyph_set_asked_for() {
     let me = std::process::id().to_string();
-    let out = heft(&["--glyphs", "ascii", "--explain", &me, "--interval", FAST])
+    let out = heft(&["--glyphs", "ascii", "--explain", &me, "--interval", &fast()])
         .output()
         .expect("run heft --explain");
     let out = String::from_utf8_lossy(&out.stdout);

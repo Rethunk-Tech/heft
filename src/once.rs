@@ -699,9 +699,7 @@ fn render_table(
     // The argv haystack is built only for the tick that searches it.
     let mut rows = table_rows(&tree, filter.is_some());
     if let Some(f) = &filter {
-        keep_matches(&mut rows, f, |r| {
-            (r.depth, r.search.as_deref().unwrap_or(r.name.as_str()))
-        });
+        keep_matches(&mut rows, f, TableRow::filter_key);
     }
     // After the filter, so `--filter chrome --top 3` is the three heaviest
     // rows that match rather than whatever of the top three happened to.
@@ -747,6 +745,16 @@ struct TableRow {
     /// title plus the argv of every process under the row. `None` everywhere
     /// else, so a tick with no filter allocates nothing for it.
     search: Option<String>,
+}
+
+impl TableRow {
+    /// The `(depth, text)` pair `keep_matches` reads.
+    fn filter_key(&self) -> (u16, &str) {
+        (
+            self.depth,
+            self.search.as_deref().unwrap_or(self.name.as_str()),
+        )
+    }
 }
 
 fn table_rows(tree: &HostTree, deep: bool) -> Vec<TableRow> {
@@ -1545,9 +1553,7 @@ mod tests {
         let filter = Filter::new("--port 8080").expect("test patterns compile");
         let matched = |deep: bool| {
             let mut rows = table_rows(&tree, deep);
-            keep_matches(&mut rows, &filter, |r| {
-                (r.depth, r.search.as_deref().unwrap_or(r.name.as_str()))
-            });
+            keep_matches(&mut rows, &filter, TableRow::filter_key);
             rows.len()
         };
         // Host, the user, the folder header, and the one worker that holds it.

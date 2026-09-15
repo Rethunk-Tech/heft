@@ -341,13 +341,12 @@ a `hide_columns` list in `view.json`.
 Each figure is the percentage of the last interval during which at least one
 task in the row's cgroup was stalled on that resource, from `cpu.pressure`,
 `io.pressure` and `memory.pressure`: the kernel's `some` number, not `full`. A
-stalled row can look idle in `%CORE`.
+stalled row can look idle in `%CORE`. A row that is one non-root cgroup shows
+that cgroup's rate. A row whose processes span several cgroups shows the max of
+those members' `some` rates, per resource: sum can exceed 100% (overlapping
+intervals) and an average hides a fully-stalled member. Measured on one
+desktop, 82% of rows are already a single cgroup. Blank:
 
-A row carries a figure only when it is exactly one non-root cgroup; measured on
-one desktop, 82% of rows do. Blank:
-
-- a row whose processes span several cgroups, since percentages of an interval
-  cannot be summed;
 - folder, User and Host rows (`user-1000.slice` is not the User row, and
   `system.slice` is not the System row);
 - a row in the root cgroup, whose pressure is the machine's;

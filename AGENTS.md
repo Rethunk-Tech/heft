@@ -21,7 +21,7 @@ src/cpu.rs           /proc/stat split (usr/sys/wait) + per-pid utime/stime rates
 src/mem.rs           meminfo used/Shmem/kernel/cache/Swap, zram mm_stat, unified APU clip, host VRAM
 src/io.rs            /proc/pid/io rates and smaps_rollup PSS + SwapPss
 src/net.rs           per-netns rx/tx from /proc/pid/net/dev; container rows only
-src/psi.rs           cgroup cpu/io/memory.pressure; single-cgroup rows only
+src/psi.rs           cgroup cpu/io/memory.pressure; max of member `some` on multi-cgroup identity/instance rows
 src/gpu.rs           amdgpu/i915/xe fdinfo; dri/drm prefilter; no empty-prefilter walk; oversized fdinfo skipped; drm-client-id dedupe; fd table rescanned only on PSS ticks
 src/classify.rs      procedures over the rule classes: crash-helper owner, launcher payload hint, interactive shell
 src/identity.rs      cgroup parse, merge key + display name
@@ -330,7 +330,7 @@ field there when grouping starts reading one, or reports stop reproducing.
 | Disk R/W | Δ `read_bytes` / `write_bytes` from `/proc/pid/io` |
 | GPU mem | first tier the client publishes of `gpu::MEM_PREFIXES`; regions `vram`/`gtt` (amdgpu), `local0`/`system0` (i915), `vram0`/`gtt` (xe). The `drm-memory-*` tier was measured on a 4750G |
 | NETNS RX/TX | Δ non-`lo` bytes from `/proc/<container-scope-pid>/net/dev`; a new pid or a counter that went backwards discards the interval |
-| CPU/IO/MEM ST | Δ `some ... total=` microseconds from that cgroup's `{cpu,io,memory}.pressure` over wall clock (`some`, not `full`: `psi.rs`). A counter that went backwards discards the interval |
+| CPU/IO/MEM ST | Δ `some ... total=` microseconds from that cgroup's `{cpu,io,memory}.pressure` over wall clock (`some`, not `full`: `psi.rs`). Several cgroups on an identity/instance row: max of members' `some`, per resource. A counter that went backwards discards the interval |
 | Host `psi` | `some avg10` from `/proc/pressure/{cpu,io,memory}`, on the `--once` and `--json` host line only; `psi.rs` and `psi::header_tail` say why |
 | gfx% / compute% | `drm-engine-gfx`/`-render` and `-compute` ns deltas over wall clock. xe: `drm-cycles-rcs`/`-ccs` delta over the `drm-total-cycles-*` delta, each divided by `drm-engine-capacity-*` (`cpu::cycles_pct`). Two formulas, deliberately not unified |
 
@@ -343,7 +343,7 @@ field there when grouping starts reading one, or reports stop reproducing.
 | Layout | CPU and MEMORY, unbordered, plus a SWAP row where there is swap. Discrete VRAM shares the MEMORY row (`ui::tank_widths`). `ui::bar_prefix` aligns the labels and every row draws its bar to `mem_header_line`'s width so the brackets stack; persistent rules header↔tree and tree↔footer |
 | Disk R/W | table columns only (formatted rates change width every tick); after compute, before the stall trio |
 | THR / AGE | beside `N`, before the metric columns: all three say what the row *is* rather than what it is currently costing |
-| CPU/IO/MEM ST | a row carries a figure only when every process under it is in one non-root cgroup; a process row only when it is alone in its cgroup. Folder, User, Host and multi-cgroup rows are blank — a percentage of an interval cannot be summed, and `user-<uid>.slice` is not the User row (a rootful container is billed to its owner from `system.slice`) nor `system.slice` the System row (kernel threads are in the root cgroup). Root-cgroup rows are blank because that pressure is the machine's, the same rule as a `--network=host` container |
+| CPU/IO/MEM ST | one non-root cgroup is that cgroup's `some` rate; several is the max of members' `some`, per resource (sum exceeds 100% on overlap; average hides a fully-stalled member). A process row only when it is alone in its cgroup. Folder, User and Host rows are blank — `user-<uid>.slice` is not the User row (a rootful container is billed to its owner from `system.slice`) nor `system.slice` the System row (kernel threads are in the root cgroup). Root-cgroup rows are blank because that pressure is the machine's, the same rule as a `--network=host` container |
 | NETNS RX/TX | last two columns, named for the namespace and not the resource: a blank cell means the row owns no namespace, not that it moved no bytes |
 | Ordering | one comparator in `once.rs` for every level; a `None` metric sorts last in either direction, name breaks ties, stable over `group::proc_forest` pid order |
 

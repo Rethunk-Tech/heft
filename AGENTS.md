@@ -107,8 +107,9 @@ truncated id would silently lose its row.
   under a launcher or app bills to that parent; it does not break unique-payload
   folding and does not become its own row.
 - Workers (the `worker` class) fold into that app. Walk ancestors skipping
-  launchers and other generics; do not invent a script-basename identity
-  (`context7-mcp`) when a launching agent (`claude`, `cursor`) is above.
+  launchers and other generics, except one an `app` rule names (Cursor's
+  bundled `node` agent), which owns the chain; do not invent a script-basename
+  identity (`context7-mcp`) when a launching agent (`claude`, `cursor`) is above.
   Processes stay visible on expand. `crash_helper_app` matches exe/cmdline
   even when PPID is user systemd. The mount directory itself under `/tmp`,
   `/var/tmp`, or `/run` (`/tmp/mount`, `/tmp/.mount_cursorAb12Cd`) is per-run

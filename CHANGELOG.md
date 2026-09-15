@@ -16,6 +16,9 @@
 - An AppImage whose app outlives its launcher's parentage, and that app's
   crash handler, now bill to the app's row instead of showing as separate
   rows.
+- Cursor's bundled agent CLI, run from its `globalStorage` directory, and the
+  interpreters it starts (MCP servers under `npm exec`) bill to `cursor`
+  rather than an `app-cursor-<pid>` row.
 
 ## 0.11.1 - 2026-09-13
 

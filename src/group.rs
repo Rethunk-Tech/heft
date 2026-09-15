@@ -488,13 +488,18 @@ fn owning_app_ancestor(
     for _ in depth..MAX_WALK {
         let proc = curr.get(&pid)?;
         let classes = ctx.classes(proc);
-        if classes
-            .intersects(Classes::LAUNCHER | Classes::GENERIC | Classes::SHELL | Classes::NOISE)
+        // An `app` rule names this ancestor even when it is itself a generic
+        // interpreter (an editor's bundled `node`), so it owns the chain
+        // rather than being walked past to the user manager.
+        let named = ctx.rules.app(&ctx.facts(proc)).is_some();
+        if !named
+            && classes
+                .intersects(Classes::LAUNCHER | Classes::GENERIC | Classes::SHELL | Classes::NOISE)
         {
             pid = proc.ppid;
             continue;
         }
-        if !classify::absorbs_generic(classes) {
+        if !named && !classify::absorbs_generic(classes) {
             return None;
         }
         let place = resolve_one(pid, curr, ctx, memo, walking, depth)?;
@@ -948,5 +953,57 @@ mod tests {
         let rules = Rules::from_files(&files);
         assert!(rules.problems.is_empty(), "{:?}", rules.problems);
         assert_eq!(worker_key(&rules), "cursor");
+    }
+
+    #[test]
+    fn an_interpreter_under_an_app_named_interpreter_bills_to_that_app() {
+        let scope = "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-cursor-9.scope";
+        let at = |pid, ppid, exe: &str, argv: &[&str], cgroup: &str| Process {
+            pid,
+            ppid,
+            uid: 1000,
+            comm: argv[0].into(),
+            exe: Some(exe.into()),
+            cmdline: argv.iter().map(|&a| a.into()).collect(),
+            cgroup: cgroup.into(),
+            ..Process::default()
+        };
+        let curr = HashMap::from([
+            (
+                1,
+                at(
+                    1,
+                    0,
+                    "/usr/lib/systemd/systemd",
+                    &["systemd", "--user"],
+                    "0::/user.slice/user-1000.slice/user@1000.service/init.scope",
+                ),
+            ),
+            (
+                2,
+                at(
+                    2,
+                    1,
+                    "/home/u/.config/Cursor/User/globalStorage/agent/node",
+                    &["node", "cursor-agent"],
+                    scope,
+                ),
+            ),
+            (
+                3,
+                at(
+                    3,
+                    2,
+                    "/usr/bin/node-24",
+                    &["npm", "exec", "shadcn@latest", "mcp"],
+                    scope,
+                ),
+            ),
+        ]);
+        let containers = ContainerIndex::default();
+        let rules = Rules::builtin();
+        let placed = super::resolve(&curr, &Ctx::new(&containers, &rules, &curr));
+        assert_eq!(placed[&2].key, "cursor");
+        assert_eq!(placed[&3].key, "cursor");
     }
 }

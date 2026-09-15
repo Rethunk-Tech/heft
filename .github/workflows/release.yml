@@ -38,13 +38,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master
+      - uses: Rethunk-Tech/gh-actions/setup-rust@68f159b435d9b129b8baf36436079c3e76fb3222 # v1.11
         with:
           toolchain: stable
           targets: ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          key: ${{ matrix.target }}
 
       - name: Check the tag matches the crate version
         env:
@@ -70,7 +67,7 @@ jobs:
       - name: Stage completions and the man page
         if: matrix.target == 'x86_64-unknown-linux-gnu'
         run: |
-          # Newest, not first: rust-cache restores target/ between runs, so an
+          # Newest, not first: setup-rust restores target/ between runs, so an
           # assets dir from an earlier build of an earlier tag survives and
           # `head -1` can hand back its stale completions and man page.
           #

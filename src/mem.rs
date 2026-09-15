@@ -1,7 +1,6 @@
 use std::fs;
 use std::path::Path;
 
-use crate::proc::field_u64;
 use crate::types::{HostTree, sum_opt};
 
 /// The sysfs GPU memory counters. Not `HostTree` fields alone: `gtt_total` is
@@ -59,30 +58,28 @@ pub(crate) fn parse_meminfo(text: &str) -> HostTree {
     let mut kernel = 0u64;
     let mut swap_total = 0u64;
     let mut swap_free = 0u64;
-    for line in text.lines() {
-        if let Some(v) = field_u64(line, "MemTotal:") {
-            total = v.saturating_mul(1024);
-        } else if let Some(v) = field_u64(line, "MemAvailable:") {
-            avail = v.saturating_mul(1024);
-        } else if let Some(v) = field_u64(line, "Buffers:") {
-            buffers = v.saturating_mul(1024);
-        } else if let Some(v) = field_u64(line, "Cached:") {
-            cached = v.saturating_mul(1024);
-        } else if let Some(v) = field_u64(line, "Shmem:") {
-            shmem = v.saturating_mul(1024);
-        } else if let Some(v) = field_u64(line, "SReclaimable:") {
-            sreclaimable = v.saturating_mul(1024);
-        } else if let Some(v) = field_u64(line, "AnonPages:") {
-            anon = v.saturating_mul(1024);
-        } else if let Some(v) = ["SUnreclaim:", "PageTables:", "KernelStack:"]
-            .iter()
-            .find_map(|k| field_u64(line, k))
-        {
-            kernel = kernel.saturating_add(v.saturating_mul(1024));
-        } else if let Some(v) = field_u64(line, "SwapTotal:") {
-            swap_total = v.saturating_mul(1024);
-        } else if let Some(v) = field_u64(line, "SwapFree:") {
-            swap_free = v.saturating_mul(1024);
+    // Every key read here is in kB; the unitless `HugePages_*` counts are not.
+    for (key, rest) in text.lines().filter_map(|l| l.split_once(':')) {
+        let Some(v) = rest
+            .split_whitespace()
+            .next()
+            .and_then(|v| v.parse::<u64>().ok())
+        else {
+            continue;
+        };
+        let v = v.saturating_mul(1024);
+        match key {
+            "MemTotal" => total = v,
+            "MemAvailable" => avail = v,
+            "Buffers" => buffers = v,
+            "Cached" => cached = v,
+            "Shmem" => shmem = v,
+            "SReclaimable" => sreclaimable = v,
+            "AnonPages" => anon = v,
+            "SUnreclaim" | "PageTables" | "KernelStack" => kernel = kernel.saturating_add(v),
+            "SwapTotal" => swap_total = v,
+            "SwapFree" => swap_free = v,
+            _ => {}
         }
     }
     HostTree {

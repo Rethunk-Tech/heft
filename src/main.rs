@@ -38,12 +38,9 @@ fn main() -> ExitCode {
     if let Some(root) = cli.proc_root.as_deref()
         && !std::path::Path::new(root).join("proc").is_dir()
     {
-        Cli::command()
-            .error(
-                ErrorKind::InvalidValue,
-                format!("invalid value {root:?} for '--proc-root <DIR>': no proc directory there"),
-            )
-            .exit()
+        usage(format!(
+            "invalid value {root:?} for '--proc-root <DIR>': no proc directory there"
+        ))
     }
     heft::root::init(cli.proc_root.as_deref());
     // Before anything renders, and once: the answer cannot change while heft
@@ -108,7 +105,7 @@ fn resolve_view(cli: &Cli) -> heft::config::View {
         heft::config::load_view()
     };
     if let Some(label) = &cli.sort {
-        view.sort = check_sort(label).to_string();
+        view.sort = check_column("sort", label, &heft::once::sort_labels()).to_string();
     }
     if let Some(filter) = &cli.filter {
         check_filter(filter);
@@ -137,14 +134,15 @@ fn resolve_view(cli: &Cli) -> heft::config::View {
             .order
             .iter()
             .map(|label| {
-                let label = check_order(label);
+                // Ordering is presentation, so every column can be moved,
+                // including `spark`, which no sort can land on: `--order`
+                // validates against every column label, not the sortable ones
+                // `--sort` takes.
+                let label = check_column("order", label, &heft::once::column_labels());
                 if !seen.insert(label) {
-                    Cli::command()
-                        .error(
-                            ErrorKind::InvalidValue,
-                            format!("invalid value '{label}' for '--order <COLUMN>': listed more than once"),
-                        )
-                        .exit()
+                    usage(format!(
+                        "invalid value '{label}' for '--order <COLUMN>': listed more than once"
+                    ))
                 }
                 label.to_string()
             })
@@ -171,15 +169,16 @@ fn check_interval(flag: &str, secs: f64) -> Duration {
             Err(e) => e.to_string(),
         }
     };
-    Cli::command()
-        .error(
-            ErrorKind::InvalidValue,
-            format!(
-                "invalid value '{secs}' for '--{flag} <{}>': {why}",
-                flag.to_uppercase().replace('-', "_"),
-            ),
-        )
-        .exit()
+    usage(format!(
+        "invalid value '{secs}' for '--{flag} <{}>': {why}",
+        flag.to_uppercase().replace('-', "_"),
+    ))
+}
+
+/// Every invalid typed value exits the way clap's own does: same prefix,
+/// usage line and exit code.
+fn usage(msg: impl std::fmt::Display) -> ! {
+    Cli::command().error(ErrorKind::InvalidValue, msg).exit()
 }
 
 /// A typo on the command line is told to the user, where `Sort::from_label`
@@ -189,26 +188,10 @@ fn check_column<'a>(flag: &str, label: &'a str, labels: &[&'static str]) -> &'a 
     if labels.contains(&label) {
         return label;
     }
-    Cli::command()
-        .error(
-            ErrorKind::InvalidValue,
-            format!(
-                "invalid value '{label}' for '--{flag} <COLUMN>'\n  [possible values: {}]",
-                labels.join(", ")
-            ),
-        )
-        .exit()
-}
-
-fn check_sort(label: &str) -> &str {
-    check_column("sort", label, &heft::once::sort_labels())
-}
-
-/// Ordering is presentation, so every column can be moved, including `spark`,
-/// which no sort can land on: `--order` validates against every column label,
-/// not the sortable ones `--sort` takes.
-fn check_order(label: &str) -> &str {
-    check_column("order", label, &heft::once::column_labels())
+    usage(format!(
+        "invalid value '{label}' for '--{flag} <COLUMN>'\n  [possible values: {}]",
+        labels.join(", ")
+    ))
 }
 
 /// Same split as `--sort`: a typo on the command line is a usage error, a
@@ -217,12 +200,7 @@ fn check_order(label: &str) -> &str {
 /// numbers with no labels.
 fn check_hide(label: &str) -> &str {
     if label == "name" {
-        Cli::command()
-            .error(
-                ErrorKind::InvalidValue,
-                "invalid value 'name' for '--hide <COLUMN>': the name column cannot be hidden",
-            )
-            .exit()
+        usage("invalid value 'name' for '--hide <COLUMN>': the name column cannot be hidden")
     }
     check_column("hide", label, &heft::once::hideable_labels())
 }
@@ -234,12 +212,9 @@ fn check_filter(pattern: &str) {
     if heft::once::Filter::new(pattern).is_some() {
         return;
     }
-    Cli::command()
-        .error(
-            ErrorKind::InvalidValue,
-            format!("invalid value '{pattern}' for '--filter <REGEX>': not a valid regex"),
-        )
-        .exit()
+    usage(format!(
+        "invalid value '{pattern}' for '--filter <REGEX>': not a valid regex"
+    ))
 }
 
 /// A name nothing on this machine answers to is a typo worth reporting, the
@@ -250,12 +225,9 @@ fn check_user(who: &str) -> u32 {
     if let Some(uid) = heft::proc::uid_for(who) {
         return uid;
     }
-    Cli::command()
-        .error(
-            ErrorKind::InvalidValue,
-            format!("invalid value '{who}' for '--user <NAME|UID>': no such user"),
-        )
-        .exit()
+    usage(format!(
+        "invalid value '{who}' for '--user <NAME|UID>': no such user"
+    ))
 }
 
 fn is_broken_pipe(e: &(dyn std::error::Error + 'static)) -> bool {

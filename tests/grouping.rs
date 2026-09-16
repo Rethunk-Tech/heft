@@ -373,11 +373,10 @@ fn session_services_are_user_service_rows() {
         titles(&user.user_services)
     );
     assert!(
-        !has(&user.user_services, "firefox"),
-        "firefox must stay Applications: {:?}",
-        titles(&user.user_services)
+        !has(&user.applications, "firefox") && !has(&user.user_services, "firefox"),
+        "firefox activated as gnome-shell's search provider bills to gnome-shell: {:?}",
+        titles(&user.applications)
     );
-    assert!(has(&user.applications, "firefox"));
     assert!(
         !has(&user.user_services, "vivaldi-bin")
             && !has(&user.user_services, "claude")
@@ -543,11 +542,11 @@ fn an_app_keeps_its_helpers() {
         titles(&user.applications)
     );
 
-    let firefox = ident(&user.applications, "firefox");
+    let shell = ident(&user.user_services, "gnome-shell");
     assert!(
-        proc_names(firefox).iter().any(|n| n == "crashhelper"),
-        "crashhelper must remain visible under firefox: {:?}",
-        proc_names(firefox)
+        proc_names(shell).iter().any(|n| n == "crashhelper"),
+        "the search provider's crashhelper must remain visible under its owner: {:?}",
+        proc_names(shell)
     );
     assert!(
         !has(&user.user_services, "cat"),
@@ -819,7 +818,11 @@ fn a_user_session_rule_runs_before_the_crash_helper_and_an_app_rule_after_it() {
         "the crash helper beats an app rule: {:?}",
         titles(&user.applications)
     );
-    assert!(has(&user.applications, "firefox"));
+    assert!(
+        proc_names(ident(&user.user_services, "gnome-shell"))
+            .iter()
+            .any(|n| n == "crashhelper")
+    );
 }
 
 #[test]

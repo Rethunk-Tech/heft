@@ -306,6 +306,37 @@ fn compute_place(
         };
     }
 
+    // An orphan reparented to `systemd --user` keeps the cgroup of whoever
+    // started it (a `bun` a Claude Code daemon left in its terminal scope), so
+    // the lowest-pid process there that names an app owns it.
+    if classes.intersects(Classes::GENERIC)
+        && curr
+            .get(&p.ppid)
+            .is_some_and(|q| ctx.classes(q).intersects(Classes::NO_ABSORB))
+        && let Some(owner) = ctx
+            .procs
+            .values()
+            .filter(|q| {
+                q.pid != p.pid
+                    && q.cgroup == p.cgroup
+                    && (!ctx.classes(q).intersects(
+                        Classes::LAUNCHER
+                            | Classes::GENERIC
+                            | Classes::SHELL
+                            | Classes::NOISE
+                            | Classes::WORKER,
+                    ) || ctx.rules.app(&ctx.facts(q)).is_some())
+            })
+            .min_by_key(|q| q.pid)
+        && let Some(place) = resolve_one(owner.pid, curr, ctx, memo, walking, depth + 1)
+        && matches!(place.folder, Folder::Applications | Folder::UserServices)
+    {
+        return Place {
+            instance: ctx.instance(p),
+            ..place
+        };
+    }
+
     user_place(p, ctx)
 }
 
@@ -999,11 +1030,23 @@ mod tests {
                     scope,
                 ),
             ),
+            (
+                4,
+                at(
+                    4,
+                    1,
+                    "/usr/bin/bun",
+                    &["bun", "apps/server/src/main.ts"],
+                    scope,
+                ),
+            ),
         ]);
         let containers = ContainerIndex::default();
         let rules = Rules::builtin();
         let placed = super::resolve(&curr, &Ctx::new(&containers, &rules, &curr));
         assert_eq!(placed[&2].key, "cursor");
         assert_eq!(placed[&3].key, "cursor");
+        // Orphaned to the user manager, it still bills to its scope's app.
+        assert_eq!(placed[&4].key, "cursor");
     }
 }

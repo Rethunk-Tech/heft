@@ -107,6 +107,8 @@ assumed, so none is pending work:
   (`/opt/vivaldi/chrome_crashpad_handler` → `vivaldi-bin`). A helper whose
   parent dir is the mount takes that same-directory non-helper, and with none
   falls back to the ancestor walk.
+- A generic orphaned to `systemd --user` bills to the lowest-pid process in its
+  exact cgroup that names an app (a `bun` a Claude Code daemon left behind).
 - User Services grouping is one identity for processes that share a systemd
   unit family, RPM/package family, D-Bus well-known name family, or documented
   process architecture — not a comm prefix. Mappings live in the `session`

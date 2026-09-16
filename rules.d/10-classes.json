@@ -10,7 +10,7 @@
     { "id": "type-workers", "match": { "arg_prefix": "--type=" }, "classes": ["worker"] },
     { "id": "noise", "match": { "name": "cat" }, "classes": ["noise"] },
     { "id": "no-absorb", "match": { "name": "systemd" }, "classes": ["no_absorb"] },
-    { "id": "anonymous-scripts", "match": { "script": ["main.js", "main", "index.js", "app.js", "server.js", "run.js"] }, "classes": ["anonymous_script"] },
+    { "id": "anonymous-scripts", "match": { "script": ["main.js", "main", "index.js", "app.js", "server.js", "run.js", "main.ts", "index.ts", "app.ts", "server.ts"] }, "classes": ["anonymous_script"] },
     { "id": "container-runtimes", "match": { "any": [ { "name": ["conmon", "runc", "crun"] }, { "name_contains": "containerd-shim" } ] }, "classes": ["container_runtime"] }
   ],
   "examples": [
@@ -42,6 +42,7 @@
     { "comm": "systemd", "exe": "/usr/lib/systemd/systemd", "cmdline": ["/usr/lib/systemd/systemd", "--user"], "expect": { "classes": ["no_absorb"] } },
     { "comm": "systemd-oomd", "exe": "/usr/lib/systemd/systemd-oomd", "expect": { "classes": [] } },
     { "comm": "node", "exe": "/usr/bin/node", "cmdline": ["node", "/srv/app/main.js"], "expect": { "classes": ["generic", "anonymous_script"] } },
+    { "comm": "bun", "exe": "/usr/bin/bun", "cmdline": ["bun", "apps/server/src/main.ts"], "expect": { "classes": ["generic", "anonymous_script"] } },
     { "comm": "node", "exe": "/usr/bin/node", "cmdline": ["node", "/srv/app/worker.js"], "expect": { "classes": ["generic"] } },
     { "comm": "Containerd-Shim-Runc-V2", "exe": "/usr/bin/Containerd-Shim-Runc-V2", "expect": { "classes": ["container_runtime"] } },
     { "comm": "n/a", "exe": "/usr/bin/Conmon", "expect": { "classes": ["container_runtime"] } },

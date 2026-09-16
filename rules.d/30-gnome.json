@@ -1,7 +1,7 @@
 {
   "stage": "session",
   "rules": [
-    { "id": "gnome-shell", "match": { "any": [ { "name_prefix": ["gdm-", "gnome-session", "gnome-keyring", "gnome-shell-"] }, { "name": ["gnome-calendar", "gnome-clocks", "xwayland"] }, { "all": [ { "name": ["gjs", "gjs-console"] }, { "arg_contains": ["gnome-shell", "org.gnome.shell"] } ] } ] }, "identity": "gnome-shell", "folder": "user_services" },
+    { "id": "gnome-shell", "match": { "any": [ { "name_prefix": ["gdm-", "gnome-session", "gnome-keyring", "gnome-shell-"] }, { "name": ["gnome-calendar", "gnome-clocks", "xwayland"] }, { "cgroup_contains": "org.mozilla.firefox.searchprovider@" }, { "all": [ { "name": ["gjs", "gjs-console"] }, { "arg_contains": ["gnome-shell", "org.gnome.shell"] } ] } ] }, "identity": "gnome-shell", "folder": "user_services" },
     { "id": "goa", "match": { "name_prefix": "goa-" }, "identity": "goa-daemon", "folder": "user_services" },
     { "id": "gsd-disk-utility-notify", "match": { "any": [ { "name_prefix": "gsd-disk-utilit" }, { "exe_contains": "gsd-disk-utility-notify" }, { "cgroup_contains": "diskutilitynotify" } ] }, "identity": "gsd-disk-utility-notify", "folder": "user_services" },
     { "id": "gsd", "match": { "name_prefix": "gsd-" }, "identity": "gnome-settings-daemon", "folder": "user_services" },
@@ -11,6 +11,8 @@
     { "comm": "gnome-shell-calendar-server", "exe": "/usr/libexec/gnome-shell-calendar-server", "expect": { "identity": "gnome-shell", "rule": "gnome-shell" } },
     { "comm": "gdm-wayland-ses", "exe": "/usr/libexec/gdm-wayland-session", "expect": { "identity": "gnome-shell", "rule": "gnome-shell" } },
     { "comm": "gjs", "exe": "/usr/bin/gjs-console", "cmdline": ["/usr/bin/gjs", "/usr/share/gnome-shell/org.gnome.Shell.Notifications"], "expect": { "identity": "gnome-shell", "rule": "gnome-shell" } },
+    { "comm": "crashhelper", "exe": "/usr/lib64/firefox/crashhelper", "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/dbus-:1.2-org.mozilla.firefox.SearchProvider@0.service", "expect": { "identity": "gnome-shell", "rule": "gnome-shell" } },
+    { "comm": "firefox", "exe": "/usr/lib64/firefox/firefox", "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-firefox.scope", "expect": null },
     { "comm": "Xwayland", "exe": "/usr/bin/Xwayland", "expect": { "identity": "gnome-shell", "rule": "gnome-shell" } },
     { "comm": "gjs-console", "exe": "/usr/bin/gjs-console", "cmdline": ["gjs", "/home/u/my-app.js"], "expect": null },
     { "comm": "goa-identity-service", "exe": "/usr/libexec/goa-identity-service", "expect": { "identity": "goa-daemon", "rule": "goa" } },

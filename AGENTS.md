@@ -165,7 +165,7 @@ Each of these has one home; a second copy is the defect.
 | `i` and `?` overlays | `ui::popup`, `ui::Overlay` | `i` is `ui::draw_detail`, `ui::metric_grid`, `proc::detail`; `Overlay` holds which is open, so only one draws |
 | TREND scale | `ui::trend_scale`, one per frame | says why it is not each row's own peak; `ui::spark` and `kgp::paint` both draw against it |
 | `spark` column | `Column::fmt` returns empty; `ui::draw` substitutes `ui::spark` from `App::history`, `App::trend_w` deep | the one column not a function of the current sample: only `Columns::for_tui` includes it, `Sort::step` skips it (`key: None`), and `--order` validates against `column_labels()` rather than `sort_labels()` since not everything movable is sortable |
-| column model | `once::COLUMNS`; `once::Columns` is it with `view.hide_columns` and `view.column_order` applied | resolved at start, rebuilt on `H` / `u`, so no render site branches on visibility and nothing reaches sampling; `Sort::step` cycles the visible list; `config::default_hidden` hides the stall trio when `hide_columns` is absent. Visibility is a view preference: `view.json`, never `rules.d`, and `--json` ignores it |
+| column model | `once::COLUMNS`; `once::Columns` is it with `view.hide_columns` and `view.column_order` applied | resolved at start, rebuilt on `H` / `u`, so no render site branches on visibility and nothing reaches sampling; `Sort::step` cycles the visible list; `config::default_hidden` hides `rss` and the stall trio when `hide_columns` is absent. Visibility is a view preference: `view.json`, never `rules.d`, and `--json` ignores it |
 
 ## Rules
 

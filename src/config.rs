@@ -52,11 +52,13 @@ impl Default for View {
 
 /// The stall trio. Pressure answers a diagnostic question most sessions never
 /// ask, and three more columns crowd out the ones every session reads, so a
-/// view shows them only once `u` or a saved list without them asks.
+/// view shows them only once `u` or a saved list without them asks. RSS too:
+/// summed over a row it counts a shared page once per process mapping it, so
+/// beside PSS it reads as the larger, wrong total.
 fn default_hidden() -> Vec<String> {
     crate::once::COLUMNS
         .iter()
-        .filter(|c| c.stall)
+        .filter(|c| c.stall || c.label == "rss")
         .map(|c| c.label.to_string())
         .collect()
 }

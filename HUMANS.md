@@ -428,8 +428,8 @@ Labels are `name`, `spark`, `nproc`, `threads`, `age`, `core`,
 `machine`, `pss`, `rss`, `swap`, `vram`, `gtt`, `gfx`, `compute`, `diskr`,
 `diskw`, `cpustall`, `iostall`, `memstall`, `netns_rx`, `netns_tx`. `--sort`
 and `Shift-←` `Shift-→` (`[` `]`) take all of them except `spark`, `--hide` all of
-them except `name`, and `--order` all of them. With no file or no `hide_columns` key, `cpustall`,
-`iostall` and `memstall` are hidden and the rest show in compiled order. An
+them except `name`, and `--order` all of them. With no file or no `hide_columns` key, `rss`,
+`cpustall`, `iostall` and `memstall` are hidden and the rest show in compiled order. An
 unknown label in the file warns on stderr and is ignored; on `--hide` or
 `--order` it is a usage error. Hiding and order are presentation only: heft
 reads the same `/proc` files either way.

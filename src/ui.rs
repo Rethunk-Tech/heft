@@ -2682,7 +2682,7 @@ mod tests {
             app.view.hide_columns.last().map(String::as_str),
             Some("pss")
         );
-        assert_eq!(app.view.sort, "rss");
+        assert_eq!(app.view.sort, "swap");
         handle_key(&mut app, KeyCode::Char('u'), none, &rows).unwrap();
         assert_eq!(app.view.hide_columns, View::default().hide_columns);
         assert!(app.cols.iter().any(|c| c.label == "pss"));

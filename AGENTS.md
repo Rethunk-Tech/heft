@@ -109,6 +109,9 @@ assumed, so none is pending work:
   falls back to the ancestor walk.
 - A generic orphaned to `systemd --user` bills to the lowest-pid process in its
   exact cgroup that names an app (a `bun` a Claude Code daemon left behind).
+  Any other orphan bills to its live process-group leader when that leader is
+  an Applications row (a backgrounded `wl-copy` to `claude`); the comment in
+  `group::compute_place` carries why not User Services.
 - User Services grouping is one identity for processes that share a systemd
   unit family, RPM/package family, D-Bus well-known name family, or documented
   process architecture — not a comm prefix. Mappings live in the `session`

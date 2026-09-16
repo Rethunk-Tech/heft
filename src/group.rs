@@ -337,6 +337,25 @@ fn compute_place(
         };
     }
 
+    // Any other orphan (`wl-copy` forking into the background) keeps the
+    // process group of the app that ran it. Applications only: the same test
+    // against any live leader moved 7 of 815 processes on a GNOME desktop
+    // (`bwrap`, `ibus-x11`, `gsd-disk-utility-notify`) into gnome-shell,
+    // gnome-settings-daemon and systemd rows.
+    if let Ok(leader) = u32::try_from(p.pgrp)
+        && leader != p.pid
+        && curr
+            .get(&p.ppid)
+            .is_some_and(|q| ctx.classes(q).intersects(Classes::NO_ABSORB))
+        && let Some(place) = resolve_one(leader, curr, ctx, memo, walking, depth + 1)
+        && place.folder == Folder::Applications
+    {
+        return Place {
+            instance: ctx.instance(p),
+            ..place
+        };
+    }
+
     user_place(p, ctx)
 }
 
@@ -1040,6 +1059,20 @@ mod tests {
                     scope,
                 ),
             ),
+            (
+                5,
+                Process {
+                    pgrp: 5,
+                    ..at(5, 2, "/home/u/.local/bin/claude", &["claude"], scope)
+                },
+            ),
+            (
+                6,
+                Process {
+                    pgrp: 5,
+                    ..at(6, 1, "/usr/bin/wl-copy", &["wl-copy"], scope)
+                },
+            ),
         ]);
         let containers = ContainerIndex::default();
         let rules = Rules::builtin();
@@ -1048,5 +1081,7 @@ mod tests {
         assert_eq!(placed[&3].key, "cursor");
         // Orphaned to the user manager, it still bills to its scope's app.
         assert_eq!(placed[&4].key, "cursor");
+        // Not an interpreter, so it bills to its process group's app instead.
+        assert_eq!(placed[&6].key, "claude");
     }
 }

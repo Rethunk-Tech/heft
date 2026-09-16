@@ -1,6 +1,14 @@
 # Changelog
 
-## Unreleased
+## 0.12.0 - 2026-09-16
+
+### Changed
+
+- `RSS` is hidden by default, like the stall trio. Summed over a row it counts
+  a shared page once per process mapping it; `PSS` is the column that adds up.
+  A `view.json` with a `hide_columns` key keeps its own list.
+- `CPU ST`, `IO ST` and `MEM ST` now show on a row spanning several cgroups,
+  as the highest member's `some` figure per resource, instead of blank.
 
 ### Removed
 
@@ -19,6 +27,14 @@
 - Cursor's bundled agent CLI, run from its `globalStorage` directory, and the
   interpreters it starts (MCP servers under `npm exec`) bill to `cursor`
   rather than an `app-cursor-<pid>` row.
+- Cursor's standalone agent CLI under `~/.local/share/cursor-agent` is one
+  `cursor-agent` row.
+- An interpreter orphaned to `systemd --user` (a `bun` a Claude Code daemon
+  left behind) bills to the app in its cgroup, and any other orphan (a
+  backgrounded `wl-copy`) to the app that leads its process group.
+- Firefox's GNOME search provider bills to `gnome-shell`.
+- `rtk` is a launcher, so what it runs bills to the app above it; `rustc`
+  bills to the `cargo` that started it.
 
 ## 0.11.1 - 2026-09-13
 

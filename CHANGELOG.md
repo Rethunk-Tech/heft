@@ -7,6 +7,9 @@
 - The TUI `i` pane shows where the row landed and the placement key. A process
   row also lists the same rules stages `--explain` prints, without the
   pin-to-folder recipe.
+- TUI `g` jumps to a pid (expanding its ancestors), `n`/`N` walk filter
+  matches, `E` expands every expandable row, and `c` restores the default
+  expand set.
 
 ## 0.12.0 - 2026-09-16
 

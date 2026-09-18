@@ -87,6 +87,13 @@ struct App {
     /// edits the text goes through that one branch, which is what keeps this
     /// from going stale.
     filter_ok: bool,
+    /// `g` is open: digits edit `goto`, Enter jumps, Esc cancels without quitting.
+    goto_edit: bool,
+    goto: String,
+    /// Row id to pin after `handle_key`. Goto expands ancestors that are not
+    /// in the current `rows`, so copying `rows[cursor].id` would drop the jump.
+    /// `run_loop` consumes it once.
+    want_id: Option<String>,
     col_off: u16,
     status: String,
     overlay: Overlay,
@@ -223,6 +230,9 @@ fn run_loop(
         filter_edit: false,
         filter_re,
         filter_ok,
+        goto_edit: false,
+        goto: String::new(),
+        want_id: None,
         col_off: 0,
         status: String::new(),
         overlay: Overlay::None,
@@ -284,7 +294,11 @@ fn run_loop(
         }
         // After `j`/`k` (and after a gone row landed on its parent) pin the
         // id we will look up on the next flatten, not the one we arrived with.
-        if let Some(r) = rows.get(app.cursor) {
+        // `want_id` wins once: goto expands a row the current `rows` do not
+        // contain, so pinning from `rows[cursor]` would throw the jump away.
+        if let Some(id) = app.want_id.take() {
+            cursor_id = id;
+        } else if let Some(r) = rows.get(app.cursor) {
             cursor_id.clone_from(&r.id);
         }
         // Taken even while paused, so the sampler's slot never backs up and
@@ -644,6 +658,222 @@ fn edit_filter(app: &mut App, code: KeyCode) {
     }
 }
 
+/// A key while `g` is open: digits and Backspace only. Esc cancels without quitting.
+fn edit_goto(app: &mut App, code: KeyCode) {
+    match code {
+        KeyCode::Esc => {
+            app.goto_edit = false;
+            app.goto.clear();
+        }
+        KeyCode::Enter => {
+            app.goto_edit = false;
+            apply_goto(app);
+        }
+        KeyCode::Backspace => {
+            app.goto.pop();
+        }
+        KeyCode::Char(c) if c.is_ascii_digit() => app.goto.push(c),
+        _ => {}
+    }
+}
+
+fn apply_goto(app: &mut App) {
+    let raw = std::mem::take(&mut app.goto);
+    let Ok(pid) = raw.parse::<u32>() else {
+        app.status = if raw.is_empty() {
+            "pid not found".into()
+        } else {
+            format!("pid {raw} not found")
+        };
+        return;
+    };
+    let mut ancestors = Vec::new();
+    let Some(id) = pid_row_id(&app.tree, pid, &mut ancestors) else {
+        app.status = format!("pid {pid} not found");
+        return;
+    };
+    for a in ancestors {
+        app.expand.insert(a);
+    }
+    app.want_id = Some(id);
+    app.status.clear();
+}
+
+fn pid_row_id(tree: &HostTree, pid: u32, ancestors: &mut Vec<String>) -> Option<String> {
+    ancestors.push("host".into());
+    for user in &tree.users {
+        let uid = user.uid;
+        ancestors.push(format!("user:{uid}"));
+        for (slug, idents) in [
+            ("apps", user.applications.as_slice()),
+            ("services", user.user_services.as_slice()),
+            ("containers", user.containers.as_slice()),
+        ] {
+            let folder = format!("user:{uid}/{slug}");
+            ancestors.push(folder.clone());
+            if let Some(id) = pid_in_idents(&folder, idents, pid, ancestors) {
+                return Some(id);
+            }
+            ancestors.pop();
+        }
+        ancestors.pop();
+    }
+    for (folder, idents) in [
+        ("host/containers", tree.containers.as_slice()),
+        ("host/system", tree.system.as_slice()),
+    ] {
+        ancestors.push(folder.into());
+        if let Some(id) = pid_in_idents(folder, idents, pid, ancestors) {
+            return Some(id);
+        }
+        ancestors.pop();
+    }
+    None
+}
+
+fn pid_in_idents(
+    folder: &str,
+    idents: &[IdentNode],
+    pid: u32,
+    ancestors: &mut Vec<String>,
+) -> Option<String> {
+    for ident in idents {
+        let iid = format!("{folder}/{}", ident.id);
+        ancestors.push(iid.clone());
+        for member in &ident.containers {
+            let mid = format!("{iid}/m/{}", member.id);
+            ancestors.push(mid.clone());
+            if let Some(id) = pid_in_procs(&mid, &member.processes, pid, ancestors) {
+                return Some(id);
+            }
+            ancestors.pop();
+        }
+        for inst in &ident.instances {
+            let sid = format!("{iid}/i/{}", inst.key);
+            ancestors.push(sid.clone());
+            if let Some(id) = pid_in_procs(&sid, &inst.processes, pid, ancestors) {
+                return Some(id);
+            }
+            ancestors.pop();
+        }
+        ancestors.pop();
+    }
+    None
+}
+
+fn pid_in_procs(
+    prefix: &str,
+    procs: &[ProcNode],
+    pid: u32,
+    ancestors: &mut Vec<String>,
+) -> Option<String> {
+    for p in procs {
+        let id = format!("{prefix}/p/{}", p.pid);
+        if p.pid == pid {
+            return Some(id);
+        }
+        ancestors.push(id.clone());
+        if let Some(hit) = pid_in_procs(&id, &p.children, pid, ancestors) {
+            return Some(hit);
+        }
+        ancestors.pop();
+    }
+    None
+}
+
+fn haystack_matches(filter: &Filter, hay: &str) -> bool {
+    let mut rows = vec![hay];
+    keep_matches(&mut rows, filter, |s| (0, *s));
+    !rows.is_empty()
+}
+
+fn jump_match(app: &mut App, rows: &[Flat], back: bool) {
+    if app.view.filter.is_empty() {
+        return;
+    }
+    let Some(filter) = app.filter_re.as_ref() else {
+        return;
+    };
+    let hits: Vec<usize> = rows
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| {
+            r.trimmable && haystack_matches(filter, r.search.as_deref().unwrap_or(r.name.as_str()))
+        })
+        .map(|(i, _)| i)
+        .collect();
+    let Some(&first) = hits.first() else {
+        return;
+    };
+    let next = if back {
+        hits.iter()
+            .rev()
+            .find(|&&i| i < app.cursor)
+            .copied()
+            .unwrap_or(*hits.last().unwrap_or(&first))
+    } else {
+        hits.iter()
+            .find(|&&i| i > app.cursor)
+            .copied()
+            .unwrap_or(first)
+    };
+    app.cursor = next;
+    app.want_id = Some(rows[next].id.clone());
+}
+
+fn expand_tree(tree: &HostTree, expand: &mut HashSet<String>) {
+    expand.insert("host".into());
+    for user in &tree.users {
+        let uid = user.uid;
+        expand.insert(format!("user:{uid}"));
+        for (slug, idents) in [
+            ("apps", user.applications.as_slice()),
+            ("services", user.user_services.as_slice()),
+            ("containers", user.containers.as_slice()),
+        ] {
+            let folder = format!("user:{uid}/{slug}");
+            expand_idents(&folder, idents, expand);
+        }
+    }
+    for (folder, idents) in [
+        ("host/containers", tree.containers.as_slice()),
+        ("host/system", tree.system.as_slice()),
+    ] {
+        expand_idents(folder, idents, expand);
+    }
+}
+
+fn expand_idents(folder: &str, idents: &[IdentNode], expand: &mut HashSet<String>) {
+    if idents.is_empty() {
+        return;
+    }
+    expand.insert(folder.to_string());
+    for ident in idents {
+        let iid = format!("{folder}/{}", ident.id);
+        expand.insert(iid.clone());
+        for member in &ident.containers {
+            let mid = format!("{iid}/m/{}", member.id);
+            expand.insert(mid.clone());
+            expand_procs(&mid, &member.processes, expand);
+        }
+        for inst in &ident.instances {
+            let sid = format!("{iid}/i/{}", inst.key);
+            expand.insert(sid.clone());
+            expand_procs(&sid, &inst.processes, expand);
+        }
+    }
+}
+
+fn expand_procs(prefix: &str, procs: &[ProcNode], expand: &mut HashSet<String>) {
+    for p in procs {
+        let id = format!("{prefix}/p/{}", p.pid);
+        if !p.children.is_empty() {
+            expand.insert(id.clone());
+            expand_procs(&id, &p.children, expand);
+        }
+    }
+}
+
 fn handle_key(
     app: &mut App,
     code: KeyCode,
@@ -662,6 +892,10 @@ fn handle_key(
     }
     if app.filter_edit {
         edit_filter(app, code);
+        return Ok(false);
+    }
+    if app.goto_edit {
+        edit_goto(app, code);
         return Ok(false);
     }
     if matches!(code, KeyCode::Char('?') | KeyCode::F(1)) {
@@ -686,6 +920,14 @@ fn handle_key(
     match code {
         KeyCode::Char('q') | KeyCode::Esc => return Ok(true),
         KeyCode::Char('/') => app.filter_edit = true,
+        KeyCode::Char('g') => {
+            app.goto_edit = true;
+            app.goto.clear();
+        }
+        KeyCode::Char('n') => jump_match(app, rows, false),
+        KeyCode::Char('N') => jump_match(app, rows, true),
+        KeyCode::Char('E') => expand_tree(&app.tree, &mut app.expand),
+        KeyCode::Char('c') => app.expand = default_expand(),
         KeyCode::Char('s' | 'S') => {
             config::save_view(&app.view)?;
             app.status = format!("saved {}", config::view_path().display());
@@ -1130,7 +1372,9 @@ fn draw_footer(f: &mut ratatui::Frame<'_>, rule: Rect, area: Rect, app: &App) {
     // `?` says the text on screen is not a usable pattern yet, so what is on
     // the table is still the last one that compiled.
     let stale = if app.filter_ok { "" } else { " ?" };
-    let filter = if app.filter_edit {
+    let filter = if app.goto_edit {
+        format!("goto> {}_", app.goto)
+    } else if app.filter_edit {
         format!("filter> {}_{stale}", app.view.filter)
     } else if app.view.filter.is_empty() {
         String::new()
@@ -2662,6 +2906,9 @@ mod tests {
             expand: HashSet::new(),
             view,
             filter_edit: false,
+            goto_edit: false,
+            goto: String::new(),
+            want_id: None,
             col_off: 0,
             status: String::new(),
             overlay: Overlay::None,
@@ -2688,6 +2935,8 @@ mod tests {
             ('s', "view save"),
             ('H', "hide column"),
             ('u', "unhide column"),
+            ('g', "goto pid"),
+            ('n', "filter match"),
         ] {
             let mut app = test_app();
             let before = (
@@ -2706,6 +2955,9 @@ mod tests {
                 "ctrl-{key} reached the {what} binding"
             );
             assert!(!quit, "ctrl-{key} quit");
+            assert!(!app.goto_edit, "ctrl-{key} opened goto");
+            assert!(app.want_id.is_none(), "ctrl-{key} set want_id");
+            assert_eq!(app.cursor, 0, "ctrl-{key} moved the cursor");
         }
 
         // Alt and Super are dropped outright; neither quits nor acts.
@@ -2736,6 +2988,10 @@ mod tests {
         app.filter_edit = true;
         assert!(handle_key(&mut app, KeyCode::Char('c'), ctrl, &rows).unwrap());
         assert!(app.view.filter.is_empty(), "ctrl-c must not type a `c`");
+        assert!(
+            app.expand.is_empty(),
+            "ctrl-c must not collapse to default_expand"
+        );
     }
 
     #[test]
@@ -3006,5 +3262,123 @@ mod tests {
             "an empty Containers folder must not grow child rows"
         );
         assert!(default_expand().contains(&format!("user:{me}/containers")));
+    }
+
+    fn proc_tree(parent: u32, child: u32) -> HostTree {
+        use crate::types::InstanceNode;
+        apps_tree(vec![IdentNode {
+            id: "firefox".into(),
+            nproc: 2,
+            instances: vec![InstanceNode {
+                key: "firefox/1".into(),
+                nproc: 2,
+                processes: vec![ProcNode {
+                    pid: parent,
+                    name: "firefox".into(),
+                    children: vec![ProcNode {
+                        pid: child,
+                        name: "worker".into(),
+                        ..ProcNode::default()
+                    }],
+                    ..ProcNode::default()
+                }],
+                ..InstanceNode::default()
+            }],
+            ..IdentNode::default()
+        }])
+    }
+
+    #[test]
+    fn goto_expands_ancestors_and_sets_want_id() {
+        let none = KeyModifiers::NONE;
+        let tree = proc_tree(10, 11);
+        let mut app = test_app();
+        app.tree = tree.clone();
+        app.expand = default_expand();
+        let expand_before = app.expand.clone();
+        let cursor_before = app.cursor;
+        handle_key(&mut app, KeyCode::Char('g'), none, &[]).unwrap();
+        for c in ['1', '1'] {
+            handle_key(&mut app, KeyCode::Char(c), none, &[]).unwrap();
+        }
+        handle_key(&mut app, KeyCode::Enter, none, &[]).unwrap();
+        let id = app.want_id.as_deref().expect("want_id");
+        assert!(id.ends_with("/p/11"), "{id}");
+        let me = cpu::euid();
+        let inst = format!("user:{me}/apps/firefox/i/firefox/1");
+        for ancestor in [
+            "host".to_string(),
+            format!("user:{me}"),
+            format!("user:{me}/apps"),
+            format!("user:{me}/apps/firefox"),
+            inst.clone(),
+            format!("{inst}/p/10"),
+        ] {
+            assert!(app.expand.contains(&ancestor), "missing {ancestor}");
+        }
+        let cursor_id = app.want_id.take().unwrap();
+        let rows = flatten(&app.tree, &app.expand, &app.view, None);
+        app.cursor = remap_cursor(&rows, &cursor_id);
+        assert_eq!(row_pid(&rows[app.cursor].id), Some(11));
+
+        let mut app = test_app();
+        app.tree = tree;
+        app.expand = expand_before.clone();
+        app.cursor = cursor_before;
+        handle_key(&mut app, KeyCode::Char('g'), none, &[]).unwrap();
+        handle_key(&mut app, KeyCode::Char('9'), none, &[]).unwrap();
+        handle_key(&mut app, KeyCode::Enter, none, &[]).unwrap();
+        assert!(app.want_id.is_none());
+        assert_eq!(app.expand, expand_before);
+        assert_eq!(app.cursor, cursor_before);
+        assert!(app.status.contains('9'), "{}", app.status);
+    }
+
+    #[test]
+    fn next_and_prev_filter_match_skip_headers_and_wrap() {
+        let none = KeyModifiers::NONE;
+        let tree = apps_tree(vec![ident("firefox"), ident("foot")]);
+        let mut app = test_app();
+        app.tree = tree;
+        app.expand = default_expand();
+        app.view.filter = "f".into();
+        app.filter_re = Filter::new("f");
+        let rows = flatten(&app.tree, &app.expand, &app.view, app.filter_re.as_ref());
+        app.cursor = 0;
+        assert!(!rows[0].trimmable, "Host is the starting row");
+        handle_key(&mut app, KeyCode::Char('n'), none, &rows).unwrap();
+        assert!(rows[app.cursor].trimmable);
+        let first = app.cursor;
+        handle_key(&mut app, KeyCode::Char('n'), none, &rows).unwrap();
+        let second = app.cursor;
+        assert_ne!(first, second);
+        assert!(rows[second].trimmable);
+        handle_key(&mut app, KeyCode::Char('N'), none, &rows).unwrap();
+        assert_eq!(app.cursor, first);
+        handle_key(&mut app, KeyCode::Char('N'), none, &rows).unwrap();
+        assert_eq!(app.cursor, second);
+
+        app.view.filter.clear();
+        let stuck = app.cursor;
+        handle_key(&mut app, KeyCode::Char('n'), none, &rows).unwrap();
+        assert_eq!(app.cursor, stuck);
+        assert_eq!(app.want_id.as_deref(), Some(rows[stuck].id.as_str()));
+    }
+
+    #[test]
+    fn expand_all_reveals_hidden_processes_and_c_restores_default() {
+        let none = KeyModifiers::NONE;
+        let tree = proc_tree(10, 11);
+        let mut app = test_app();
+        app.tree = tree;
+        app.expand = default_expand();
+        let hidden = flatten(&app.tree, &app.expand, &View::default(), None);
+        assert!(hidden.iter().all(|r| row_pid(&r.id).is_none()));
+        handle_key(&mut app, KeyCode::Char('E'), none, &hidden).unwrap();
+        let shown = flatten(&app.tree, &app.expand, &View::default(), None);
+        assert!(shown.iter().any(|r| row_pid(&r.id) == Some(10)));
+        assert!(shown.iter().any(|r| row_pid(&r.id) == Some(11)));
+        handle_key(&mut app, KeyCode::Char('c'), none, &shown).unwrap();
+        assert_eq!(app.expand, default_expand());
     }
 }

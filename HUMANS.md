@@ -172,6 +172,10 @@ because the kernel does not virtualise `meminfo` and `stat` per namespace.
 | `←` `→` / `h` `l` | scroll columns when the terminal is narrower than the table |
 | `Shift-←` `Shift-→` / `[` `]` | previous or next sort column (default PSS descending); `[` `]` for terminals that keep Shift-arrows (Konsole's tab switching, the Linux console, rxvt) |
 | `/` | filter by regex on the name and argv (Enter applies, Esc cancels) |
+| `n` / `N` | next or previous filter match (wraps; skips Host, users, and folder headers) |
+| `g` | go to a pid (`goto>`; Enter applies, Esc cancels) |
+| `E` | expand every expandable row |
+| `c` | collapse to the default expand set |
 | `d` | reverse the sort direction |
 | `H` | hide the current sort column (`name` is refused) |
 | `u` | unhide the last hidden column |

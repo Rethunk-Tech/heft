@@ -21,7 +21,7 @@ use crate::rules::{Facts, Rules, Stage, folder_name};
 use crate::types::{Error, Folder, HostTree, IdentNode, ProcNode, Process};
 
 /// Where in the tree a pid turned up.
-struct Found {
+pub(crate) struct Found {
     /// Host → user → folder, as the tree draws it.
     path: String,
     /// The identity row's id: the key a placement rule matches.
@@ -57,19 +57,31 @@ fn find_in(idents: &[IdentNode], pid: u32) -> Option<(&IdentNode, String, usize)
     None
 }
 
-fn locate(tree: &HostTree, pid: u32) -> Option<Found> {
+fn found_at(
+    parent: &str,
+    folder: Folder,
+    node: &IdentNode,
+    instance: String,
+    siblings: usize,
+) -> Found {
+    let arrow = glyph::arrows().3;
+    Found {
+        path: format!("{parent} {arrow} {}", folder.title()),
+        ident: node.id.clone(),
+        // A container or System row ignores every placement rule, the same
+        // rule the grouping code applies: `override_place` cannot move one.
+        pinnable: matches!(folder, Folder::Applications | Folder::UserServices)
+            .then_some(folder_name(folder)),
+        instance,
+        siblings,
+    }
+}
+
+pub(crate) fn locate(tree: &HostTree, pid: u32) -> Option<Found> {
     let arrow = glyph::arrows().3;
     let hit = |idents: &[IdentNode], parent: &str, folder: Folder| {
-        find_in(idents, pid).map(|(node, instance, siblings)| Found {
-            path: format!("{parent} {arrow} {}", folder.title()),
-            ident: node.id.clone(),
-            // A container or System row ignores every placement rule, the same
-            // rule the grouping code applies: `override_place` cannot move one.
-            pinnable: matches!(folder, Folder::Applications | Folder::UserServices)
-                .then_some(folder_name(folder)),
-            instance,
-            siblings,
-        })
+        find_in(idents, pid)
+            .map(|(node, instance, siblings)| found_at(parent, folder, node, instance, siblings))
     };
     for u in &tree.users {
         let who = format!("Host {arrow} {} ({})", u.name, u.uid);
@@ -82,6 +94,36 @@ fn locate(tree: &HostTree, pid: u32) -> Option<Found> {
     }
     hit(&tree.containers, "Host", Folder::Containers)
         .or_else(|| hit(&tree.system, "Host", Folder::System))
+}
+
+pub(crate) fn placed_identity(found: &Found) -> Vec<String> {
+    let ident = printable(&found.ident);
+    vec![
+        format!("  placed    {}", printable(&found.path)),
+        format!("  identity  {ident}"),
+    ]
+}
+
+/// Compact `--explain` body: placed path, identity, instance, then `trace`.
+/// The pin-to-folder recipe stays in `run`; the TUI overlay has no room for it.
+pub(crate) fn placement_lines(
+    found: &Found,
+    process: Option<&Process>,
+    rules: &Rules,
+) -> Vec<String> {
+    let mut lines = placed_identity(found);
+    lines.push(format!(
+        "  instance  {} ({} process{})",
+        printable(&found.instance),
+        found.siblings,
+        if found.siblings == 1 { "" } else { "es" }
+    ));
+    lines.extend(
+        trace(rules, process, &found.ident)
+            .into_iter()
+            .map(|line| printable(&line).into_owned()),
+    );
+    lines
 }
 
 /// One line per stage naming the rule that decided it, `no match`, or `none`
@@ -198,28 +240,16 @@ pub fn run(pid: u32, interval: Duration) -> Result<bool, Error> {
         return Ok(true);
     };
 
-    // The tree keeps raw strings; process-chosen text is escaped only here,
-    // where it reaches a terminal.
-    let ident = printable(&f.ident);
-    writeln!(out)?;
-    writeln!(out, "  placed    {}", printable(&f.path))?;
-    writeln!(out, "  identity  {ident}")?;
-    writeln!(
-        out,
-        "  instance  {} ({} process{})",
-        printable(&f.instance),
-        f.siblings,
-        if f.siblings == 1 { "" } else { "es" }
-    )?;
-
     // Re-read rather than carried on the tree: the tree has no per-process
     // facts, and a pid that exited since the sample says so here.
     let p = proc::read_pid(pid, false, false, None, &mut Vec::new());
-    for line in trace(Rules::load(), p.as_ref(), &f.ident) {
-        writeln!(out, "{}", printable(&line))?;
+    writeln!(out)?;
+    for line in placement_lines(&f, p.as_ref(), Rules::load()) {
+        writeln!(out, "{line}")?;
     }
 
     writeln!(out)?;
+    let ident = printable(&f.ident);
     if let Some(list) = f.pinnable {
         writeln!(out, "  \"{ident}\" is the placement key for this row.\n")?;
         writeln!(
@@ -406,5 +436,42 @@ mod tests {
     fn a_pid_in_no_row_is_not_an_error() {
         let tree = tree_with(user(vec![ident("cursor", &[10])], Vec::new()), vec![]);
         assert!(locate(&tree, 99).is_none());
+    }
+
+    #[test]
+    fn placement_lines_name_the_row_and_omit_the_recipe() {
+        let tree = tree_with(user(vec![ident("cursor", &[10, 11])], Vec::new()), vec![]);
+        let found = locate(&tree, 11).expect("found");
+        let lines = placement_lines(&found, None, &Rules::builtin());
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.contains("placed") && l.contains("Applications")),
+            "{lines:#?}"
+        );
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.contains("identity") && l.contains("cursor")),
+            "{lines:#?}"
+        );
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.contains("instance") && l.contains("2 processes")),
+            "{lines:#?}"
+        );
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.contains("rules") && l.contains("process gone")),
+            "{lines:#?}"
+        );
+        assert!(
+            lines
+                .iter()
+                .all(|l| !l.contains("90-mine.json") && !l.contains("fold_to")),
+            "{lines:#?}"
+        );
     }
 }

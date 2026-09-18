@@ -22,6 +22,7 @@ use crate::caps;
 use crate::cli::Trend;
 use crate::config::{self, View};
 use crate::cpu;
+use crate::explain;
 use crate::glyph;
 use crate::kgp;
 use crate::mem;
@@ -30,6 +31,7 @@ use crate::once::{
     ident_haystack, keep_matches, keep_top, keep_users, sort_tree,
 };
 use crate::proc;
+use crate::rules::Rules;
 use crate::sixel;
 use crate::types::{
     Error, Folder, HostTree, IdentNode, Metrics, ProcNode, folder_nproc, host_metrics, sum_idents,
@@ -1096,13 +1098,19 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &mut App, rows: &[Flat]) {
     {
         app.sixel_out = Some(sixel::at(y, x, &sixel::encode(&img, trend_colour())));
     }
-    draw_overlay(f, chunks[2], app.overlay, rows.get(app.cursor));
+    draw_overlay(f, chunks[2], app.overlay, rows.get(app.cursor), &app.tree);
     draw_footer(f, chunks[3], chunks[4], app);
 }
 
 /// The open overlay, if any, over the table `pane`; `selected` is the row `i`
 /// describes.
-fn draw_overlay(f: &mut ratatui::Frame<'_>, pane: Rect, overlay: Overlay, selected: Option<&Flat>) {
+fn draw_overlay(
+    f: &mut ratatui::Frame<'_>,
+    pane: Rect,
+    overlay: Overlay,
+    selected: Option<&Flat>,
+    tree: &HostTree,
+) {
     match overlay {
         // Over the whole frame, not the table pane: on a short terminal the
         // pane cut the list off after `i`, taking `?` itself and the bar
@@ -1111,7 +1119,7 @@ fn draw_overlay(f: &mut ratatui::Frame<'_>, pane: Rect, overlay: Overlay, select
             let full = f.area();
             draw_help(f, full);
         }
-        Overlay::Detail => draw_detail(f, pane, selected),
+        Overlay::Detail => draw_detail(f, pane, selected, tree),
         Overlay::None => {}
     }
 }
@@ -1587,7 +1595,7 @@ fn help_text() -> String {
 /// once for the row under the cursor, which is the question a scroll is
 /// usually standing in for. A blank stays blank here for the same reason it
 /// does in the table: no figure exists, which is not a zero.
-fn detail_text(row: &Flat, avail: usize) -> String {
+fn detail_text(row: &Flat, tree: &HostTree, avail: usize) -> String {
     let mut lines = vec![row.name.clone(), String::new()];
     lines.extend(metric_grid(row, avail));
     if let Some(pid) = row_pid(&row.id) {
@@ -1597,6 +1605,18 @@ fn detail_text(row: &Flat, avail: usize) -> String {
         for (k, v) in proc::detail(pid) {
             lines.push(format!("{k:<9} {v}"));
         }
+        if let Some(found) = explain::locate(tree, pid) {
+            // Re-read rather than carried on the tree: same as `--explain`.
+            let p = proc::read_pid(pid, false, false, None, &mut Vec::new());
+            let rules = Rules::load();
+            lines.push(String::new());
+            lines.extend(explain::placement_lines(&found, p.as_ref(), rules));
+        }
+    } else if row.trimmable
+        && let Some(placed) = explain::identity_placement(tree, &row.id)
+    {
+        lines.push(String::new());
+        lines.extend(placed);
     }
     lines.join("\n")
 }
@@ -1656,12 +1676,12 @@ fn row_pid(id: &str) -> Option<u32> {
     id.rsplit_once("/p/")?.1.parse().ok()
 }
 
-fn draw_detail(f: &mut ratatui::Frame<'_>, area: Rect, row: Option<&Flat>) {
+fn draw_detail(f: &mut ratatui::Frame<'_>, area: Rect, row: Option<&Flat>, tree: &HostTree) {
     let Some(row) = row else { return };
     // `popup` keeps a column clear of the pane each side, then spends four on
     // its border and padding; a grid built wider than that wraps mid-cell.
     let avail = usize::from(area.width.saturating_sub(6));
-    let text = detail_text(row, avail);
+    let text = detail_text(row, tree, avail);
     popup(f, area, plain(&text), "detail  (i or Esc to close)");
 }
 
@@ -1887,7 +1907,7 @@ mod tests {
     #[test]
     fn detail_lists_every_column_and_only_reads_proc_for_a_pid() {
         let mut row = flat(3, "firefox");
-        let text = detail_text(&row, 80);
+        let text = detail_text(&row, &HostTree::default(), 80);
         for c in COLUMNS
             .iter()
             .filter(|c| c.label != "name" && c.label != "spark")
@@ -1904,7 +1924,7 @@ mod tests {
         row.id = "host/apps/firefox/i/1/p/1".into();
         assert_eq!(row_pid(&row.id), Some(1));
         // pid 1 exists on any Linux box the suite runs on, readable or not.
-        assert!(detail_text(&row, 80).contains("CGROUP"));
+        assert!(detail_text(&row, &HostTree::default(), 80).contains("CGROUP"));
     }
 
     /// Stacked one per line the pairs ran past the bottom of the pane, cutting
@@ -1913,7 +1933,7 @@ mod tests {
     #[test]
     fn detail_metrics_fill_the_width_they_are_given() {
         let row = flat(3, "firefox");
-        let deep = |w| detail_text(&row, w).lines().count();
+        let deep = |w| detail_text(&row, &HostTree::default(), w).lines().count();
         let wide = deep(150);
         assert!(
             wide < deep(20),
@@ -1921,13 +1941,60 @@ mod tests {
         );
         // Twenty metrics over four columns is five rows, plus title and blank.
         assert!(wide <= 8, "expected a compact grid, got {wide} lines");
-        for line in detail_text(&row, 150).lines() {
+        for line in detail_text(&row, &HostTree::default(), 150).lines() {
             assert!(line.chars().count() <= 150, "grid overflowed: {line:?}");
         }
         // The last column's figures are blank on this row. Trimmed, the widest
         // line ended at `MEM ST` and the pane sized itself to the labels.
         let grid = metric_grid(&row, 150);
         assert_eq!(grid[0].chars().count(), 4 * CELL + 3 * GUTTER);
+    }
+
+    #[test]
+    fn detail_shows_placement_for_a_process_and_identity_row() {
+        use crate::types::InstanceNode;
+        let tree = apps_tree(vec![IdentNode {
+            id: "firefox".into(),
+            nproc: 1,
+            instances: vec![InstanceNode {
+                key: "firefox/1".into(),
+                nproc: 1,
+                processes: vec![ProcNode {
+                    pid: 424_242,
+                    name: "firefox".into(),
+                    ..ProcNode::default()
+                }],
+                ..InstanceNode::default()
+            }],
+            ..IdentNode::default()
+        }]);
+        let me = cpu::euid();
+        let mut proc_row = flat(4, "firefox [424242]");
+        proc_row.id = format!("user:{me}/apps/firefox/i/firefox/1/p/424242");
+        let text = detail_text(&proc_row, &tree, 80);
+        assert!(
+            text.contains("placed") && text.contains("Applications"),
+            "{text}"
+        );
+        assert!(
+            text.contains("identity") && text.contains("firefox"),
+            "{text}"
+        );
+        assert!(text.contains("instance"), "{text}");
+        assert!(text.contains("rules"), "{text}");
+        assert!(!text.contains("90-mine.json"), "{text}");
+
+        let mut ident_row = flat(3, "firefox");
+        ident_row.id = format!("user:{me}/apps/firefox");
+        let ident = detail_text(&ident_row, &tree, 80);
+        assert!(ident.contains("placement key"), "{ident}");
+        assert!(!ident.contains("rules"), "{ident}");
+
+        let mut host = flat(0, "Host");
+        host.id = "host".into();
+        host.trimmable = false;
+        let header = detail_text(&host, &tree, 80);
+        assert!(!header.contains("placed"), "{header}");
     }
 
     /// The trend is drawn against a scale the whole frame shares, not against

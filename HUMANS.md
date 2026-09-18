@@ -193,7 +193,8 @@ the row is gone, the nearest parent still on screen is selected.
 off-screen ones included (`-` is a blank). On a single process it adds pid,
 parent pid, state, owning uid, `exe` path, cgroup line and command line (cut
 at 240 characters), read from `/proc` on the keypress; a field heft cannot
-read is blank.
+read is blank. It also shows where the row landed and the placement key; for a
+process, the same stages `--explain` prints, without the rule-file recipe.
 
 `p` freezes the table while sampling continues underneath, so unpausing shows
 the current machine. Sort, filter, expand and `i` still work on the held tree,

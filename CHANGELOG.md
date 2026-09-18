@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- The TUI `i` pane shows where the row landed and the placement key. A process
+  row also lists the same rules stages `--explain` prints, without the
+  pin-to-folder recipe.
+
 ## 0.12.0 - 2026-09-16
 
 ### Changed

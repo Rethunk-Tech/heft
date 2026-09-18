@@ -3,8 +3,8 @@
 //!
 //! A placement rule is keyed on the identities the tree shows, and a wrong key
 //! is silent: an identity that matches nothing is simply never consulted. The
-//! TUI's `i` pane shows a process's cgroup, exe and cmdline but never what any
-//! of that resolved to, so this is where the key is read off.
+//! TUI's `i` pane prints the same compact body (`placement_lines`) for a
+//! process row, without the pin-to-folder recipe.
 //!
 //! The per-stage lines are a second, traced evaluation of the same rules, run
 //! only here. The tree's verdict also comes from ancestor walks no single
@@ -94,6 +94,54 @@ pub(crate) fn locate(tree: &HostTree, pid: u32) -> Option<Found> {
     }
     hit(&tree.containers, "Host", Folder::Containers)
         .or_else(|| hit(&tree.system, "Host", Folder::System))
+}
+
+/// The flatten id of an identity row, built the same way `ui::push_folder`
+/// names it, so the TUI can ask for that row without a pid.
+fn locate_ident(tree: &HostTree, row_id: &str) -> Option<Found> {
+    let arrow = glyph::arrows().3;
+    for u in &tree.users {
+        let who = format!("Host {arrow} {} ({})", u.name, u.uid);
+        for (slug, folder, idents) in [
+            ("apps", Folder::Applications, u.applications.as_slice()),
+            ("services", Folder::UserServices, u.user_services.as_slice()),
+            ("containers", Folder::Containers, u.containers.as_slice()),
+        ] {
+            let folder_id = format!("user:{}/{slug}", u.uid);
+            for node in idents {
+                if row_id == format!("{folder_id}/{}", node.id) {
+                    return Some(found_at(&who, folder, node, String::new(), 0));
+                }
+            }
+        }
+    }
+    for (prefix, folder, idents) in [
+        (
+            "host/containers",
+            Folder::Containers,
+            tree.containers.as_slice(),
+        ),
+        ("host/system", Folder::System, tree.system.as_slice()),
+    ] {
+        for node in idents {
+            if row_id == format!("{prefix}/{}", node.id) {
+                return Some(found_at("Host", folder, node, String::new(), 0));
+            }
+        }
+    }
+    None
+}
+
+/// Two or three lines for an identity row: path, the identity, and that it is
+/// the placement key when a rule can reach the folder.
+pub(crate) fn identity_placement(tree: &HostTree, row_id: &str) -> Option<Vec<String>> {
+    let found = locate_ident(tree, row_id)?;
+    let mut lines = placed_identity(&found);
+    if found.pinnable.is_some() {
+        let ident = printable(&found.ident);
+        lines.push(format!("  \"{ident}\" is the placement key for this row."));
+    }
+    Some(lines)
 }
 
 pub(crate) fn placed_identity(found: &Found) -> Vec<String> {
@@ -473,5 +521,34 @@ mod tests {
                 .all(|l| !l.contains("90-mine.json") && !l.contains("fold_to")),
             "{lines:#?}"
         );
+    }
+
+    #[test]
+    fn identity_placement_is_the_key_without_rules() {
+        let tree = tree_with(user(vec![ident("cursor", &[10])], Vec::new()), vec![]);
+        let lines = identity_placement(&tree, "user:1000/apps/cursor").expect("found");
+        assert_eq!(lines.len(), 3, "{lines:#?}");
+        assert!(
+            lines[0].contains("placed") && lines[0].contains("Applications"),
+            "{lines:#?}"
+        );
+        assert!(
+            lines[1].contains("identity") && lines[1].contains("cursor"),
+            "{lines:#?}"
+        );
+        assert!(
+            lines[2].contains("\"cursor\" is the placement key for this row."),
+            "{lines:#?}"
+        );
+        assert!(
+            lines
+                .iter()
+                .all(|l| !l.contains("rules") && !l.contains("90-mine.json"))
+        );
+        let system = tree_with(user(Vec::new(), Vec::new()), vec![ident("kworker", &[3])]);
+        let sys = identity_placement(&system, "host/system/kworker").expect("found");
+        assert_eq!(sys.len(), 2, "{sys:#?}");
+        assert!(sys.iter().all(|l| !l.contains("placement key")), "{sys:#?}");
+        assert!(identity_placement(&tree, "user:1000/apps").is_none());
     }
 }

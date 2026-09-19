@@ -484,8 +484,8 @@ pub(crate) struct Network {
 
 impl Inspect {
     /// `--network=host` shares the root network namespace, so that container's
-    /// `/proc/<pid>/net/dev` is the machine-wide file: measured, 988.5 GB in
-    /// and 430.6 GB out, none of it the container's. It gets no rate, and an
+    /// `/proc/<pid>/net/dev` is the machine-wide file, none of it the
+    /// container's. It gets no rate, and an
     /// absent `NetworkMode` fails closed for the same reason.
     fn owns_netns(&self) -> bool {
         self.host_config

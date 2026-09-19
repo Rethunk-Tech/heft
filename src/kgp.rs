@@ -147,7 +147,7 @@ pub(crate) struct Image {
 /// frame with, so the image and the table agree on the terminal. Pixel width
 /// is zero on a terminal that does not report it, and an image cannot be sized
 /// without it, so that is a `None` and the caller falls back to characters.
-/// It opens `/dev/tty` per call: 0.71 µs median under a pty, once per image.
+/// It opens `/dev/tty` per call, once per image.
 pub(crate) fn cell_px() -> Option<(u32, u32)> {
     let ws = crossterm::terminal::window_size().ok()?;
     let (cols, rows) = (u32::from(ws.columns), u32::from(ws.rows));
@@ -417,9 +417,7 @@ fn b64(data: &[u8], out: &mut String) {
 }
 
 /// Only ever compared against itself, so the bar is "does not collide between
-/// two frames", not cryptographic. `DefaultHasher` over a byte-at-a-time FNV-1a:
-/// medians on a Ryzen AI Max+ 395, release, 0.018 ms against 0.114 ms at 146 KB
-/// and 2.1 ms against 13.2 ms at 16 MiB.
+/// two frames", not cryptographic.
 fn hash(data: &[u8]) -> u64 {
     let mut h = std::hash::DefaultHasher::new();
     h.write(data);

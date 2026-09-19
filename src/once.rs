@@ -474,11 +474,9 @@ pub fn sort_labels() -> Vec<&'static str> {
 /// haystack is one line per process, so `^` and `$` anchor to one process's
 /// argv, and `(?-m)` restores whole-text anchors.
 ///
-/// `regex-lite` rather than `regex`, measured: the full engine takes the
-/// stripped release binary from 1.93 MB to 3.26 MB and pulls in four crates
-/// in place of one for its SIMD literal search, which matches a few hundred
-/// process names once a tick and is not worth 69% of the binary. `regex-lite`
-/// costs 69 KB and one crate, and gives up only Unicode character classes.
+/// `regex-lite` rather than `regex`: the full engine's extra size and crates
+/// buy SIMD literal search, which a few hundred process names matched once a
+/// tick do not need. `regex-lite` gives up only Unicode character classes.
 pub struct Filter(regex_lite::Regex);
 
 impl Filter {
@@ -903,7 +901,7 @@ fn push_cmdlines(out: &mut String, procs: &[ProcNode]) {
 /// Below this share of the machine's threads, heft says so. Above it the gap
 /// is the ordinary skew between reading `/proc/loadavg` and finishing the
 /// walk: threads are created and reaped throughout, and heft's own walk holds
-/// several. Measured on an unrestricted host, the two agree exactly.
+/// several.
 const VISIBLE_OK: f64 = 0.9;
 
 /// `  seeing 4% of 4537 threads`, or nothing when heft can account for the
@@ -911,9 +909,8 @@ const VISIBLE_OK: f64 = 0.9;
 ///
 /// heft can only bill a pid it can walk, so on a `hidepid` mount, inside a
 /// PID namespace, or against another user's processes the tree is quietly
-/// smaller than the machine -- HUMANS.md documents one measured case where
-/// the kernel reported 45.7 GiB of GTT and the Host row accounted 18.1 GiB.
-/// The kernel's global thread count is not a walk, so it still answers, and
+/// smaller than the machine. The kernel's global thread count is not a walk,
+/// so it still answers, and
 /// the two together turn "the tree looks small" into a figure.
 pub(crate) fn coverage_tail(tree: &HostTree) -> String {
     let seen = tree.walked_threads.or_else(|| host_metrics(tree).threads);
@@ -980,10 +977,7 @@ fn json_text(tree: &HostTree, view: &View, pretty: bool) -> Result<String, Error
     keep_users(&mut tree, &view.users);
     sort_tree(&mut tree, Sort::from_label(&view.sort), view.desc);
     // The `Value` detour is what sorts every key alphabetically, which is the
-    // byte shape `--json` publishes. Serializing the structs directly measured
-    // 907 us to 314 us per ~300 KB document, but keeping that order needed 93
-    // lines of hand-written `Serialize` in place of `flatten`, for about 0.06%
-    // of a core at one document a second.
+    // byte shape `--json` publishes.
     let doc = serde_json::json!({ "host": tree });
     // `println!` panics when the reader closes, and the release profile is
     // `panic = abort`, so `heft --json | head` would abort. Serialize first,

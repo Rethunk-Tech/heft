@@ -296,13 +296,13 @@ fn heft_observes_itself_with_real_numbers() {
 }
 
 /// heft reports its own RSS, so it can watch itself for a per-tick allocation
-/// glibc never hands back, the kind that grew ~15 MiB every PSS tick to 488 MiB.
+/// glibc never hands back.
 ///
 /// Growth, not a ceiling: the ceiling low enough to catch a leak in a few
 /// seconds is below what heft legitimately uses watching a busy host. The
 /// first samples are dropped because allocator warm-up is not a leak, and
-/// `--pss-interval` is short so several rollup passes — the expensive tick,
-/// and the one that leaked — land inside the window.
+/// `--pss-interval` is short so several rollup passes, the expensive tick,
+/// land inside the window.
 #[test]
 fn heft_does_not_grow_while_it_follows() {
     use std::io::{BufRead, BufReader};

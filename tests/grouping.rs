@@ -957,7 +957,7 @@ fn a_container_owner_rule_beats_bind_mount_inference() {
     assert!(!has(&tree.containers, "acme-encoder"));
 }
 
-/// Budget harness: `build_tree` mean over the gui fixture and any
+/// Timing harness: `build_tree` mean over the gui fixture and any
 /// `HEFT_BENCH_FIXTURE`. Run with
 /// `cargo test --release --test grouping -- --ignored --nocapture build_tree_timing`.
 #[test]

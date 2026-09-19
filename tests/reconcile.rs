@@ -11,11 +11,8 @@
 //! the PIDs heft can see, PSS leaves kernel and page-cache memory billed to
 //! nobody, and heft's sampling window is a strict sub-interval of any window
 //! a test can draw around the process. So the memory and CPU assertions are
-//! containment arguments, and each one carries the measurement that sized it.
-//!
-//! Every tolerance below was measured over nine runs on a 32-core, 125 GiB
-//! desktop carrying ~850 processes, three of them under a saturating 32-thread
-//! CPU load with a 2 GiB/s page-cache churn beside it.
+//! containment arguments, each with a slack that has to hold on a busy desktop
+//! under CPU and page-cache load.
 
 use std::collections::{HashMap, HashSet};
 use std::process::Stdio;
@@ -32,9 +29,6 @@ use common::{arr, heft, idents, pids, procs_of};
 /// can draw around it adds a full `/proc` walk on either side. Every CPU bound
 /// here is a containment argument whose tightness is the ratio between the
 /// two, so the interval has to be long enough that the walks do not swamp it.
-/// Measured: 1.0 s of heft window inside a 2.2 s outer window on an
-/// 850-process desktop, and inside ~1.05 s wherever the walk is cheap, which
-/// is every container CI will run this in.
 const INTERVAL: f64 = 1.0;
 
 struct Sample {
@@ -70,8 +64,8 @@ fn sample() -> &'static Sample {
         let before: HashSet<u32> = scan().into_keys().collect();
 
         // MemAvailable moves under heft's feet, so bracket it rather than
-        // guess a slack. 5 ms of polling is three orders below the second
-        // heft spends between its two walks.
+        // guess a slack. The poll period is far below the interval heft
+        // spends between its two walks.
         let stop = Arc::new(AtomicBool::new(false));
         let flag = Arc::clone(&stop);
         let poll = std::thread::spawn(move || {
@@ -239,14 +233,9 @@ fn mem_used_is_memtotal_minus_memavailable_while_heft_ran() {
     let used = s.host["mem_used_bytes"].as_u64().expect("mem_used_bytes");
     // The envelope is the tolerance: heft read /proc/meminfo at one instant
     // inside its own run, and the poller bracketed every instant in it.
-    // Measured, heft's figure landed inside the raw envelope on every one of
-    // nine runs, so the slack below is only for a poller starved off-CPU. Size
-    // it from the same envelopes: they spanned 32-412 MiB over ~2.2 s, so
-    // MemAvailable moved at most ~190 MiB/s and 256 MiB covers a poller held
-    // off for more than a second. It stays an order of magnitude under the
-    // signal a wrong field would give — MemFree in place of MemAvailable reads
-    // 2.66 GiB apart on this desktop, and further apart the more cache a host
-    // holds.
+    // The slack is only for a poller starved off-CPU, and stays well under
+    // the signal a wrong field would give: MemFree in place of MemAvailable
+    // reads further apart the more cache a host holds.
     let slack = 256 * 1024 * 1024;
     assert!(
         used + slack >= s.used_lo && used <= s.used_hi + slack,
@@ -276,20 +265,16 @@ fn host_cpu_claims_no_more_busy_ticks_than_the_kernel_counted() {
     // This is containment, not correlation: a busier machine only raises the
     // right-hand side, which is what makes it safe where "sum of per-process
     // CPU <= host CPU" was not. How much it catches depends on how much of the
-    // outer window heft's own window covers. Measured ratio of claim to
-    // counted: 0.22-0.42 idle on this 850-process desktop, where two walks
-    // more than double the window, and 0.95-0.98 under `unshare --pid
-    // --mount-proc` with three visible processes, which is the shape CI runs.
-    // So it is at its tightest exactly where it has to survive, and it always
-    // catches the errors that move a figure by a factor: a tick count read as
-    // seconds, or a per-core percentage published as a per-machine one.
+    // outer window heft's own window covers: loose on a desktop where two
+    // walks are slow, tight in a near-empty PID namespace, which is the shape
+    // CI runs. It always catches the errors that move a figure by a factor: a
+    // tick count read as seconds, or a per-core percentage published as a
+    // per-machine one.
     let capacity = s.my_total as f64 * (INTERVAL / s.wall);
     let claimed = pct / 100.0 * capacity;
     // /proc/stat accrues in whole ticks per CPU, so the outer window can read
-    // a tick per CPU short at each end. Twice that theoretical bound. On an
-    // idle 32-core box this is the dominant term (128 ticks against ~80 busy),
-    // and under load the containment margin passes it (183 ticks measured at
-    // full saturation in the namespace).
+    // a tick per CPU short at each end. Twice that theoretical bound; on an
+    // idle many-core box it is the dominant term.
     let slack = (4 * s.nproc) as f64;
     assert!(
         claimed <= s.my_busy as f64 + slack,
@@ -308,8 +293,7 @@ fn every_pid_alive_across_the_run_is_in_the_tree() {
     // half of that claim a test can check: a pid whose `stat` this test read
     // both before and after the run was alive through heft's whole walk and
     // was readable by the same uid, so heft skipping it is heft dropping a row
-    // it could have had, not the kernel withholding one. Measured: 0 missing
-    // of ~850, idle and under load.
+    // it could have had, not the kernel withholding one.
     let s = sample();
     let tree = tree_pss(&s.host);
     let missing: Vec<u32> = s
@@ -349,9 +333,8 @@ fn the_tree_carries_the_pss_the_kernel_published() {
                 heft += v;
             }
             // A rollup this test can read is one heft could read a moment
-            // earlier, and a kernel thread has none for either of us. Measured
-            // 0 across nine runs; a non-zero here is heft blanking a cell it
-            // had the number for.
+            // earlier, and a kernel thread has none for either of us, so a
+            // non-zero here is heft blanking a cell it had the number for.
             None => blank.push(*pid),
         }
     }
@@ -365,11 +348,10 @@ fn the_tree_carries_the_pss_the_kernel_published() {
 
     // PSS is a level, and heft read it up to a walk earlier than this test
     // did, so a browser or a compiler moves the total under both of them.
-    // Measured drift: at most 0.09% of the 26 GiB total across nine runs.
-    // 5% is fifty times that and still an order below the smallest wrong-field
-    // signal — summing RSS instead of PSS reads 54% high on this tree. The
-    // 64 MiB floor is for a near-empty container, where a few processes make
-    // the relative term meaninglessly small.
+    // 5% covers that drift and stays well below the smallest wrong-field
+    // signal, summing RSS instead of PSS. The 64 MiB floor is for a
+    // near-empty container, where a few processes make the relative term
+    // meaninglessly small.
     let slack = (oracle / 20).max(64 * 1024 * 1024);
     assert!(
         heft.abs_diff(oracle) <= slack,

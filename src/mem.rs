@@ -151,9 +151,8 @@ pub(crate) fn is_unified(mem_total: u64, gpu: &GpuPool) -> bool {
 ///
 /// Reclaimable cache is never inside `used`. `used` is `MemTotal -
 /// MemAvailable`, and `MemAvailable` already counts reclaimable page cache as
-/// free, so painting it inside `used` claimed room that was process memory:
-/// measured on a 125 GiB host, 18.4 GiB of `Cached` drawn inside 52.7 GiB used
-/// left anon at about 14 GiB against `AnonPages` 23.7 GiB. Shmem is the cache
+/// free, so painting it inside `used` would claim room that is process
+/// memory. Shmem is the cache
 /// `MemAvailable` cannot reclaim, so it is the slice that is actually there.
 ///
 /// `inside` is vram, gtt, zram, shmem, kernel, anon; `beyond` is reclaimable
@@ -270,7 +269,6 @@ mod tests {
         assert_eq!(s[6..], [60, 30, 10, 0]);
     }
 
-    /// The reported host: 17.3 GiB used, 5.2 GiB of PSS, 10 GiB out on zram.
     /// Every figure the kernel itemises gets its own segment, and `other` is
     /// only what none of them name, rather than a remainder read as anon.
     #[test]

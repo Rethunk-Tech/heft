@@ -3,8 +3,7 @@
 /// Their own file because two things need them and neither can reach the
 /// other: `ui` is in the library, `build.rs` compiles standalone files to
 /// generate the man page, and `cli.rs` is the binary's. One definition, so
-/// `man heft`'s KEYS section and the `?` overlay cannot drift apart the way
-/// they did when a key was added to only one of them.
+/// `man heft`'s KEYS section and the `?` overlay cannot drift apart.
 ///
 /// `{up}` `{down}` `{left}` `{right}` are placeholders. The TUI fills them
 /// with whatever `glyph` resolved for the terminal; the man page spells the

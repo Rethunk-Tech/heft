@@ -338,10 +338,9 @@ fn compute_place(
     }
 
     // Any other orphan (`wl-copy` forking into the background) keeps the
-    // process group of the app that ran it. Applications only: the same test
-    // against any live leader moved 7 of 815 processes on a GNOME desktop
-    // (`bwrap`, `ibus-x11`, `gsd-disk-utility-notify`) into gnome-shell,
-    // gnome-settings-daemon and systemd rows.
+    // process group of the app that ran it. Applications only: against any
+    // live leader, `bwrap`, `ibus-x11` and `gsd-disk-utility-notify` would
+    // fold into gnome-shell, gnome-settings-daemon and systemd rows.
     if let Ok(leader) = u32::try_from(p.pgrp)
         && leader != p.pid
         && curr

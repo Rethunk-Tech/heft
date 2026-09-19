@@ -139,9 +139,9 @@ const SIXEL_MARK: Color = Color::Rgb(0, 0, 1);
 /// first frame has measured the table.
 const TREND: usize = 9;
 
-/// The widest TREND is drawn. Uncapped, a table with a few columns hidden gave
-/// it every spare cell -- about 55 on a 137-column terminal -- which is a
-/// minute of history nobody reads across, taken from the name column beside it.
+/// The widest TREND is drawn. Uncapped, a table with a few columns hidden
+/// would give it every spare cell, history nobody reads across, taken from the
+/// name column beside it.
 const TREND_MAX: u16 = 30;
 
 /// Turn what the terminal answered into what to draw.
@@ -150,10 +150,9 @@ const TREND_MAX: u16 = 30;
 /// scroll without repainting, and where the terminal is on this machine its
 /// pixels go through shared memory and cost tens of bytes a frame. That makes
 /// it the first choice locally. Over ssh the same transport has to send every
-/// pixel inline -- measured at about 146 KB a sample against sixel's 559 bytes
-/// a frame, because a line is mostly empty and sixel run-length-encodes the
-/// empty part -- so where the terminal is at the other end of a connection and
-/// offers sixel, sixel wins.
+/// pixel inline, far more than sixel sends, because a line is mostly empty and
+/// sixel run-length-encodes the empty part. So where the terminal is at the
+/// other end of a connection and offers sixel, sixel wins.
 const fn resolve_trend(caps: caps::Caps, remote: bool) -> Trend {
     match (caps.kitty, caps.sixel, remote) {
         (true, true, true) | (false, true, _) => Trend::Sixel,
@@ -327,8 +326,7 @@ fn pause_clock(paused: Option<Instant>) -> Option<u64> {
 
 /// Whether the loop draws this pass: on input or a new sample, or when the
 /// `PAUSED` footer's seconds have moved. Nothing else on screen changes on its
-/// own. Drawing on every 50 ms poll instead measured idle CPU 18.3% against
-/// 16.8% here, and sixel output 13 KB/s against 1.1.
+/// own, so an idle screen costs no redraws between samples.
 fn should_draw(changed: bool, clock: Option<u64>, drawn_clock: Option<u64>) -> bool {
     changed || clock != drawn_clock
 }
@@ -449,8 +447,7 @@ fn record_history(app: &mut App, rows: &[Flat]) {
         app.history.clear();
         app.sorted_by = sort.label().to_string();
     }
-    // A set, not a scan of `rows` per entry: the scan is quadratic, measured
-    // at 274 us for 730 rows and 1090 us for 1500, against 30 and 54 us here.
+    // A set, not a scan of `rows` per entry: the scan is quadratic.
     let live: HashSet<&str> = rows.iter().map(|r| r.id.as_str()).collect();
     app.history.retain(|id, _| live.contains(id.as_str()));
     for r in rows {
@@ -1013,7 +1010,7 @@ fn scrolled(cols: &Columns, skip: usize) -> Vec<&'static Column> {
 /// How many of `cols` fit in `avail` at their full width, and the width
 /// those take.
 ///
-/// ratatui clips a cell that runs out of room, so a 50-column terminal drew
+/// ratatui clips a cell that runs out of room, so a narrow terminal would draw
 /// `20.1G` as `2` and `548.5` as `5` with nothing to say they had been cut —
 /// heft showing a figure that is wrong, which is the one thing every other
 /// rule in it avoids. A column is either drawn whole or not drawn, and
@@ -1496,10 +1493,7 @@ fn cpu_parts(tree: &HostTree, width: usize) -> (String, String, usize) {
     let mid = format!("] {:>5}%  ", fmt_pct(tree.cpu_pct));
     // No host `psi` tail here: it is text on the row whose point is a bar.
     // `--once` and `--json` still carry the figures, where nothing is drawn to
-    // scale. Nor is a tail here a way to line the two bars up: measured, one
-    // cancels most of the suffix difference above by accident, and with no
-    // tail the bars sit fourteen columns apart rather than four. `bar_w` is
-    // what closes them.
+    // scale. `bar_w` is what lines the two bars up.
     let fits = width.saturating_sub(prefix.len() + mid.len());
     (prefix, mid, fits)
 }
@@ -1568,9 +1562,9 @@ fn mem_header_line(tree: &HostTree, width: usize) -> (Line<'static>, usize) {
     let label_w = label_width(tree);
     // GTT is pinned system RAM on a discrete card too, already counted in
     // `used`, so it paints inside MEM either way. The kernel's own
-    // `mem_info_*_used` wins where the driver publishes it (amdgpu): summing
-    // the drm clients heft can see found 19.9 GiB of GTT against the kernel's
-    // 49.6 GiB on a 125 GiB APU, and the missing 30 GiB read as anon. i915 and
+    // `mem_info_*_used` wins where the driver publishes it (amdgpu): the drm
+    // clients heft can see miss the ones it cannot read, and the GTT they hold
+    // would read as anon. i915 and
     // xe publish no such counter, so the client sum is the fallback there.
     let vram = if tree.unified_memory {
         tree.vram_used_bytes.or(host.vram_bytes).unwrap_or(0)
@@ -2302,8 +2296,8 @@ mod tests {
         // its image is tied to the cell grid rather than repainted.
         assert_eq!(resolve_trend(caps(true, true), false), Trend::Kitty);
         assert_eq!(resolve_trend(caps(true, false), false), Trend::Kitty);
-        // Over ssh that transport sends every pixel inline: ~146 KB a sample
-        // against sixel's 559 bytes a frame.
+        // Over ssh that transport sends every pixel inline, far more than
+        // sixel's run-length-encoded frame.
         assert_eq!(resolve_trend(caps(true, true), true), Trend::Sixel);
         // Only one on offer, so the connection does not come into it.
         assert_eq!(resolve_trend(caps(false, true), false), Trend::Sixel);
@@ -2425,13 +2419,12 @@ mod tests {
         assert!(!alarming("name", &m(Some(99.0))));
     }
 
-    /// Reported on a 19-row terminal: the overlay ended at `i`, with `?`/`F1`
-    /// and every swatch below the fold. Wide enough, the keys take two columns
-    /// and the whole overlay is barely taller than the table pane it covered.
+    /// On a short terminal a one-column overlay puts `?`/`F1` and every swatch
+    /// below the fold. Wide enough, the keys take two columns and the whole
+    /// overlay is barely taller than the table pane it covers.
     #[test]
     fn help_fits_a_short_wide_terminal() {
         let keys = help_text().lines().count();
-        // 137 is the terminal the per-column sizing was reported from.
         let wide = help_lines(137);
         assert_eq!(wide.len(), keys.div_ceil(2) + 1 + bar_key().len());
         let text = wide
@@ -2671,8 +2664,7 @@ mod tests {
         });
         assert!(!tree.unified_memory);
         let text = mem_header_line(&tree, 100).0.to_string();
-        // The bug this guards: VRAM measured against MemTotal instead of the
-        // card's own 12G.
+        // VRAM is drawn against the card's own 12G, not MemTotal.
         assert!(text.contains("VRAM ["), "{text}");
         assert!(text.contains("6.0G/12.0G"), "{text}");
         assert!(text.contains("8.0G/32.0G"), "{text}");
@@ -2700,8 +2692,8 @@ mod tests {
         }];
         let (line, _) = mem_header_line(&tree, 100);
         let text = line.to_string();
-        // The bug this guards: GTT dropped entirely once VRAM moved to its own
-        // tank, even though it is system RAM sitting inside the MEM bar's used.
+        // GTT stays in MEM with VRAM in its own tank: it is system RAM inside
+        // the MEM bar's used.
         assert!(!text.contains("gtt"), "no legend on the bar: {text}");
         assert!(
             !text.contains("vram/"),

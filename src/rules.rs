@@ -1712,8 +1712,8 @@ mod tests {
                         ppid: r.ppid,
                         comm: r.comm,
                         exe: r.exe,
-                        cmdline: r.cmdline,
-                        cgroup: r.cgroup,
+                        cmdline: r.cmdline.into(),
+                        cgroup: r.cgroup.into(),
                         ..crate::types::Process::default()
                     };
                     (p, unit)

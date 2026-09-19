@@ -63,8 +63,8 @@ fn load(path: &str, rules: &Rules) -> (PidMap<Process>, ContainerIndex, HostHead
                 kthread: p.kthread,
                 comm: p.comm,
                 exe: p.exe,
-                cmdline: p.cmdline,
-                cgroup: p.cgroup,
+                cmdline: p.cmdline.into(),
+                cgroup: p.cgroup.into(),
                 utime: p.utime,
                 stime: p.stime,
                 ..Process::default()
@@ -868,7 +868,7 @@ fn disabling_the_trinity_file_makes_a_tde_module_an_application() {
         uid: 1000,
         comm: "kicker".into(),
         exe: Some("/opt/trinity/bin/tdeinit".into()),
-        cmdline: vec!["kicker".into()],
+        cmdline: vec!["kicker".into()].into(),
         cgroup: "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-tde-kicker-1.scope"
             .into(),
         ..Process::default()

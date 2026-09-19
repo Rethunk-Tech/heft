@@ -823,7 +823,7 @@ mod tests {
         let place = place_alone(Process {
             comm: "crashhelper".into(),
             exe: Some("/usr/lib64/firefox/crashhelper".into()),
-            cmdline: vec!["crashhelper".into(), "12766".into()],
+            cmdline: vec!["crashhelper".into(), "12766".into()].into(),
             uid: 1000,
             cgroup: "0::/user.slice/user-1000.slice/user@1000.service/app.slice".into(),
             ..Process::default()
@@ -881,7 +881,7 @@ mod tests {
                     uid: 1000,
                     comm: argv[0].clone(),
                     exe: Some(format!("/usr/bin/{}", argv[0])),
-                    cmdline: argv,
+                    cmdline: argv.into(),
                     cgroup: "0::/user.slice/user-1000.slice/user@1000.service/app.slice".into(),
                     rss_pages: Some(1),
                     ..Process::default()

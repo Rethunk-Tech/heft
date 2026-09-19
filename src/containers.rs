@@ -540,7 +540,7 @@ mod tests {
     fn runc(id: &str) -> Process {
         Process {
             comm: "runc".into(),
-            cmdline: vec!["runc".into(), "-id".into(), id.into()],
+            cmdline: vec!["runc".into(), "-id".into(), id.into()].into(),
             ..Process::default()
         }
     }

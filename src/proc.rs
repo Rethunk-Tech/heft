@@ -270,7 +270,7 @@ pub(crate) fn read_pid(
     let mut fd_count = None;
     let mut fd_skips = 0;
     let (uid, exe, cmdline, cgroup, rss_pages) = if parsed.kthread {
-        (0, None, Vec::new(), String::new(), Some(0))
+        (0, None, Arc::default(), Arc::default(), Some(0))
     } else {
         // An exec maps a new image, which moves `exec_mark` under ASLR, and
         // renames `comm`; `exe` is read again when either changes. A foreign
@@ -309,10 +309,10 @@ pub(crate) fn read_pid(
                     _ => read_str(&dir, c"cgroup", buf)
                         .unwrap_or_default()
                         .trim()
-                        .to_string(),
+                        .into(),
                 };
                 cgroup_id = info.map(|i| i.1);
-                (uid, read_cmdline(&dir, buf), cgroup)
+                (uid, read_cmdline(&dir, buf).into(), cgroup)
             }
         };
         (
@@ -962,7 +962,7 @@ pub fn print_fixture() -> Result<(), crate::types::Error> {
                 "comm": p.comm,
                 "exe": p.exe.as_deref().map(tilde),
                 "cmdline": p.cmdline.iter().map(|a| tilde(a)).collect::<Vec<_>>(),
-                "cgroup": p.cgroup,
+                "cgroup": &*p.cgroup,
             })
         })
         .collect();

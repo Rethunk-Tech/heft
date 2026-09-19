@@ -447,7 +447,8 @@ mod tests {
                         "9".into(),
                         "/tmp/".into(),
                         "11".into(),
-                    ],
+                    ]
+                    .into(),
                     ppid: 6475,
                     ..Process::default()
                 },
@@ -484,7 +485,7 @@ mod tests {
                     &Process {
                         comm: "chrome_crashpad_handler".into(),
                         exe: Some(temp.into()),
-                        cmdline: vec![temp.into()],
+                        cmdline: vec![temp.into()].into(),
                         ..Process::default()
                     },
                     helper,
@@ -502,7 +503,7 @@ mod tests {
                 &Process {
                     comm: "chrome_crashpad_handler".into(),
                     exe: Some(multibyte.into()),
-                    cmdline: vec![multibyte.into()],
+                    cmdline: vec![multibyte.into()].into(),
                     ..Process::default()
                 },
                 helper,
@@ -523,7 +524,8 @@ mod tests {
                     ),
                     cmdline: vec![
                         "/tmp/.mount_cursorIDenmC/usr/share/cursor/chrome_crashpad_handler".into()
-                    ],
+                    ]
+                    .into(),
                     ppid: 6475,
                     ..Process::default()
                 },

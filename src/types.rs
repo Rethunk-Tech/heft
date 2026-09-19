@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::hash::{BuildHasherDefault, Hasher};
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
@@ -44,8 +45,9 @@ pub struct Process {
     pub kthread: bool,
     pub comm: String,
     pub exe: Option<String>,
-    pub cmdline: Vec<String>,
-    pub cgroup: String,
+    /// Shared, so a tick that carries the identity copies no strings.
+    pub cmdline: Arc<[String]>,
+    pub cgroup: Arc<str>,
     pub utime: u64,
     pub stime: u64,
     /// `num_threads` and `starttime`, fields 20 and 22 of `/proc/pid/stat` —

@@ -24,7 +24,7 @@ use std::collections::HashMap;
 use rustix::fs::CWD;
 
 use crate::proc::read_str;
-use crate::types::{HostTree, IdentNode, Metrics, Process};
+use crate::types::{HostTree, IdentNode, Metrics, PidMap, Process};
 
 /// Cumulative `some` stall microseconds for one cgroup.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -62,7 +62,7 @@ impl Sampler {
     /// wall-clock figures. In CPU time, on a host with 136 distinct cgroups,
     /// the three pressure files cost 1.08 to 1.13 ms of kernel time a pass
     /// over three runs, and `cgroup.procs` at most 1.01 to 1.07 ms more.
-    pub(crate) fn tick(&mut self, procs: &HashMap<u32, Process>, secs: f64) -> Stalls {
+    pub(crate) fn tick(&mut self, procs: &PidMap<Process>, secs: f64) -> Stalls {
         let mut curr = HashMap::new();
         let mut rates = HashMap::new();
         for p in procs.values() {
@@ -90,7 +90,7 @@ impl Sampler {
 pub(crate) struct Stalls(HashMap<String, Stall>);
 
 impl Stalls {
-    pub(crate) fn apply(&self, tree: &mut HostTree, procs: &HashMap<u32, Process>) {
+    pub(crate) fn apply(&self, tree: &mut HostTree, procs: &PidMap<Process>) {
         let mut seen: HashMap<&str, u32> = HashMap::new();
         for path in procs.values().filter_map(|p| cgroup_path(&p.cgroup)) {
             *seen.entry(path).or_default() += 1;
@@ -114,7 +114,7 @@ struct Apply<'a> {
     rates: &'a HashMap<String, Stall>,
     /// How many walked pids each cgroup holds this tick.
     seen: HashMap<&'a str, u32>,
-    procs: &'a HashMap<u32, Process>,
+    procs: &'a PidMap<Process>,
 }
 
 impl<'a> Apply<'a> {
@@ -430,7 +430,7 @@ mod tests {
                 },
             ),
         ]);
-        let procs = HashMap::from([(1, proc_in(1, "0::/a")), (2, proc_in(2, "0::/b"))]);
+        let procs = PidMap::from_iter([(1, proc_in(1, "0::/a")), (2, proc_in(2, "0::/b"))]);
         let t = Apply {
             rates: &rates,
             seen: HashMap::new(),

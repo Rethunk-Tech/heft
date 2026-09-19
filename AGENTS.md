@@ -217,7 +217,7 @@ grouping -- --ignored --nocapture build_tree_timing` and `cargo test --release
 | --- | --- |
 | `judged` built once per pid per tick by `group::Ctx::new` (unit, flags, class set, and the positional-argv launcher test in `group::judge`), read by every class and unit question in `group.rs`, `identity::instance_key` and `identity::generic_fallback` | asked per call site instead, the name lookup alone ran 2,200 times per 293-process tick. Keyed on pid and valid for one `Ctx`, which lives one `build_tree`, so `exec` needs no invalidation |
 | session and app rules evaluate on a borrowed `Facts` in `direct_place` and allocate nothing (`rules::tests::evaluation_allocates_nothing`, counted per thread because other tests allocate on other threads) | a `Vec<String>` per test with a `windows` scan cost 750 ns per process; equality bucketed by byte length with a first-byte scan for contains costs 415 to 450 ns |
-| `build_tree` | 163 to 174 µs on the 102-process gui fixture, 577 to 584 µs on a 323-process `--fixture` dump; budget 20% |
+| `build_tree` | 148 to 151 µs on the 102-process gui fixture, 606 to 633 µs on a 368-process `--fixture` dump (168 to 171 and 661 to 676 with `SipHash` before `types::PidMap`); budget 20% |
 | the four stages on facts from `group::facts_of` | 368 to 396 ns per process; budget 500 ns |
 
 `Rules::load`, `rules::load_dir` and `Rules::builtin` carry the load contract.

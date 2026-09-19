@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::time::Duration;
 
 use crate::classify::{self, name_of};
@@ -8,12 +8,12 @@ use crate::identity::{self, docker_scope_id};
 use crate::proc;
 use crate::rules::{Classes, Facts, Rules, Stage, UnitFlags};
 use crate::types::{
-    Folder, HostHeader, HostTree, IdentNode, InstanceNode, MemberContainer, Metrics, ProcNode,
-    Process, UserNode,
+    Folder, HostHeader, HostTree, IdentNode, InstanceNode, MemberContainer, Metrics, PidMap,
+    PidSet, ProcNode, Process, UserNode,
 };
 
 /// One tick's processes by pid, as `proc` samples them.
-type Procs = HashMap<u32, Process>;
+type Procs = PidMap<Process>;
 
 /// The read-only inputs every placement rule needs, bundled so the recursive
 /// walk keeps one parameter instead of several.
@@ -24,11 +24,11 @@ struct Ctx<'a> {
     procs: &'a Procs,
     /// Each pid's children in pid order, so the payload search visits a child
     /// without scanning every process at every level.
-    children: HashMap<u32, Vec<u32>>,
+    children: PidMap<Vec<u32>>,
     /// Per-tick, per-pid facts the stages read. Keyed on pid and valid for one
     /// `Ctx` only: `exec` keeps the pid while changing exe and comm, and a
     /// `Ctx` lives one `build_tree` call, so no invalidation is needed.
-    judged: HashMap<u32, Judged>,
+    judged: PidMap<Judged>,
 }
 
 impl<'a> Ctx<'a> {
@@ -37,7 +37,7 @@ impl<'a> Ctx<'a> {
             .iter()
             .map(|(pid, p)| (*pid, judge(p, rules)))
             .collect();
-        let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
+        let mut children: PidMap<Vec<u32>> = PidMap::default();
         for p in curr.values() {
             children.entry(p.ppid).or_default().push(p.pid);
         }
@@ -137,15 +137,15 @@ fn metrics_map(
     curr: &Procs,
     elapsed: Duration,
     consts: &HostHeader,
-) -> HashMap<u32, Metrics> {
+) -> PidMap<Metrics> {
     curr.iter()
         .map(|(pid, p)| (*pid, process_metrics(prev.get(pid), p, elapsed, consts)))
         .collect()
 }
 
-fn resolve(curr: &Procs, ctx: &Ctx<'_>) -> HashMap<u32, Place> {
-    let mut memo: HashMap<u32, Place> = HashMap::new();
-    let mut walking = HashSet::new();
+fn resolve(curr: &Procs, ctx: &Ctx<'_>) -> PidMap<Place> {
+    let mut memo: PidMap<Place> = PidMap::default();
+    let mut walking = PidSet::default();
     for pid in curr.keys().copied() {
         resolve_one(pid, curr, ctx, &mut memo, &mut walking, 0);
     }
@@ -167,8 +167,8 @@ fn resolve_one(
     pid: u32,
     curr: &Procs,
     ctx: &Ctx<'_>,
-    memo: &mut HashMap<u32, Place>,
-    walking: &mut HashSet<u32>,
+    memo: &mut PidMap<Place>,
+    walking: &mut PidSet,
     depth: usize,
 ) -> Option<Place> {
     if let Some(p) = memo.get(&pid) {
@@ -188,8 +188,8 @@ fn compute_place(
     p: &Process,
     curr: &Procs,
     ctx: &Ctx<'_>,
-    memo: &mut HashMap<u32, Place>,
-    walking: &mut HashSet<u32>,
+    memo: &mut PidMap<Place>,
+    walking: &mut PidSet,
     depth: usize,
 ) -> Place {
     if let Some(place) = direct_place(p, ctx) {
@@ -531,8 +531,8 @@ fn owning_app_ancestor(
     mut pid: u32,
     curr: &Procs,
     ctx: &Ctx<'_>,
-    memo: &mut HashMap<u32, Place>,
-    walking: &mut HashSet<u32>,
+    memo: &mut PidMap<Place>,
+    walking: &mut PidSet,
     depth: usize,
 ) -> Option<Place> {
     for _ in depth..MAX_WALK {
@@ -565,8 +565,8 @@ fn unique_descendant_ident(
     pid: u32,
     curr: &Procs,
     ctx: &Ctx<'_>,
-    memo: &mut HashMap<u32, Place>,
-    walking: &mut HashSet<u32>,
+    memo: &mut PidMap<Place>,
+    walking: &mut PidSet,
     depth: usize,
 ) -> Option<Place> {
     if depth >= MAX_WALK {
@@ -613,8 +613,8 @@ fn unique_descendant_ident(
 
 fn assemble(
     curr: &Procs,
-    places: &HashMap<u32, Place>,
-    metrics: &HashMap<u32, Metrics>,
+    places: &PidMap<Place>,
+    metrics: &PidMap<Metrics>,
     mut header: HostTree,
 ) -> HostTree {
     #[derive(Default)]
@@ -635,7 +635,7 @@ fn assemble(
     }
 
     let passwd = proc::Passwd::read();
-    let mut users: HashMap<u32, UserNode> = HashMap::new();
+    let mut users: PidMap<UserNode> = PidMap::default();
     let mut host_containers = Vec::new();
     let mut system = Vec::new();
 
@@ -680,8 +680,8 @@ fn ident_node(
     pids: &[u32],
     members_map: &HashMap<String, Vec<u32>>,
     curr: &Procs,
-    places: &HashMap<u32, Place>,
-    metrics: &HashMap<u32, Metrics>,
+    places: &PidMap<Place>,
+    metrics: &PidMap<Metrics>,
 ) -> IdentNode {
     let mut by_inst: HashMap<String, Vec<u32>> = HashMap::new();
     for pid in pids {
@@ -717,7 +717,7 @@ fn ident_node(
     }
 }
 
-fn sum_metrics(pids: &[u32], metrics: &HashMap<u32, Metrics>) -> Metrics {
+fn sum_metrics(pids: &[u32], metrics: &PidMap<Metrics>) -> Metrics {
     let mut m = Metrics::default();
     for pid in pids {
         if let Some(x) = metrics.get(pid) {
@@ -741,9 +741,9 @@ fn sum_metrics(pids: &[u32], metrics: &HashMap<u32, Metrics>) -> Metrics {
 /// and the deepest node has no `children` array. 8 + 2 × 48 = 104 of 127.
 const MAX_PROC_DEPTH: usize = 48;
 
-fn proc_forest(pids: &[u32], curr: &Procs, metrics: &HashMap<u32, Metrics>) -> Vec<ProcNode> {
-    let set: HashSet<u32> = pids.iter().copied().collect();
-    let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
+fn proc_forest(pids: &[u32], curr: &Procs, metrics: &PidMap<Metrics>) -> Vec<ProcNode> {
+    let set: PidSet = pids.iter().copied().collect();
+    let mut children: PidMap<Vec<u32>> = PidMap::default();
     let mut roots = Vec::new();
     for pid in pids {
         let ppid = curr.get(pid).map_or(0, |p| p.ppid);
@@ -763,9 +763,9 @@ fn proc_forest(pids: &[u32], curr: &Procs, metrics: &HashMap<u32, Metrics>) -> V
 fn proc_node(
     pid: u32,
     depth: usize,
-    children: &HashMap<u32, Vec<u32>>,
+    children: &PidMap<Vec<u32>>,
     curr: &Procs,
-    metrics: &HashMap<u32, Metrics>,
+    metrics: &PidMap<Metrics>,
 ) -> ProcNode {
     let name = curr.get(&pid).map_or_else(|| pid.to_string(), name_of);
     let cmdline = curr
@@ -793,7 +793,7 @@ fn proc_node(
 /// Every descendant of `pid`, walked with an explicit stack so a chain of any
 /// depth costs heap rather than stack. Each pid has one parent, so no pid
 /// reachable from a root is visited twice.
-fn descendants(pid: u32, children: &HashMap<u32, Vec<u32>>) -> Vec<u32> {
+fn descendants(pid: u32, children: &PidMap<Vec<u32>>) -> Vec<u32> {
     let mut out = Vec::new();
     let mut stack = children.get(&pid).cloned().unwrap_or_default();
     while let Some(c) = stack.pop() {
@@ -807,13 +807,12 @@ fn descendants(pid: u32, children: &HashMap<u32, Vec<u32>>) -> Vec<u32> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Ctx, Folder, Process, raw_place};
+    use super::{Ctx, Folder, PidMap, Process, raw_place};
     use crate::containers::ContainerIndex;
     use crate::rules::Rules;
-    use std::collections::HashMap;
 
     fn place_alone(p: Process) -> super::Place {
-        let curr = HashMap::from([(p.pid, p)]);
+        let curr = PidMap::from_iter([(p.pid, p)]);
         let rules = Rules::builtin();
         let containers = ContainerIndex::default();
         let ctx = Ctx::new(&containers, &rules, &curr);
@@ -868,7 +867,7 @@ mod tests {
 
     /// Pid 1 is `root`, and pids 2 to `CHAIN` each run `link` as the child of
     /// the pid before, all in one process group of one app scope.
-    fn chain(root: &str, link: &[&str]) -> HashMap<u32, Process> {
+    fn chain(root: &str, link: &[&str]) -> PidMap<Process> {
         (1..=CHAIN)
             .map(|pid| {
                 let argv: Vec<String> = if pid == 1 {
@@ -893,14 +892,14 @@ mod tests {
             .collect()
     }
 
-    fn tree_of(curr: &HashMap<u32, Process>) -> crate::types::HostTree {
+    fn tree_of(curr: &PidMap<Process>) -> crate::types::HostTree {
         let consts = crate::types::HostHeader {
             nproc: 1,
             clk_tck: 100,
             page_size: 4096,
         };
         super::build_tree(
-            &HashMap::new(),
+            &PidMap::default(),
             curr,
             std::time::Duration::from_secs(1),
             &consts,
@@ -979,7 +978,7 @@ mod tests {
             cgroup: "0::/user.slice/user-1000.slice/user@1000.service/app.slice".into(),
             ..Process::default()
         };
-        let curr = HashMap::from([
+        let curr = PidMap::from_iter([
             (1, at(1, 0, &["mgr"])),
             (2, at(2, 1, &["cursor", "--type=renderer"])),
         ]);
@@ -1018,7 +1017,7 @@ mod tests {
             cgroup: cgroup.into(),
             ..Process::default()
         };
-        let curr = HashMap::from([
+        let curr = PidMap::from_iter([
             (
                 1,
                 at(

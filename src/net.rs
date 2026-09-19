@@ -3,7 +3,7 @@ use std::fs;
 
 use crate::containers::ContainerIndex;
 use crate::identity::docker_scope_id;
-use crate::types::{HostTree, IdentNode, Process};
+use crate::types::{HostTree, IdentNode, PidMap, Process};
 
 /// Cumulative rx/tx bytes for one network namespace, tagged with the pid they
 /// were read through so a restart cannot be mistaken for a counter jump.
@@ -38,7 +38,7 @@ impl Sampler {
     pub(crate) fn tick(
         &mut self,
         idx: &ContainerIndex,
-        procs: &HashMap<u32, Process>,
+        procs: &PidMap<Process>,
         secs: f64,
     ) -> Rates {
         let mut curr = HashMap::new();
@@ -71,7 +71,7 @@ impl Sampler {
 /// the root network namespace. Inspect's `State.Pid` would name the right
 /// process but goes stale — `docker restart` keeps the container id, so the
 /// inspect cache never refetches it and the rate would stay blank for good.
-fn netns_pids(idx: &ContainerIndex, procs: &HashMap<u32, Process>) -> HashMap<String, u32> {
+fn netns_pids(idx: &ContainerIndex, procs: &PidMap<Process>) -> HashMap<String, u32> {
     let mut out: HashMap<String, u32> = HashMap::new();
     for p in procs.values() {
         let Some(info) = docker_scope_id(&p.cgroup).and_then(|id| idx.get(&id)) else {
@@ -247,7 +247,7 @@ mod tests {
     #[test]
     fn only_a_scope_member_of_a_namespaced_container_is_read() {
         let scope = "0::/system.slice/docker-0123456789abcdef.scope";
-        let procs = HashMap::from([
+        let procs = PidMap::from_iter([
             (40, proc_in(40, scope)),
             (12, proc_in(12, scope)),
             // Billed to the container but running in the root namespace: the

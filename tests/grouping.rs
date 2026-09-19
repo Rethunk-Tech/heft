@@ -5,7 +5,7 @@ use std::time::Duration;
 use heft::containers::{ContainerIndex, Inspect, ListItem};
 use heft::group::build_tree;
 use heft::rules::{LoadedFile, Rules, Source};
-use heft::types::Process;
+use heft::types::{PidMap, Process};
 use heft::{HostHeader, HostTree};
 
 #[derive(serde::Deserialize)]
@@ -44,10 +44,10 @@ struct ProcFix {
 
 const GUI: &str = "tests/fixtures/gui/world.json";
 
-fn load(path: &str, rules: &Rules) -> (HashMap<u32, Process>, ContainerIndex, HostHeader) {
+fn load(path: &str, rules: &Rules) -> (PidMap<Process>, ContainerIndex, HostHeader) {
     let text = std::fs::read_to_string(path).unwrap();
     let fix: Fixture = serde_json::from_str(&text).unwrap();
-    let mut curr = HashMap::new();
+    let mut curr = PidMap::default();
     for p in fix.processes {
         curr.insert(
             p.pid,
@@ -873,7 +873,7 @@ fn disabling_the_trinity_file_makes_a_tde_module_an_application() {
             .into(),
         ..Process::default()
     };
-    let curr = HashMap::from([(2, kicker)]);
+    let curr = PidMap::from_iter([(2, kicker)]);
     let header = HostHeader {
         nproc: 1,
         clk_tck: 100,

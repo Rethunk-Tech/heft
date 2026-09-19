@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::ffi::CStr;
 use std::fs;
 use std::io;
@@ -18,7 +17,7 @@ use crate::containers::{ContainerIndex, InspectCache};
 use crate::cpu;
 use crate::group;
 use crate::rules::Rules;
-use crate::types::{GpuCounters, HostHeader, HostTree, Process};
+use crate::types::{GpuCounters, HostHeader, HostTree, PidMap, Process};
 use crate::{gpu, io as pio, net, psi};
 
 /// The walk is around seven small procfs reads per pid and no computation
@@ -72,7 +71,7 @@ struct WalkJob {
     pids: Vec<u32>,
     want_pss: bool,
     want_swap: bool,
-    prev: Option<Arc<HashMap<u32, Process>>>,
+    prev: Option<Arc<PidMap<Process>>>,
 }
 
 impl WalkPool {
@@ -102,17 +101,17 @@ impl WalkPool {
         &self,
         want_pss: bool,
         want_swap: bool,
-        prev: Option<&Arc<HashMap<u32, Process>>>,
-    ) -> HashMap<u32, Process> {
+        prev: Option<&Arc<PidMap<Process>>>,
+    ) -> PidMap<Process> {
         let Ok(dir) = fs::read_dir(crate::root::path("/proc")) else {
-            return HashMap::new();
+            return PidMap::default();
         };
         let pids: Vec<u32> = dir
             .flatten()
             .filter_map(|e| e.file_name().to_str().and_then(|s| s.parse::<u32>().ok()))
             .collect();
         if pids.is_empty() {
-            return HashMap::new();
+            return PidMap::default();
         }
         if self.workers.is_empty() {
             return walk(
@@ -136,7 +135,7 @@ impl WalkPool {
             })
             .expect("a /proc walk thread exited");
         }
-        let mut out = HashMap::with_capacity(pids.len());
+        let mut out = PidMap::with_capacity_and_hasher(pids.len(), Default::default());
         for (_, rx) in &self.workers[..busy] {
             // A dead worker is a bug in a `/proc` parser; carrying on would
             // publish a tree quietly missing a chunk of the machine.
@@ -166,7 +165,7 @@ fn walk(
     pids: &[u32],
     want_pss: bool,
     want_swap: bool,
-    prev: Option<&HashMap<u32, Process>>,
+    prev: Option<&PidMap<Process>>,
     buf: &mut Vec<u8>,
 ) -> Walked {
     pids.iter()
@@ -622,7 +621,7 @@ pub(crate) fn placeholder_tree() -> HostTree {
 
 struct Sampler {
     pool: WalkPool,
-    prev: Arc<HashMap<u32, Process>>,
+    prev: Arc<PidMap<Process>>,
     cpu0: cpu::HostCpu,
     t0: Instant,
     last_pss: Option<Instant>,

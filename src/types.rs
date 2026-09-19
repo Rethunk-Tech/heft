@@ -1,4 +1,37 @@
+use std::collections::{HashMap, HashSet};
+use std::hash::{BuildHasherDefault, Hasher};
+
 use serde::{Deserialize, Serialize};
+
+/// A map keyed on pid. Pids are small integers the kernel hands out, so
+/// `SipHash`'s resistance to chosen keys buys nothing here; it was 3.1% of
+/// heft's user time before these maps took `PidHasher`.
+pub type PidMap<V> = HashMap<u32, V, BuildHasherDefault<PidHasher>>;
+pub type PidSet = HashSet<u32, BuildHasherDefault<PidHasher>>;
+
+/// One multiply by the 64-bit golden ratio: hashbrown indexes by the low
+/// bits and tags by the top seven, and the multiply spreads a run of
+/// consecutive pids across both.
+#[derive(Default)]
+pub struct PidHasher(u64);
+
+const GOLDEN: u64 = 0x9E37_79B9_7F4A_7C15;
+
+impl Hasher for PidHasher {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        for &b in bytes {
+            self.0 = (self.0.rotate_left(8) ^ u64::from(b)).wrapping_mul(GOLDEN);
+        }
+    }
+
+    fn write_u32(&mut self, n: u32) {
+        self.0 = u64::from(n).wrapping_mul(GOLDEN);
+    }
+}
 
 #[derive(Clone, Debug, Default)]
 pub struct Process {

@@ -50,6 +50,19 @@ use crate::{gpu, io as pio, net, psi};
 /// job senders, which ends every worker.
 struct WalkPool {
     workers: Vec<(mpsc::Sender<WalkJob>, mpsc::Receiver<Walked>)>,
+    /// Pids each worker may hold files open for; 0 holds none.
+    held_pids: usize,
+}
+
+/// A pid's `stat`, and for a user process its `statm` and `io`, kept open
+/// across ticks. `pread` at offset 0 makes a procfs `seq_file` regenerate, so
+/// each tick is one read with no open or close. The file pins the process, not
+/// the number: once it exits every read fails with `ESRCH`, even after the
+/// number is reused, and the pid is opened afresh.
+struct Held {
+    stat: OwnedFd,
+    statm: Option<OwnedFd>,
+    io: Option<OwnedFd>,
 }
 
 /// One worker's slice of the walk.
@@ -59,6 +72,7 @@ type Walked = Vec<(u32, Process)>;
 const FOLLOW_WALKERS: usize = 4;
 
 struct WalkJob {
+    held_pids: usize,
     pids: Vec<u32>,
     want_pss: bool,
     want_swap: bool,
@@ -85,7 +99,21 @@ impl WalkPool {
                 Some((job_tx, result_rx))
             })
             .collect();
-        Self { workers }
+        Self {
+            workers,
+            held_pids: 0,
+        }
+    }
+
+    /// `new` for a continuous mode, whose workers hold each pid's files open
+    /// between ticks. The soft `RLIMIT_NOFILE` is raised toward the hard one,
+    /// and the workers hold at most a third of half of it, three files a pid,
+    /// so a pid past that is read the per-tick way and other opens still fit.
+    fn holding(max: usize) -> Self {
+        let mut pool = Self::new(max);
+        let limit = raise_nofile();
+        pool.held_pids = limit / 2 / 3 / pool.workers.len().max(1);
+        pool
     }
 
     fn collect(
@@ -114,15 +142,22 @@ impl WalkPool {
                 want_swap,
                 prev.map(|m| &**m),
                 &mut Vec::new(),
+                None,
             )
             .into_iter()
             .collect();
         }
-        let chunk = pids.len().div_ceil(self.workers.len());
-        let busy = pids.chunks(chunk).len();
-        for ((tx, _), slice) in self.workers.iter().zip(pids.chunks(chunk)) {
+        // By residue, so a pid stays with the worker holding its files.
+        let n = self.workers.len();
+        let busy = n.min(pids.len());
+        for (i, (tx, _)) in self.workers.iter().enumerate().take(busy) {
             tx.send(WalkJob {
-                pids: slice.to_vec(),
+                held_pids: self.held_pids,
+                pids: pids
+                    .iter()
+                    .copied()
+                    .filter(|&p| p as usize % n == i)
+                    .collect(),
                 want_pss,
                 want_swap,
                 prev: prev.cloned(),
@@ -141,6 +176,7 @@ impl WalkPool {
 
 fn walk_worker(job_rx: &mpsc::Receiver<WalkJob>, result_tx: &mpsc::Sender<Walked>) {
     let mut buf = Vec::new();
+    let mut held = PidMap::default();
     while let Ok(job) = job_rx.recv() {
         let out = walk(
             &job.pids,
@@ -148,7 +184,10 @@ fn walk_worker(job_rx: &mpsc::Receiver<WalkJob>, result_tx: &mpsc::Sender<Walked
             job.want_swap,
             job.prev.as_deref(),
             &mut buf,
+            (job.held_pids > 0).then_some((&mut held, job.held_pids)),
         );
+        let live: PidMap<()> = out.iter().map(|(pid, _)| (*pid, ())).collect();
+        held.retain(|pid, _| live.contains_key(pid));
         if result_tx.send(out).is_err() {
             break;
         }
@@ -161,13 +200,72 @@ fn walk(
     want_swap: bool,
     prev: Option<&PidMap<Process>>,
     buf: &mut Vec<u8>,
+    mut held: Option<(&mut PidMap<Held>, usize)>,
 ) -> Walked {
     pids.iter()
         .filter_map(|&pid| {
             let before = prev.and_then(|m| m.get(&pid));
-            Some((pid, read_pid(pid, want_pss, want_swap, before, buf)?))
+            let held = held.as_mut().map(|(m, cap)| (&mut **m, *cap));
+            Some((
+                pid,
+                read_pid_held(pid, want_pss, want_swap, before, buf, held)?,
+            ))
         })
         .collect()
+}
+
+/// The soft `RLIMIT_NOFILE` after raising it to the hard limit, capped where
+/// a larger table buys nothing; the old soft limit if it cannot be raised.
+fn raise_nofile() -> usize {
+    let mut lim = libc::rlimit {
+        rlim_cur: 0,
+        rlim_max: 0,
+    };
+    // SAFETY: getrlimit fills the struct it is given.
+    if unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &raw mut lim) } != 0 {
+        return 0;
+    }
+    let want = lim.rlim_max.min(65_536).max(lim.rlim_cur);
+    let raised = libc::rlimit {
+        rlim_cur: want,
+        rlim_max: lim.rlim_max,
+    };
+    // SAFETY: setrlimit reads the struct it is given.
+    let cur = if unsafe { libc::setrlimit(libc::RLIMIT_NOFILE, &raw const raised) } == 0 {
+        want
+    } else {
+        lim.rlim_cur
+    };
+    usize::try_from(cur).unwrap_or(usize::MAX)
+}
+
+/// `read_at` for a held file.
+fn pread_all<'b>(fd: &OwnedFd, buf: &'b mut Vec<u8>) -> Option<&'b [u8]> {
+    buf.clear();
+    loop {
+        buf.reserve(4096);
+        let spare = buf.capacity() - buf.len();
+        let at = u64::try_from(buf.len()).ok()?;
+        match rustix::io::pread(fd, spare_capacity(buf), at) {
+            Ok(n) if n < spare => break,
+            Ok(_) | Err(Errno::INTR) => {}
+            Err(_) => return None,
+        }
+    }
+    Some(buf)
+}
+
+/// `/proc/<pid>`, opened the first time a read needs it: a pid whose files
+/// are held and whose identity is carried needs none.
+fn lazy_dir(dir: &mut Option<OwnedFd>, pid: u32) -> Option<&OwnedFd> {
+    if dir.is_none() {
+        *dir = open_pid(pid);
+    }
+    dir.as_ref()
+}
+
+fn open_ro(dir: &OwnedFd, name: &CStr) -> Option<OwnedFd> {
+    rustix::fs::openat(dir, name, OFlags::RDONLY | OFlags::CLOEXEC, Mode::empty()).ok()
 }
 
 /// `/proc/<pid>` opened once, so every file under it is an `openat` of one
@@ -258,8 +356,29 @@ pub(crate) fn read_pid(
     prev: Option<&Process>,
     buf: &mut Vec<u8>,
 ) -> Option<Process> {
-    let dir = open_pid(pid)?;
-    let parsed = parse_stat(read_at(&dir, c"stat", buf, usize::MAX)?)?;
+    read_pid_held(pid, want_pss, want_swap, prev, buf, None)
+}
+
+/// `read_pid`, reading through and keeping `held` files: `held` is the
+/// worker's map and how many pids it may hold.
+fn read_pid_held(
+    pid: u32,
+    want_pss: bool,
+    want_swap: bool,
+    prev: Option<&Process>,
+    buf: &mut Vec<u8>,
+    held: Option<(&mut PidMap<Held>, usize)>,
+) -> Option<Process> {
+    let mut dir = None;
+    let (mut map, cap) = held.map_or((None, 0), |(m, c)| (Some(m), c));
+    let mut h = map.as_deref_mut().and_then(|m| m.remove(&pid));
+    let parsed = match h.as_ref().and_then(|h| pread_all(&h.stat, buf)) {
+        Some(stat) => parse_stat(stat)?,
+        None => {
+            h = None;
+            parse_stat(read_at(lazy_dir(&mut dir, pid)?, c"stat", buf, usize::MAX)?)?
+        }
+    };
     // A kernel thread's other files say only uid 0, no exe, no argv, no memory,
     // and it is System on the flag alone, so they are not read: over half the
     // pids on a desktop, and five files each, every tick.
@@ -283,7 +402,7 @@ pub(crate) fn read_pid(
         });
         let exe = match prev {
             Some(p) if same_exec => p.exe.clone(),
-            _ => read_exe(&dir),
+            _ => lazy_dir(&mut dir, pid).and_then(read_exe),
         };
         let (uid, cmdline, cgroup) = match prev {
             Some(p) if carries_identity(p, walks, &parsed.comm, exe.as_deref()) => {
@@ -294,7 +413,8 @@ pub(crate) fn read_pid(
                 let info = pidfd_info(pid);
                 let uid = info.map_or_else(
                     || {
-                        read_at(&dir, c"status", buf, usize::MAX)
+                        lazy_dir(&mut dir, pid)
+                            .and_then(|d| read_at(d, c"status", buf, usize::MAX))
                             .and_then(parse_uid)
                             .unwrap_or(0)
                     },
@@ -306,13 +426,16 @@ pub(crate) fn read_pid(
                     {
                         p.cgroup.clone()
                     }
-                    _ => read_str(&dir, c"cgroup", buf)
+                    _ => lazy_dir(&mut dir, pid)
+                        .and_then(|d| read_str(d, c"cgroup", buf))
                         .unwrap_or_default()
                         .trim()
                         .into(),
                 };
                 cgroup_id = info.map(|i| i.1);
-                (uid, read_cmdline(&dir, buf).into(), cgroup)
+                let cmdline =
+                    lazy_dir(&mut dir, pid).map_or_else(Vec::new, |d| read_cmdline(d, buf));
+                (uid, cmdline.into(), cgroup)
             }
         };
         (
@@ -322,7 +445,12 @@ pub(crate) fn read_pid(
             cgroup,
             // `statm`, not `stat` field 24: that one is `get_mm_rss`, a
             // per-CPU estimate that can read 0 for a resident process.
-            read_str(&dir, c"statm", buf).and_then(|s| parse_rss_pages(&s)),
+            match h.as_ref().and_then(|h| h.statm.as_ref()) {
+                Some(fd) => pread_all(fd, buf).and_then(parse_rss_pages),
+                None => lazy_dir(&mut dir, pid)
+                    .and_then(|d| read_at(d, c"statm", buf, usize::MAX))
+                    .and_then(parse_rss_pages),
+            },
         )
     };
     // PSS is a level, not a rate. Kernel threads have no rollup. Prime and
@@ -333,13 +461,16 @@ pub(crate) fn read_pid(
         parsed.kthread,
         prev,
         (parsed.starttime_ticks, rss_pages),
-        || pio::read_rollup_kb(&dir, want_swap, buf),
+        || lazy_dir(&mut dir, pid).map_or((None, None), |d| pio::read_rollup_kb(d, want_swap, buf)),
     );
     // PF_KTHREAD has no userspace /proc/pid/io or drm fdinfo.
     let (read_bytes, write_bytes, (gpu, drm_fds)) = if parsed.kthread {
         (None, None, (GpuCounters::default(), Vec::new()))
     } else {
-        let (r, w) = pio::read_io(&dir, buf);
+        let (r, w) = match h.as_ref().and_then(|h| h.io.as_ref()) {
+            Some(fd) => pread_all(fd, buf).map_or((None, None), pio::parse_io),
+            None => lazy_dir(&mut dir, pid).map_or((None, None), |d| pio::read_io(d, buf)),
+        };
         // want_pss is the residual GPU fdinfo walk (PSS / --once) when dri/drm
         // names were found but yielded no metrics; empty prefilter skips it.
         // It is also when the fd table is rescanned: between PSS ticks the
@@ -354,7 +485,14 @@ pub(crate) fn read_pid(
             .filter(|p| p.starttime_ticks == parsed.starttime_ticks && p.drm_fds.is_empty())
             .filter(|p| p.fd_skips < FD_SKIPS_MAX)
             .and_then(|p| p.fd_count);
-        let (g, d, n) = gpu::read_pid(&dir, want_pss, carried, unchanged_at, buf);
+        // A carried empty list reads nothing, so it needs no `/proc/<pid>`.
+        let (g, d, n) = match carried {
+            Some([]) => (GpuCounters::default(), Vec::new(), None),
+            _ => lazy_dir(&mut dir, pid)
+                .map_or((GpuCounters::default(), Vec::new(), None), |dir| {
+                    gpu::read_pid(dir, want_pss, carried, unchanged_at, buf)
+                }),
+        };
         fd_count = n.or(prev.and_then(|p| p.fd_count));
         fd_skips = match (n, unchanged_at) {
             (Some(n), Some(u)) if n == u => prev.map_or(0, |p| p.fd_skips + 1),
@@ -363,6 +501,24 @@ pub(crate) fn read_pid(
         };
         (r, w, (g, d))
     };
+    // Held from a pid's second walk, so a short-lived one takes no slot.
+    if let Some(m) = map {
+        if h.is_none()
+            && prev.is_some()
+            && m.len() < cap
+            && let Some(d) = lazy_dir(&mut dir, pid)
+        {
+            let user = |name| (!parsed.kthread).then(|| open_ro(d, name)).flatten();
+            h = open_ro(d, c"stat").map(|stat| Held {
+                stat,
+                statm: user(c"statm"),
+                io: user(c"io"),
+            });
+        }
+        if let Some(h) = h {
+            m.insert(pid, h);
+        }
+    }
     Some(Process {
         pid,
         ppid: parsed.ppid,
@@ -651,8 +807,8 @@ fn read_cmdline(dir: &OwnedFd, buf: &mut Vec<u8>) -> Vec<String> {
     })
 }
 
-fn parse_rss_pages(statm: &str) -> Option<u64> {
-    statm.split_whitespace().nth(1)?.parse().ok()
+fn parse_rss_pages(statm: &[u8]) -> Option<u64> {
+    atoi(statm.split(|&b| b == b' ').nth(1)?)
 }
 /// A uid straight through, otherwise the `/etc/passwd` name. Numeric first
 /// because a uid is always meaningful and a passwd entry is not always there:
@@ -794,11 +950,10 @@ fn container_scopes(procs: &PidMap<Process>) -> std::collections::BTreeSet<Strin
 }
 
 impl Sampler {
-    fn prime(pss_interval: Duration, walkers: usize, stalls: Arc<AtomicBool>) -> Self {
+    fn prime(pss_interval: Duration, pool: WalkPool, stalls: Arc<AtomicBool>) -> Self {
         let rules = crate::rules::Rules::load();
         let mut inspect_cache = InspectCache::default();
         let mut net = net::Sampler::default();
-        let pool = WalkPool::new(walkers);
         let prev = Arc::new(pool.collect(false, false, None));
         // Netns counters are levels, so the first published tick needs a
         // baseline here or `--once` and `--json` would always print a blank
@@ -908,7 +1063,11 @@ pub(crate) fn sample_stream(
     stalls: bool,
     mut emit: impl FnMut(&HostTree) -> Result<(), crate::types::Error>,
 ) -> Result<(), crate::types::Error> {
-    let mut sampler = Sampler::prime(pss_interval, FOLLOW_WALKERS, Arc::new(stalls.into()));
+    let mut sampler = Sampler::prime(
+        pss_interval,
+        WalkPool::holding(FOLLOW_WALKERS),
+        Arc::new(stalls.into()),
+    );
     let mut first = true;
     loop {
         thread::sleep(interval);
@@ -919,7 +1078,7 @@ pub(crate) fn sample_stream(
 }
 
 pub(crate) fn sample_world(interval: Duration, stalls: bool) -> HostTree {
-    let mut sampler = Sampler::prime(interval, usize::MAX, Arc::new(stalls.into()));
+    let mut sampler = Sampler::prime(interval, WalkPool::new(usize::MAX), Arc::new(stalls.into()));
     thread::sleep(interval);
     sampler.tick(true)
 }
@@ -993,7 +1152,8 @@ pub(crate) fn spawn_sampler(
     thread::Builder::new()
         .name("heft-sample".into())
         .spawn(move || {
-            let mut sampler = Sampler::prime(pss_interval, FOLLOW_WALKERS, stalls);
+            let mut sampler =
+                Sampler::prime(pss_interval, WalkPool::holding(FOLLOW_WALKERS), stalls);
             loop {
                 let start = Instant::now();
                 let tree = sampler.tick(false);
@@ -1105,6 +1265,7 @@ mod tests {
         let before = WalkPool::new(2).collect(false, false, None);
         let inline = WalkPool {
             workers: Vec::new(),
+            held_pids: 0,
         }
         .collect(false, false, None);
         let after = WalkPool::new(2).collect(false, false, None);
@@ -1133,6 +1294,47 @@ mod tests {
         assert_eq!(pw.name(7), "7");
         assert_eq!(pw.uid("root"), Some(0));
         assert_eq!(pw.name(0), "root");
+    }
+
+    /// A held file pins the process it was opened on: once that process is
+    /// reaped a read fails, and the walk drops the pid instead of reading
+    /// whatever holds the number next.
+    #[test]
+    fn a_held_pid_that_exits_is_dropped_not_misread() {
+        let mut child = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .unwrap();
+        let pid = child.id();
+        let mut held = PidMap::default();
+        let mut buf = Vec::new();
+        let first = read_pid_held(pid, false, false, None, &mut buf, Some((&mut held, 8))).unwrap();
+        assert!(held.is_empty(), "held from the second walk, not the first");
+        read_pid_held(
+            pid,
+            false,
+            false,
+            Some(&first),
+            &mut buf,
+            Some((&mut held, 8)),
+        )
+        .unwrap();
+        let stat = held.get(&pid).map(|h| h.stat.try_clone().unwrap()).unwrap();
+        child.kill().unwrap();
+        child.wait().unwrap();
+        assert!(pread_all(&stat, &mut buf).is_none());
+        assert!(
+            read_pid_held(
+                pid,
+                false,
+                false,
+                Some(&first),
+                &mut buf,
+                Some((&mut held, 8))
+            )
+            .is_none()
+        );
+        assert!(!held.contains_key(&pid));
     }
 
     #[test]

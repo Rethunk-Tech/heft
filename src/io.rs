@@ -7,7 +7,7 @@ pub(crate) fn read_io(dir: impl AsFd, buf: &mut Vec<u8>) -> (Option<u64>, Option
     read_at(dir, c"io", buf, usize::MAX).map_or((None, None), parse_io)
 }
 
-fn parse_io(text: &[u8]) -> (Option<u64>, Option<u64>) {
+pub(crate) fn parse_io(text: &[u8]) -> (Option<u64>, Option<u64>) {
     let mut r = None;
     let mut w = None;
     for line in text.split(|&b| b == b'\n') {

@@ -107,6 +107,10 @@ of RSS, and never more than 60. A value below the 0.05s floor is a usage error.
 A one-shot `--once` or `--json` takes two `/proc` walks `--interval` apart so
 rates exist, and always reads PSS.
 
+The TUI and `--follow` keep each process's `stat`, `statm` and `io` open
+between ticks, which raises heft's soft open-file limit toward the hard one;
+expect around three open files per process in `/proc/<heft>/fd`.
+
 `--follow` keeps sampling and needs `--once` or `--json`. `--json --follow`
 writes one compact document per line (NDJSON); `--once --follow` reprints the
 table with its header each interval, separated by a blank line. The first

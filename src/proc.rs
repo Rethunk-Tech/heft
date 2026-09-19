@@ -5,13 +5,14 @@ use std::io;
 use std::num::NonZero;
 use std::os::fd::{AsFd, OwnedFd};
 use std::sync::mpsc;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use rustix::buffer::spare_capacity;
-use rustix::fs::{Mode, OFlags};
+use rustix::fs::{Dir, Mode, OFlags};
 use rustix::io::Errno;
+use rustix::path::DecInt;
 
 use crate::containers::{ContainerIndex, InspectCache};
 use crate::cpu;
@@ -103,13 +104,16 @@ impl WalkPool {
         want_swap: bool,
         prev: Option<&Arc<PidMap<Process>>>,
     ) -> PidMap<Process> {
-        let Ok(dir) = fs::read_dir(crate::root::path("/proc")) else {
+        let Some(mut dir) = proc_dir().and_then(|fd| Dir::read_from(fd).ok()) else {
             return PidMap::default();
         };
-        let pids: Vec<u32> = dir
-            .flatten()
-            .filter_map(|e| e.file_name().to_str().and_then(|s| s.parse::<u32>().ok()))
-            .collect();
+        let mut pids = Vec::new();
+        while let Some(Ok(ent)) = dir.read() {
+            if let Some(pid) = atoi(ent.file_name().to_bytes()).and_then(|n| u32::try_from(n).ok())
+            {
+                pids.push(pid);
+            }
+        }
         if pids.is_empty() {
             return PidMap::default();
         }
@@ -187,9 +191,19 @@ fn walk(
 /// table while the walk threads share it, and opens stalled 15 to 20 ms at
 /// each growth.
 fn open_pid(pid: u32) -> Option<OwnedFd> {
-    let path = format!("{}/proc/{pid}", crate::root::prefix());
     let flags = OFlags::PATH | OFlags::DIRECTORY | OFlags::CLOEXEC;
-    rustix::fs::open(path.as_str(), flags, Mode::empty()).ok()
+    rustix::fs::openat(proc_dir()?, DecInt::new(pid), flags, Mode::empty()).ok()
+}
+
+/// `/proc` under `--proc-root`, opened once for the run: the root cannot
+/// change, and every pid is then a one-name lookup from here.
+fn proc_dir() -> Option<&'static OwnedFd> {
+    static DIR: OnceLock<Option<OwnedFd>> = OnceLock::new();
+    DIR.get_or_init(|| {
+        let flags = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC;
+        rustix::fs::open(crate::root::path("/proc").as_str(), flags, Mode::empty()).ok()
+    })
+    .as_ref()
 }
 
 /// `name` under `dir` into `buf`, replacing what it held, stopping once it

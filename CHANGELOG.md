@@ -2,14 +2,57 @@
 
 ## Unreleased
 
+## 0.12.1 - 2026-09-19
+
 ### Added
 
 - The TUI `i` pane shows where the row landed and the placement key. A process
   row also lists the same rules stages `--explain` prints, without the
-  pin-to-folder recipe.
+  pin-to-folder recipe; `--explain` and the pane share one renderer.
 - TUI `g` jumps to a pid (expanding its ancestors), `n`/`N` walk filter
   matches, `E` expands every expandable row, and `c` restores the default
   expand set.
+
+### Changed
+
+- Idle CPU in the TUI and `--follow` is a quarter to a third lower than
+  0.12.0, and syscalls per tick are down by more than half.
+- The TUI and `--follow` keep each process's `stat`, `statm` and `io` open
+  between ticks and read them with `pread`: about three open files per
+  process, with the soft open-file limit raised toward the hard one.
+- The TUI and `--follow` walk `/proc` with one worker instead of four. The
+  first sample after start arrives later (about half a second on a
+  700-process desktop); later ticks are unaffected in practice.
+- Pressure (the stall trio) is read only while something shows it: a stall
+  column, a stall sort, the `i` pane, or `--json`. Turned on mid-run, the
+  figures are blank for the first interval.
+- A process's uid, argv and cgroup are re-read every fifth sample, on exec,
+  and for its first five samples, and carried otherwise; `exe` is re-read
+  when `stat` shows an exec. A `setuid`, cgroup move or argv rewrite without
+  an exec shows within five samples.
+- uid and cgroup come from one `PIDFD_GET_INFO` call on Linux 6.13 and later,
+  falling back to `status` and `cgroup` before that or under `--proc-root`.
+- The Docker/Podman container list is asked for only when a container scope
+  appears or goes, while an inspect is pending, or every 30 s, so a
+  `docker rename` shows within 30 s.
+- A PSS tick skips re-reading a process whose RSS has barely moved for up to
+  six PSS periods per 512 MiB of RSS, never more than 60, instead of a flat
+  six.
+- A PSS tick relinks a process's fd table only when its size changed since
+  the last scan, and at least every seventh scan.
+- Kernel threads read only `stat`.
+- `unicode-truncate` 3 and refreshed Rust lockfiles.
+
+### Internal
+
+- Procfs numbers parse as bytes; `/proc` and each cgroup directory are opened
+  once and entries reached by name; pid-keyed maps hash with one multiply;
+  carried argv and cgroup are shared rather than copied; fdinfo names and
+  `net/dev` fields are read without allocating; a short procfs read ends the
+  file.
+- Comments and docs no longer carry benchmark figures or refused-alternative
+  ledgers; `PIDFD_GET_INFO`'s kernel version and the PSS skip bound in
+  HUMANS.md are corrected.
 
 ## 0.12.0 - 2026-09-16
 

@@ -109,6 +109,9 @@ impl WalkPool {
     /// between ticks. The soft `RLIMIT_NOFILE` is raised toward the hard one,
     /// and the workers hold at most a third of half of it, three files a pid,
     /// so a pid past that is read the per-tick way and other opens still fit.
+    /// A pid's files live in the worker that walked it, and the contiguous
+    /// split moves pids between workers as the list shifts, so holding pays
+    /// with `FOLLOW_WALKERS` at one.
     fn holding(max: usize) -> Self {
         let mut pool = Self::new(max);
         let limit = raise_nofile();
@@ -147,17 +150,12 @@ impl WalkPool {
             .into_iter()
             .collect();
         }
-        // By residue, so a pid stays with the worker holding its files.
-        let n = self.workers.len();
-        let busy = n.min(pids.len());
-        for (i, (tx, _)) in self.workers.iter().enumerate().take(busy) {
+        let chunk = pids.len().div_ceil(self.workers.len());
+        let busy = pids.chunks(chunk).len();
+        for ((tx, _), slice) in self.workers.iter().zip(pids.chunks(chunk)) {
             tx.send(WalkJob {
                 held_pids: self.held_pids,
-                pids: pids
-                    .iter()
-                    .copied()
-                    .filter(|&p| p as usize % n == i)
-                    .collect(),
+                pids: slice.to_vec(),
                 want_pss,
                 want_swap,
                 prev: prev.cloned(),

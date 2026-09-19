@@ -273,8 +273,8 @@ pub(crate) fn read_pid(
         (0, None, Vec::new(), String::new(), Some(0))
     } else {
         (
-            read_str(&dir, c"status", buf)
-                .and_then(|s| parse_uid(&s))
+            read_at(&dir, c"status", buf, usize::MAX)
+                .and_then(parse_uid)
                 .unwrap_or(0),
             read_exe(&dir),
             read_cmdline(&dir, buf),
@@ -443,28 +443,30 @@ fn parse_stat(stat: &[u8]) -> Option<StatFields> {
         return None;
     }
     let comm = String::from_utf8_lossy(&stat[open + 1..close]).into_owned();
-    let fields: Vec<&str> = std::str::from_utf8(&stat[close + 1..])
+    let mut fields = std::str::from_utf8(&stat[close + 1..])
         .ok()?
-        .split_whitespace()
-        .collect();
+        .split_whitespace();
     // after comm: state ppid pgrp ... flags ... utime stime ...
-    // num_threads ... starttime (0-based: 0,1,2,6,11,12,17,19)
-    let ppid = fields.get(1)?.parse().ok()?;
-    let pgrp = fields.get(2)?.parse().ok()?;
+    // num_threads ... starttime (0-based: 0,1,2,6,11,12,17,19), taken in
+    // order, so each `nth` skips the fields between.
+    let ppid = fields.nth(1)?.parse().ok()?;
+    let pgrp = fields.next()?.parse().ok()?;
     // PF_KTHREAD in include/linux/sched.h — no userspace smaps/io/fdinfo.
-    let flags: u32 = fields.get(6).and_then(|s| s.parse().ok()).unwrap_or(0);
-    let utime = fields.get(11)?.parse().ok()?;
-    let stime = fields.get(12)?.parse().ok()?;
+    let flags: u32 = fields.nth(3).and_then(|s| s.parse().ok()).unwrap_or(0);
+    let utime = fields.nth(4)?.parse().ok()?;
+    let stime = fields.next()?.parse().ok()?;
     // Optional, unlike the fields above: a truncated tail costs two columns,
     // not the whole process, and a missing one is the blank cell either way.
+    let threads = fields.nth(4).and_then(|s| s.parse().ok());
+    let starttime_ticks = fields.nth(1).and_then(|s| s.parse().ok());
     Some(StatFields {
         comm,
         ppid,
         pgrp,
         utime,
         stime,
-        threads: fields.get(17).and_then(|s| s.parse().ok()),
-        starttime_ticks: fields.get(19).and_then(|s| s.parse().ok()),
+        threads,
+        starttime_ticks,
         kthread: flags & 0x0020_0000 != 0,
     })
 }
@@ -481,10 +483,16 @@ pub(crate) fn field_u64(line: &str, key: &str) -> Option<u64> {
         .ok()
 }
 
-fn parse_uid(status: &str) -> Option<u32> {
+/// Bytes, so only the `Uid:` line is converted: the file also carries the
+/// process's own name, which need not be UTF-8. Validating all of `status`
+/// for one line took UTF-8 checks from 2.0% to 4.7% of heft's user time.
+fn parse_uid(status: &[u8]) -> Option<u32> {
     // /proc/<pid> inode uid is euid; grouping uses ruid (Uid: field 1). They
     // diverge on setuid (e.g. fusermount3).
-    let uid = status.lines().find_map(|l| field_u64(l, "Uid:"))?;
+    let line = status
+        .split(|&b| b == b'\n')
+        .find(|l| l.starts_with(b"Uid:"))?;
+    let uid = field_u64(std::str::from_utf8(line).ok()?, "Uid:")?;
     u32::try_from(uid).ok()
 }
 
@@ -594,7 +602,7 @@ pub(crate) fn detail(pid: u32) -> Vec<(&'static str, String)> {
             .to_string()
     };
     // `Uid:` is real/effective/saved/fs; the real uid is the one the tree bills.
-    let uid = parse_uid(&status);
+    let uid = parse_uid(status.as_bytes());
     let argv = dir
         .as_ref()
         .map(|d| read_cmdline(d, &mut buf).join(" "))

@@ -31,6 +31,11 @@ unicode-truncate = "3"
 unicode-width = "0.2"
 bitflags = "2.13.1"
 
+# PGO was measured and refused: user time is ~10% of heft's CPU (0.15 of
+# 1.52 s per 30 s idle `--json --follow`, the rest is the kernel building
+# procfs files), so a typical 5-15% PGO gain is at most ~1.5% overall, and it
+# would reach only heft-bin, trained on a CI runner's /proc. `target-cpu=native`
+# is out for a distributed binary.
 [profile.release]
 lto = true
 codegen-units = 1

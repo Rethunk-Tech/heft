@@ -382,16 +382,31 @@ fn rollup_for(
     }
 }
 
-/// PSS periods a carried rollup may age before it is read regardless.
+/// PSS periods a carried rollup may age before it is read regardless, per
+/// `ROLLUP_SCALE_BYTES` of RSS at that read, and at most `ROLLUP_AGE_CAP`.
 const ROLLUP_MAX_PERIODS: u32 = 6;
+const ROLLUP_SCALE_BYTES: u64 = 512 << 20;
+const ROLLUP_AGE_CAP: u32 = 60;
+
+/// A `smaps_rollup` read walks the page tables, so it costs in proportion to
+/// RSS: on one desktop an 8.4 GiB and a 5.2 GiB process were 54% of a full
+/// pass. A large process therefore ages longer between reads.
+fn rollup_age_bound(rss_bytes: u64) -> u32 {
+    let units = u32::try_from(rss_bytes / ROLLUP_SCALE_BYTES).unwrap_or(u32::MAX);
+    ROLLUP_MAX_PERIODS
+        .saturating_mul(units.max(1))
+        .min(ROLLUP_AGE_CAP)
+}
 
 /// Whether a PSS tick may keep `prev`'s PSS and `SwapPss` instead of reading
 /// `smaps_rollup`: the same process (`starttime` unchanged), RSS within 1% or
 /// 1 MiB of what it was at the last real read, whichever is larger, and that
-/// read fewer than `ROLLUP_MAX_PERIODS` PSS periods ago. Replayed over a
-/// recorded `--follow` session this kept 24% of the rollup CPU; summed PSS
-/// was off by 0.073%, and a carried row by 2.2% at p99 and 4.3% at worst. With
-/// no age bound and a 0.1% threshold the worst row was 5.8%.
+/// read fewer than `rollup_age_bound` PSS periods ago. Replayed over 10
+/// minutes of a desktop (289 processes, every rollup read every 5 s), a flat
+/// six periods read 112 ms of rollup CPU per PSS tick; the RSS-scaled bound
+/// read 77 ms. Summed PSS was off by 0.023% mean and 0.079% at worst against
+/// 0.015% and 0.070% flat, and a carried row by 1.03% at p99 against 1.02%.
+/// A 256 MiB scale read 67 ms but summed PSS reached 0.122%.
 ///
 /// `want_swap` must also match what the last read saw, so a `swapon` or
 /// `swapoff` forces one read rather than carrying a blank or a figure from a
@@ -410,7 +425,7 @@ fn rollup_holds(
     let floor = (1 << 20) / page_size.max(1);
     prev.starttime_ticks.is_some()
         && prev.starttime_ticks == starttime_ticks
-        && prev.rollup_periods + 1 < ROLLUP_MAX_PERIODS
+        && prev.rollup_periods + 1 < rollup_age_bound(then.saturating_mul(page_size))
         && (prev.pss_kb.is_none() || prev.swap_pss_kb.is_some() == want_swap)
         && now.abs_diff(then) <= (then / 100).max(floor)
 }
@@ -1023,12 +1038,22 @@ mod tests {
         assert!(holds(&fifth, Some(7), 100_000));
         let sixth = Process {
             rollup_periods: 5,
-            ..prev
+            ..prev.clone()
         };
         assert!(
             !holds(&sixth, Some(7), 100_000),
             "six periods since the read"
         );
+        // 4 GiB is eight scale units, so 48 periods; 64 GiB hits the cap.
+        let big = |pages, periods| Process {
+            rollup_rss_pages: Some(pages),
+            rollup_periods: periods,
+            ..prev.clone()
+        };
+        assert!(holds(&big(1 << 20, 46), Some(7), 1 << 20));
+        assert!(!holds(&big(1 << 20, 47), Some(7), 1 << 20));
+        assert!(holds(&big(1 << 24, 58), Some(7), 1 << 24));
+        assert!(!holds(&big(1 << 24, 59), Some(7), 1 << 24));
         let reused = rollup_for(
             true,
             false,

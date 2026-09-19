@@ -64,6 +64,8 @@ pub struct Process {
     /// Ticks this process has been walked, which staggers when
     /// `proc::read_pid` rereads the identity files it otherwise carries.
     pub walks: u32,
+    /// The v2 cgroup id `cgroup` was read at, when `PIDFD_GET_INFO` gave one.
+    pub cgroup_id: Option<u64>,
     pub read_bytes: Option<u64>,
     pub write_bytes: Option<u64>,
     pub gpu: GpuCounters,

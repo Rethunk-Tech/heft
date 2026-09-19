@@ -3,7 +3,7 @@ use std::ffi::CStr;
 use std::fs;
 use std::io;
 use std::num::NonZero;
-use std::os::fd::{AsFd, OwnedFd};
+use std::os::fd::{AsFd, AsRawFd, FromRawFd, OwnedFd};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
@@ -286,24 +286,40 @@ pub(crate) fn read_pid(
     let walks = prev
         .filter(|p| p.starttime_ticks.is_some() && p.starttime_ticks == parsed.starttime_ticks)
         .map_or(0, |p| p.walks.wrapping_add(1));
+    let mut cgroup_id = None;
     let (uid, exe, cmdline, cgroup, rss_pages) = if parsed.kthread {
         (0, None, Vec::new(), String::new(), Some(0))
     } else {
         let exe = read_exe(&dir);
         let (uid, cmdline, cgroup) = match prev {
             Some(p) if carries_identity(p, walks, &parsed.comm, exe.as_deref()) => {
+                cgroup_id = p.cgroup_id;
                 (p.uid, p.cmdline.clone(), p.cgroup.clone())
             }
-            _ => (
-                read_at(&dir, c"status", buf, usize::MAX)
-                    .and_then(parse_uid)
-                    .unwrap_or(0),
-                read_cmdline(&dir, buf),
-                read_str(&dir, c"cgroup", buf)
-                    .unwrap_or_default()
-                    .trim()
-                    .to_string(),
-            ),
+            _ => {
+                let info = pidfd_info(pid);
+                let uid = info.map_or_else(
+                    || {
+                        read_at(&dir, c"status", buf, usize::MAX)
+                            .and_then(parse_uid)
+                            .unwrap_or(0)
+                    },
+                    |i| i.0,
+                );
+                let cgroup = match (info, prev) {
+                    (Some((_, id)), Some(p))
+                        if p.cgroup_id == Some(id) && is_v2_only(&p.cgroup) =>
+                    {
+                        p.cgroup.clone()
+                    }
+                    _ => read_str(&dir, c"cgroup", buf)
+                        .unwrap_or_default()
+                        .trim()
+                        .to_string(),
+                };
+                cgroup_id = info.map(|i| i.1);
+                (uid, read_cmdline(&dir, buf), cgroup)
+            }
         };
         (
             uid,
@@ -363,6 +379,7 @@ pub(crate) fn read_pid(
         rollup_rss_pages: rollup.rss_pages,
         rollup_periods: rollup.periods,
         walks,
+        cgroup_id,
         read_bytes,
         write_bytes,
         gpu,
@@ -462,6 +479,32 @@ fn rollup_holds(
         && prev.rollup_periods + 1 < rollup_age_bound(then.saturating_mul(page_size))
         && (prev.pss_kb.is_none() || prev.swap_pss_kb.is_some() == want_swap)
         && now.abs_diff(then) <= (then / 100).max(floor)
+}
+
+/// The real uid and v2 cgroup id from one `PIDFD_GET_INFO`, which needs no
+/// procfs file built. `None` before 6.9, under `--proc-root` (whose pids are
+/// not this kernel's), or when the pid is gone.
+fn pidfd_info(pid: u32) -> Option<(u32, u64)> {
+    if !crate::root::prefix().is_empty() {
+        return None;
+    }
+    // SAFETY: pidfd_open takes a pid and flags and returns a new fd or -1.
+    let fd = unsafe { libc::syscall(libc::SYS_pidfd_open, pid, 0) };
+    let fd = i32::try_from(fd).ok().filter(|&fd| fd >= 0)?;
+    // SAFETY: fd was just returned to us, so this is its only owner.
+    let fd = unsafe { OwnedFd::from_raw_fd(fd) };
+    // SAFETY: pidfd_info is plain integers, so all-zero is a valid value.
+    let mut info: libc::pidfd_info = unsafe { std::mem::zeroed() };
+    let want = u64::from(libc::PIDFD_INFO_CREDS | libc::PIDFD_INFO_CGROUPID);
+    info.mask = want;
+    // SAFETY: PIDFD_GET_INFO fills at most size_of::<pidfd_info>() bytes.
+    let r = unsafe { libc::ioctl(fd.as_raw_fd(), libc::PIDFD_GET_INFO, &raw mut info) };
+    (r == 0 && info.mask & want == want).then_some((info.ruid, info.cgroupid))
+}
+
+/// A cgroup file that is the one v2 line, so the v2 id pins the whole text.
+fn is_v2_only(cgroup: &str) -> bool {
+    cgroup.starts_with("0::") && !cgroup.contains('\n')
 }
 
 /// Every `IDENTITY_EVERY`th walk of a process rereads its uid, argv and
@@ -1044,6 +1087,15 @@ mod tests {
         assert_eq!(atoi(b""), None);
         assert_eq!(atoi(b"-1"), None);
         assert_eq!(atoi(b"12kB"), None);
+    }
+
+    /// Before 6.9 there is no `PIDFD_GET_INFO`, and `status` answers instead.
+    #[test]
+    fn pidfd_info_gives_this_process_its_own_real_uid() {
+        if let Some((uid, _)) = pidfd_info(std::process::id()) {
+            // SAFETY: getuid has no side effects.
+            assert_eq!(uid, unsafe { libc::getuid() });
+        }
     }
 
     #[test]

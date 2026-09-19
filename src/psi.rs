@@ -21,7 +21,10 @@
 
 use std::collections::HashMap;
 
-use rustix::fs::CWD;
+use std::ffi::CStr;
+use std::os::fd::OwnedFd;
+
+use rustix::fs::{CWD, Mode, OFlags};
 
 use crate::proc::read_str;
 use crate::types::{HostTree, IdentNode, Metrics, PidMap, Process};
@@ -65,6 +68,7 @@ impl Sampler {
     pub(crate) fn tick(&mut self, procs: &PidMap<Process>, secs: f64) -> Stalls {
         let mut curr = HashMap::new();
         let mut rates = HashMap::new();
+        let mut buf = Vec::new();
         for p in procs.values() {
             let Some(path) = cgroup_path(&p.cgroup) else {
                 continue;
@@ -72,7 +76,7 @@ impl Sampler {
             if curr.contains_key(path) {
                 continue;
             }
-            let Some(now) = read_totals(path) else {
+            let Some(now) = read_totals(path, &mut buf) else {
                 continue;
             };
             if let Some(stall) = delta(self.prev.get(path), now, secs) {
@@ -248,25 +252,27 @@ fn cgroup_path(cgroup: &str) -> Option<&str> {
     (path != "/" && path.starts_with('/')).then_some(path)
 }
 
-fn read_totals(path: &str) -> Option<Totals> {
-    let base = format!(
-        "{}/sys/fs/cgroup{}",
-        crate::root::prefix(),
-        path.trim_end_matches('/')
-    );
-    let mut buf = Vec::new();
+/// The cgroup directory is resolved once, so each pressure file is a
+/// one-name lookup rather than the whole path again.
+fn read_totals(path: &str, buf: &mut Vec<u8>) -> Option<Totals> {
+    let dir = rustix::fs::open(
+        format!("{}/sys/fs/cgroup{path}", crate::root::prefix()).as_str(),
+        OFlags::PATH | OFlags::DIRECTORY | OFlags::CLOEXEC,
+        Mode::empty(),
+    )
+    .ok()?;
     Some(Totals {
-        cpu: read_some_total(&format!("{base}/cpu.pressure"), &mut buf)?,
-        io: read_some_total(&format!("{base}/io.pressure"), &mut buf)?,
-        mem: read_some_total(&format!("{base}/memory.pressure"), &mut buf)?,
+        cpu: read_some_total(&dir, c"cpu.pressure", buf)?,
+        io: read_some_total(&dir, c"io.pressure", buf)?,
+        mem: read_some_total(&dir, c"memory.pressure", buf)?,
     })
 }
 
 /// `proc::read_str`, not `fs::read_to_string`, for the reason on `read_at`:
 /// `statx` calls went from 3,087 to 621 over 6 s of `--json --follow` on 138
 /// cgroups.
-fn read_some_total(path: &str, buf: &mut Vec<u8>) -> Option<u64> {
-    parse_some(&read_str(CWD, path, buf)?, "total=")?
+fn read_some_total(dir: &OwnedFd, name: &CStr, buf: &mut Vec<u8>) -> Option<u64> {
+    parse_some(&read_str(dir, name, buf)?, "total=")?
         .parse()
         .ok()
 }

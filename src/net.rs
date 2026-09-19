@@ -159,9 +159,9 @@ fn parse_dev(text: &str) -> (u64, u64) {
         if name.trim() == "lo" {
             continue;
         }
-        let fields: Vec<&str> = rest.split_whitespace().collect();
-        let num = |i: usize| fields.get(i).and_then(|s| s.parse::<u64>().ok());
-        if let (Some(r), Some(t)) = (num(0), num(8)) {
+        // rx bytes is the first field, tx bytes the ninth.
+        let mut fields = rest.split_whitespace().map(|f| f.parse::<u64>().ok());
+        if let (Some(Some(r)), Some(Some(t))) = (fields.next(), fields.nth(7)) {
             rx += r;
             tx += t;
         }

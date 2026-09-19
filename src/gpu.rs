@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::ffi::CStr;
+use std::io::{self, Write};
 use std::os::fd::AsFd;
 
 use rustix::fs::{Dir, Mode, OFlags};
@@ -89,8 +90,13 @@ fn drm_fd_nums(dir: impl AsFd) -> rustix::io::Result<Vec<u32>> {
 
 fn read_fdinfo_files(dir: impl AsFd, fds: &[u32], buf: &mut Vec<u8>) -> GpuCounters {
     let mut texts = Vec::new();
+    // "fdinfo/" and a u32 fit, so the name needs no allocation.
+    let mut name = [0u8; 17];
     for fd in fds {
-        push_drm_text(&mut texts, &dir, format!("fdinfo/{fd}"), buf);
+        let mut w = io::Cursor::new(&mut name[..]);
+        let _ = write!(w, "fdinfo/{fd}");
+        let len = usize::try_from(w.position()).unwrap_or(0);
+        push_drm_text(&mut texts, &dir, &name[..len], buf);
     }
     merge_fdinfo_texts(&texts)
 }

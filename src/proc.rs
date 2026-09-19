@@ -267,6 +267,8 @@ pub(crate) fn read_pid(
         .filter(|p| p.starttime_ticks.is_some() && p.starttime_ticks == parsed.starttime_ticks)
         .map_or(0, |p| p.walks.wrapping_add(1));
     let mut cgroup_id = None;
+    let mut fd_count = None;
+    let mut fd_skips = 0;
     let (uid, exe, cmdline, cgroup, rss_pages) = if parsed.kthread {
         (0, None, Vec::new(), String::new(), Some(0))
     } else {
@@ -346,7 +348,20 @@ pub(crate) fn read_pid(
             .filter(|p| !want_pss && p.starttime_ticks.is_some())
             .filter(|p| p.starttime_ticks == parsed.starttime_ticks)
             .map(|p| p.drm_fds.as_slice());
-        (r, w, gpu::read_pid(&dir, want_pss, carried, buf))
+        // A table that kept its size and held no drm fd is not relinked, up
+        // to `FD_SKIPS_MAX` scans in a row.
+        let unchanged_at = prev
+            .filter(|p| p.starttime_ticks == parsed.starttime_ticks && p.drm_fds.is_empty())
+            .filter(|p| p.fd_skips < FD_SKIPS_MAX)
+            .and_then(|p| p.fd_count);
+        let (g, d, n) = gpu::read_pid(&dir, want_pss, carried, unchanged_at, buf);
+        fd_count = n.or(prev.and_then(|p| p.fd_count));
+        fd_skips = match (n, unchanged_at) {
+            (Some(n), Some(u)) if n == u => prev.map_or(0, |p| p.fd_skips + 1),
+            (Some(_), _) => 0,
+            _ => prev.map_or(0, |p| p.fd_skips),
+        };
+        (r, w, (g, d))
     };
     Some(Process {
         pid,
@@ -369,6 +384,8 @@ pub(crate) fn read_pid(
         rollup_periods: rollup.periods,
         walks,
         cgroup_id,
+        fd_count,
+        fd_skips,
         exec_mark: parsed.exec_mark,
         read_bytes,
         write_bytes,
@@ -491,6 +508,8 @@ fn pidfd_info(pid: u32) -> Option<(u32, u64)> {
 fn is_v2_only(cgroup: &str) -> bool {
     cgroup.starts_with("0::") && !cgroup.contains('\n')
 }
+
+const FD_SKIPS_MAX: u32 = 6;
 
 /// Every `IDENTITY_EVERY`th walk of a process rereads its uid, argv and
 /// cgroup; the rest carry them.

@@ -24,10 +24,18 @@ pub(crate) fn read_pid(
     dir: impl AsFd,
     full_scan: bool,
     carried: Option<&[u32]>,
+    unchanged_at: Option<u32>,
     buf: &mut Vec<u8>,
-) -> (GpuCounters, Vec<u32>) {
-    let drm_fds = match carried.map_or_else(|| drm_fd_nums(&dir), |v| Ok(v.to_vec())) {
-        Err(Errno::ACCESS) => return (GpuCounters::default(), Vec::new()),
+) -> (GpuCounters, Vec<u32>, Option<u32>) {
+    let (scanned, count) = match carried {
+        Some(v) => (Ok(v.to_vec()), None),
+        None => match drm_fd_nums(&dir, unchanged_at) {
+            Ok((v, n)) => (Ok(v), Some(n)),
+            Err(e) => (Err(e), None),
+        },
+    };
+    let drm_fds = match scanned {
+        Err(Errno::ACCESS) => return (GpuCounters::default(), Vec::new(), None),
         Err(_) => Vec::new(),
         Ok(v) => v,
     };
@@ -38,9 +46,9 @@ pub(crate) fn read_pid(
         read_fdinfo_files(&dir, &drm_fds, buf)
     };
     if !needs_full_fdinfo(full_scan, prefilter_empty, &filtered) {
-        return (filtered, drm_fds);
+        return (filtered, drm_fds, count);
     }
-    (read_all_fdinfo(&dir, buf), drm_fds)
+    (read_all_fdinfo(&dir, buf), drm_fds, count)
 }
 
 /// `/dev/dri/renderD128`, `/dev/dri/card1`, and other drm device nodes.
@@ -67,8 +75,21 @@ fn fd_num(name: &CStr) -> Option<u32> {
     u32::try_from(atoi(name.to_bytes())?).ok()
 }
 
-fn drm_fd_nums(dir: impl AsFd) -> rustix::io::Result<Vec<u32>> {
+/// The drm fds and how many fds the table holds. A table still holding
+/// `unchanged_at` fds is taken to hold no drm fd, skipping a `readlinkat` per
+/// fd: opening a drm device grows the table.
+fn drm_fd_nums(dir: impl AsFd, unchanged_at: Option<u32>) -> rustix::io::Result<(Vec<u32>, u32)> {
     let mut fds = subdir(dir, c"fd")?;
+    let mut count = 0u32;
+    while let Some(ent) = fds.read() {
+        if fd_num(ent?.file_name()).is_some() {
+            count += 1;
+        }
+    }
+    if unchanged_at == Some(count) {
+        return Ok((Vec::new(), count));
+    }
+    fds.rewind();
     let mut link = [0; 4096];
     let mut nums = Vec::new();
     while let Some(ent) = fds.read() {
@@ -83,7 +104,7 @@ fn drm_fd_nums(dir: impl AsFd) -> rustix::io::Result<Vec<u32>> {
             nums.push(n);
         }
     }
-    Ok(nums)
+    Ok((nums, count))
 }
 
 fn read_fdinfo_files(dir: impl AsFd, fds: &[u32], buf: &mut Vec<u8>) -> GpuCounters {
@@ -302,6 +323,25 @@ fn parse_capacity(v: &str) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A table that still holds the count it held last scan is not relinked;
+    /// any other count is.
+    #[test]
+    fn an_fd_table_of_unchanged_size_is_not_relinked() {
+        let root = std::env::temp_dir().join(format!("heft-fd-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("fd")).unwrap();
+        for n in ["3", "4"] {
+            let _ = std::fs::remove_file(root.join("fd").join(n));
+            std::os::unix::fs::symlink("/dev/dri/renderD128", root.join("fd").join(n)).unwrap();
+        }
+        let dir = rustix::fs::open(&root, OFlags::PATH | OFlags::DIRECTORY, Mode::empty()).unwrap();
+        let (mut fds, n) = drm_fd_nums(&dir, None).unwrap();
+        fds.sort_unstable();
+        assert_eq!((fds, n), (vec![3, 4], 2));
+        assert_eq!(drm_fd_nums(&dir, Some(2)).unwrap(), (Vec::new(), 2));
+        assert_eq!(drm_fd_nums(&dir, Some(1)).unwrap().0.len(), 2);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     const SAMPLE: &str = "drm-driver:\tamdgpu\ndrm-client-id:\t27\ndrm-resident-vram:\t48596 KiB\ndrm-resident-gtt:\t100 KiB\ndrm-engine-gfx:\t1000 ns\n";
 

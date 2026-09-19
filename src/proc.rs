@@ -69,7 +69,7 @@ struct Held {
 type Walked = Vec<(u32, Process)>;
 
 /// Walk workers for the TUI and `--follow`; see `WalkPool`.
-const FOLLOW_WALKERS: usize = 4;
+const FOLLOW_WALKERS: usize = 1;
 
 struct WalkJob {
     held_pids: usize,

@@ -69,34 +69,11 @@ tests already use to spawn it.
 
 `heft --once` on this machine is the product check, not a CI job.
 
-### Clippy beyond the gate
+### Clippy
 
 The gate is `cargo clippy --locked --all-targets -- -D warnings` at the default
-level plus `[lints.clippy]` in `Cargo.toml`. The wider groups are measured
-against that same `--all-targets` gate, counted as clippy emits them for every
-target, and refused. Re-measure before quoting a number: the counts move with
-every clippy release and every change to this code.
-
-| group / lint | count | verdict |
-| --- | --- | --- |
-| `pedantic` + `nursery` + `cargo` | 182 warnings across 8 lints | off the gate |
-| `struct_excessive_bools` on `cli::Cli` | the one `pedantic` warning | refused: the seven bools are clap flags that `--help`, the man page and the completions each list on their own line; enums change all three, and the group stays off rather than carry an `#[expect]` |
-| `redundant_pub_crate` (`nursery`) | 134 | refused: a visibility style this crate keeps deliberately |
-| `too_long_first_doc_paragraph`, `option_if_let_else`, `single_option_map` | the rest | refused: a mechanical rewrite buying style |
-| `multiple_crate_versions` (`cargo`) | two `hashbrown` and two `syn` majors | pulled by dependencies, not this crate |
-| `literal_string_with_formatting_args` | 8, the `{up}`/`{down}` KEYS placeholders | false positive: literal on purpose |
-| `suboptimal_flops` | 3 test assertions wanting `mul_add` | false positive |
-
-Nothing in the wider groups is a latent bug, which is what makes the refusal
-safe rather than lucky: every lint that looked like one is a false positive.
-
-The twelve lints denied in `[lints.clippy]` each found something real:
-`needless_pass_by_ref_mut` (a `&mut self` on `psi::set_row` and
-`proc::WalkPool::collect` that never mutated), `assigning_clones` (a clone
-assigned over a live `String` once a frame), `format_push_string` (a temporary
-formatted once a frame in `sixel::encode`), `redundant_clone`, the
-machine-applicable `use_self`, `missing_const_for_fn`, `doc_markdown` and
-`map_unwrap_or`, and the four cast lints, whose `#[expect]` convention is in
+level plus `[lints.clippy]` in `Cargo.toml`. The `pedantic`, `nursery` and
+`cargo` groups stay off. The cast lints' `#[expect]` convention is in
 [AGENTS.md](AGENTS.md#gates).
 
 ## Commits
@@ -123,7 +100,7 @@ writes, or mutating Docker/Podman calls. Do not read another GPU driver's
 fdinfo keys by guessing their names; the supported set is in
 [HUMANS.md](HUMANS.md#what-the-tree-means).
 
-Per-process network I/O is not a missing feature, it is unavailable: measured,
+Per-process network I/O is not a missing feature, it is unavailable:
 `/proc/<pid>/net/dev` is per network namespace and byte-identical across
 unrelated pids, socket `fdinfo` carries no byte counter, `/proc/net/tcp`
 queues are depths rather than totals, `rchar`/`wchar` miss `send`/`recv`, and

@@ -224,9 +224,7 @@ and the footer reads `PAUSED 8s`.
   `mem_info_gtt_used` where the driver has them (amdgpu), else from the drm
   clients heft can see. The Host row sums only visible PIDs, and an
   unprivileged reader cannot open `/proc/<pid>/fdinfo` for a process it does
-  not own, so drm clients in a root-owned container are invisible. Measured on
-  one desktop with one such container: the kernel reported 45.7 GiB of GTT,
-  the Host row 18.1 GiB. Reading them would need `docker exec`, a POST heft
+  not own, so drm clients in a root-owned container are invisible. Reading them would need `docker exec`, a POST heft
   never sends.
 - **User** is a unix uid, shown by login name. Terminals and the compositor
   live under that user. An idle interactive shell folds into its terminal; a
@@ -299,10 +297,8 @@ characters. TREND is TUI only: `--once` has no TREND column, and the JSON
 never carries it.
 
 The kitty protocol (kitty, ghostty) sends pixels through shared memory
-locally, costing tens of bytes a sample. Over ssh they go inline as base64:
-measured on a 24-row terminal with 10x20-pixel cells, 19 rows showing and TREND
-nine cells wide, about 146 KB per sample, a bit over a megabit a second, and
-proportionally more for a wider TREND. It is sent once per sample, not per
+locally, costing tens of bytes a sample. Over ssh they go inline as base64,
+far more per sample than sixel and proportionally more for a wider TREND. It is sent once per sample, not per
 frame. On a slow link without sixel, use `--trend chars`.
 
 `--trend sixel` works in xterm (on by default since patch #359), foot,
@@ -310,8 +306,7 @@ wezterm, konsole 22.04 and later, iTerm2, and Windows Terminal 1.22 and later.
 kitty, ghostty and alacritty have no sixel, and GNOME Terminal's sixel setting
 does nothing because VTE strips sixel from every stable release. Sixel is
 repainted on every redraw (a sample or a keypress), but run-length encoding
-keeps it small: measured on an
-18-row column, **559 bytes** a frame. Over ssh it is the cheaper choice.
+keeps it small. Over ssh it is the cheaper choice.
 
 ## How much heft can see
 
@@ -350,8 +345,7 @@ task in the row's cgroup was stalled on that resource, from `cpu.pressure`,
 stalled row can look idle in `%CORE`. A row that is one non-root cgroup shows
 that cgroup's rate. A row whose processes span several cgroups shows the max of
 those members' `some` rates, per resource: sum can exceed 100% (overlapping
-intervals) and an average hides a fully-stalled member. Measured on one
-desktop, 82% of rows are already a single cgroup. Blank:
+intervals) and an average hides a fully-stalled member. Blank:
 
 - folder, User and Host rows (`user-1000.slice` is not the User row, and
   `system.slice` is not the System row);

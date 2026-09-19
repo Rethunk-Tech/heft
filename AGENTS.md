@@ -51,17 +51,6 @@ No `sysinfo` crate. No `nix` unless rustix cannot do it; heft uses `std` + `libc
 plus `rustix` (already built for crossterm) for the dirfd-relative `/proc/<pid>` reads.
 Never read `/proc/pid/mem`. Never ptrace.
 
-Consolidations measured and refused; both halves of each are checked, not
-assumed, so none is pending work:
-
-| candidate | refused because |
-| --- | --- |
-| the `/proc` and fdinfo field parsers, `once::scale_1024`, `identity::systemd_unescape` | no equivalent in std or in a crate already in the tree |
-| `ui::share_cells` | a partial-fill allocator whose result is meant to come up short, which no ratatui `Constraint` expresses |
-| `containers::unix_get` | the tree carries no HTTP client at all |
-| one walker for `once` and `ui` | `Flat` carries an `id` and an `expandable` flag `TableRow` has no use for, and that `id` keys expand membership, the trend history and the cursor's re-anchoring across a resort. Unifying takes four parameters each constant on one caller and makes `--once` and `--follow` `format!` an id per row to throw away. That the row sets differ (why `--filter` is narrower than `/`) is the consequence, not the reason |
-| keying `containers::by_id` on the full id | `containers::id_key` cuts the normalized id to 12 hex digits on insert and lookup alike, so a full id and a truncated one reach the same row; a runtime that reports a truncated id would otherwise silently lose its row. Ceiling: two running containers sharing a 12-hex prefix bill to one row |
-
 ## Grouping invariants
 
 - Bucket (`src/group.rs`): docker/libpod scope or helper that names that id →
@@ -160,11 +149,11 @@ Each of these has one home; a second copy is the defect.
 | `--follow` loop | `proc::sample_stream` | honours `--pss-interval`; `once::follow_table` / `follow_json` share `render_table` and `json_text` with the one-shot pair |
 | flag over `view.json` precedence | `main::resolve_view` | `--hide` adds to the saved list, every other flag overwrites; only `sort`, `desc`, `filter`, `hide_columns`, `column_order` are read back (`users`, `top` are `#[serde(skip)]`). `--once` starts from `config::load_view()`, `--json` from `View::default()` and never the file. `--filter`, `--top`, `--hide`, `--order` are `conflicts_with = "json"` because the JSON shape is a contract |
 | unknown `--sort` label | clap `InvalidValue` via `once::sort_labels` | not `Sort::from_label`'s fallback: a stale `view.json` must not stop the monitor, an argument just typed can be corrected. `src/cli.rs` cannot reach `COLUMNS` because `build.rs` includes it standalone for the completions and man page |
-| bad regex | `once::Filter::new` returns `None` (`regex-lite`; the measurement is on it) | each caller decides: clap `InvalidValue`, a `view.json` warning, the TUI's `?` footer |
+| bad regex | `once::Filter::new` returns `None` (`regex-lite`) | each caller decides: clap `InvalidValue`, a `view.json` warning, the TUI's `?` footer |
 | escaping process text for stdout | `once::printable` | the tree and `--json` keep raw strings; the TUI relies on ratatui dropping control characters |
 | `--filter` and `/` haystack | `TableRow::search` / `Flat::search` (`once::haystack`) when built, else `name` | `keep_matches`, `keep_top` and `Filter` carry the rest; `ProcNode::cmdline` is the argv `proc` already read, serialized in `types.rs` |
 | `Set::Legacy` vs `Set::Unicode` | `glyph::spark_ramp`, nowhere else | `glyph.rs` says why, and why `detect` never returns it |
-| `--trend kitty` / `sixel` / `auto` | `src/kgp.rs` / `src/sixel.rs` / `src/caps.rs` | each module doc carries its protocol decisions; `ui::resolve_trend` the kitty-versus-sixel choice with its measurement; `tty::hold_shm` the signal-safe shm cleanup |
+| `--trend kitty` / `sixel` / `auto` | `src/kgp.rs` / `src/sixel.rs` / `src/caps.rs` | each module doc carries its protocol decisions; `ui::resolve_trend` the kitty-versus-sixel choice; `tty::hold_shm` the signal-safe shm cleanup |
 | `i` and `?` overlays | `ui::popup`, `ui::Overlay` | `i` is `ui::draw_detail`, `ui::metric_grid`, `proc::detail`, plus `explain::placement_lines` / `explain::identity_placement` for the row; `Overlay` holds which is open, so only one draws |
 | TREND scale | `ui::trend_scale`, one per frame | says why it is not each row's own peak; `ui::spark` and `kgp::paint` both draw against it |
 | `spark` column | `Column::fmt` returns empty; `ui::draw` substitutes `ui::spark` from `App::history`, `App::trend_w` deep | the one column not a function of the current sample: only `Columns::for_tui` includes it, `Sort::step` skips it (`key: None`), and `--order` validates against `column_labels()` rather than `sort_labels()` since not everything movable is sortable |
@@ -179,7 +168,6 @@ evaluates it. Procedures stay Rust: the ancestor walks in `group.rs`,
 machine and System bucketing. `build.rs` embeds the directory through a
 generated `include_str!` table, sorted because `read_dir` order is
 machine-dependent, so a file added there cannot be left out of the binary.
-Embedding costs 25,312 bytes of stripped release binary (1.3%).
 
 The contract, which a change may extend but not alter:
 
@@ -198,7 +186,7 @@ The contract, which a change may extend but not alter:
   rule is kept, applied to that file name in every source, and never undone,
   so the result is order independent.
 - Ids are `[a-z0-9-]+`, unique per file. An empty list, `all`, `any` or
-  string pattern fails the file (`name_prefix ""` matched every process), as does `script` outside a class rule whose
+  string pattern fails the file (`name_prefix ""` matches every process), as does `script` outside a class rule whose
   classes are exactly `[anonymous_script]`: `judged` never sets
   `Facts::script`, so it would be a silent miss. Half a file loaded is a rule
   set nobody wrote.
@@ -208,17 +196,16 @@ The contract, which a change may extend but not alter:
   `owner_uid` is consulted before workdir and bind-mount inference in
   `containers::insert_resolved`.
 
-Grouping cost, measured on a quiet machine with `cargo test --release --test
-grouping -- --ignored --nocapture build_tree_timing` and `cargo test --release
---lib -- --ignored --nocapture rules_timing` (`HEFT_BENCH_FIXTURE` names a
-`--fixture` dump):
-
-| what | measurement |
-| --- | --- |
-| `judged` built once per pid per tick by `group::Ctx::new` (unit, flags, class set, and the positional-argv launcher test in `group::judge`), read by every class and unit question in `group.rs`, `identity::instance_key` and `identity::generic_fallback` | asked per call site instead, the name lookup alone ran 2,200 times per 293-process tick. Keyed on pid and valid for one `Ctx`, which lives one `build_tree`, so `exec` needs no invalidation |
-| session and app rules evaluate on a borrowed `Facts` in `direct_place` and allocate nothing (`rules::tests::evaluation_allocates_nothing`, counted per thread because other tests allocate on other threads) | a `Vec<String>` per test with a `windows` scan cost 750 ns per process; equality bucketed by byte length with a first-byte scan for contains costs 415 to 450 ns |
-| `build_tree` | 148 to 151 µs on the 102-process gui fixture, 606 to 633 µs on a 368-process `--fixture` dump (168 to 171 and 661 to 676 with `SipHash` before `types::PidMap`); budget 20% |
-| the four stages on facts from `group::facts_of` | 368 to 396 ns per process; budget 500 ns |
+`group::Ctx::new` builds `judged` once per pid per tick (unit, flags, class
+set, and the positional-argv launcher test in `group::judge`); every class and
+unit question in `group.rs`, `identity::instance_key` and
+`identity::generic_fallback` reads it. It is keyed on pid and valid for one
+`Ctx`, which lives one `build_tree`, so `exec` needs no invalidation. Session
+and app rules evaluate on a borrowed `Facts` in `direct_place` and allocate
+nothing (`rules::tests::evaluation_allocates_nothing`, counted per thread
+because other tests allocate on other threads). `build_tree_timing` in
+`tests/grouping.rs` and `rules_timing` in `src/rules.rs` are `--ignored` timing
+harnesses; `HEFT_BENCH_FIXTURE` names a `--fixture` dump.
 
 `Rules::load`, `rules::load_dir` and `Rules::builtin` carry the load contract.
 `tests/common::heft` points
@@ -254,7 +241,7 @@ field there when grouping starts reading one, or reports stop reproducing.
 | THR | `num_threads`, field 20 of the `/proc/pid/stat` already parsed for utime/stime |
 | AGE | `now - (btime + starttime / CLK_TCK)`; `starttime` is field 22 of that `stat`, `btime` read once per run; aggregates in `Metrics::age_secs` |
 | Disk R/W | Δ `read_bytes` / `write_bytes` from `/proc/pid/io` |
-| GPU mem | first tier the client publishes of `gpu::MEM_PREFIXES`; regions `vram`/`gtt` (amdgpu), `local0`/`system0` (i915), `vram0`/`gtt` (xe). The `drm-memory-*` tier was measured on a 4750G |
+| GPU mem | first tier the client publishes of `gpu::MEM_PREFIXES`; regions `vram`/`gtt` (amdgpu), `local0`/`system0` (i915), `vram0`/`gtt` (xe) |
 | NETNS RX/TX | Δ non-`lo` bytes from `/proc/<container-scope-pid>/net/dev`; a new pid or a counter that went backwards discards the interval |
 | CPU/IO/MEM ST | Δ `some ... total=` microseconds from that cgroup's `{cpu,io,memory}.pressure` over wall clock; several cgroups on a row: max of members' `some`, per resource (`psi.rs` says why `some` and why max). A counter that went backwards discards the interval |
 | Host `psi` | `some avg10` from `/proc/pressure/{cpu,io,memory}`, `--once` and `--json` host line only (`psi::header_tail`) |
@@ -273,9 +260,9 @@ field there when grouping starts reading one, or reports stop reproducing.
 | Ordering | one comparator in `once.rs` for every level; a `None` metric sorts last in either direction, name breaks ties, stable over `group::proc_forest` pid order |
 
 TUI sampling runs on a background thread; the ratatui loop only swaps in the
-last complete tree and never blocks on `/proc` I/O. `proc::WalkPool` carries
-the walk pool's measurements and why it is a pool; `gpu.rs` the 64 KiB fdinfo
-skip and the empty-prefilter rule.
+last complete tree and never blocks on `/proc` I/O. `proc::WalkPool` says
+why the walk is a pool; `gpu.rs` carries the oversized-fdinfo skip and the
+empty-prefilter rule.
 
 `ui::alarming` marks the cells that say a row is in trouble — a stall column at or over `STALL_ALARM` — with `ui::alarm_style`: red
 where there is colour, `REVERSED` where there is not, which is the fallback
@@ -300,7 +287,7 @@ packaging licence and why `AUR_SSH_KEY` stays unset:
 
 ## Gates
 
-Contributor commands, and the measured refusal of the wider clippy groups:
+Contributor commands:
 [CONTRIBUTING.md](CONTRIBUTING.md) (same as CI / lefthook). Docker sock is
 optional in CI; grouping tests use `tests/fixtures/` via `tests/grouping.rs`.
 

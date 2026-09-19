@@ -777,6 +777,20 @@ struct Sampler {
     /// Whether anything shows a stall figure. Pressure is three reads per
     /// cgroup per tick, so it is skipped while nothing would draw it.
     stalls: Arc<AtomicBool>,
+    containers: ContainerIndex,
+    scopes: std::collections::BTreeSet<String>,
+    listed: Instant,
+}
+
+/// A renamed or relabelled container starts no new scope, so the list is
+/// fetched on this cadence even when the scope set has not moved.
+const CONTAINER_RELIST: Duration = Duration::from_secs(30);
+
+fn container_scopes(procs: &PidMap<Process>) -> std::collections::BTreeSet<String> {
+    procs
+        .values()
+        .filter_map(|p| crate::identity::docker_scope_id(&p.cgroup))
+        .collect()
 }
 
 impl Sampler {
@@ -789,7 +803,9 @@ impl Sampler {
         // Netns counters are levels, so the first published tick needs a
         // baseline here or `--once` and `--json` would always print a blank
         // rate. The inspect cache makes the tick's own load a no-op.
-        net.tick(&ContainerIndex::load(&mut inspect_cache, rules), &prev, 1.0);
+        let containers = ContainerIndex::load(&mut inspect_cache, rules);
+        net.tick(&containers, &prev, 1.0);
+        let scopes = container_scopes(&prev);
         // Pressure totals are levels too, for the same reason: without a
         // baseline here the first published tick has nothing to subtract and
         // every stall column would be blank.
@@ -811,11 +827,13 @@ impl Sampler {
             net,
             psi,
             stalls,
+            containers,
+            scopes,
+            listed: t0,
         }
     }
 
     fn tick(&mut self, force_pss: bool) -> HostTree {
-        let containers = ContainerIndex::load(&mut self.inspect_cache, self.rules);
         let t1 = Instant::now();
         let cpu1 = cpu::read_host();
         let want_pss = force_pss || pss_due(self.last_pss, t1, self.pss_interval);
@@ -829,9 +847,21 @@ impl Sampler {
         if want_pss {
             self.last_pss = Some(t1);
         }
+        // The list is asked for only when a container scope came or went, so
+        // an idle host costs the daemon nothing per tick.
+        let scopes = container_scopes(&curr);
+        if scopes != self.scopes
+            || self.inspect_cache.pending()
+            || t1.duration_since(self.listed) >= CONTAINER_RELIST
+        {
+            self.containers = ContainerIndex::load(&mut self.inspect_cache, self.rules);
+            self.scopes = scopes;
+            self.listed = t1;
+        }
+        let containers = &self.containers;
         let elapsed = t1.duration_since(self.t0);
         let secs = elapsed.as_secs_f64().max(1e-6);
-        let net = self.net.tick(&containers, &curr, secs);
+        let net = self.net.tick(containers, &curr, secs);
         // Switched off, the baseline goes too: switched back on, the first
         // tick is blank rather than a rate over the whole gap.
         let stalls = if self.stalls.load(Ordering::Relaxed) {
@@ -846,7 +876,7 @@ impl Sampler {
             elapsed,
             &self.consts,
             header,
-            &containers,
+            containers,
             self.rules,
         );
         net.apply(&mut tree);

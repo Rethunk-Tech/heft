@@ -103,6 +103,13 @@ pub(crate) struct InspectCache {
 }
 
 impl InspectCache {
+    /// An inspect the deadline cut, which the next sample retries.
+    pub(crate) fn pending(&self) -> bool {
+        self.ids
+            .iter()
+            .any(|id| !self.inspects.contains_key(id) && !self.failed.contains(id))
+    }
+
     fn refresh(&mut self, ids: Vec<String>, mut fetch: impl FnMut(&str) -> Result<Inspect, Miss>) {
         // Replace the map when the id set changes so vanished ids cannot
         // linger; otherwise fetch only what is missing and has not failed,

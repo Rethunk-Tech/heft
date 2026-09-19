@@ -381,8 +381,9 @@ Heft `GET`s `/containers/json` and inspect on the first of these it finds:
 `/run/podman/podman.sock` (rootful Podman). It never POSTs, kills or creates.
 Without a reachable socket a container title is `docker-<12hex>`. Each sample
 gives the daemon 2 s in total for the list and every inspect; a container not
-inspected in time keeps that title until a later sample reaches it. Stopped
-containers (no PID) do not appear.
+inspected in time keeps that title until a later sample reaches it. The list is
+asked for again only when a container starts or stops, or every 30 s, so a
+`docker rename` shows within 30 s. Stopped containers (no PID) do not appear.
 
 ## XDG
 

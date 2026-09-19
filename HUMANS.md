@@ -337,7 +337,9 @@ them, never a sum.
 ## CPU ST / IO ST / MEM ST
 
 Hidden by default: `u` brings the last hidden column back, or leave them out of
-a `hide_columns` list in `view.json`.
+a `hide_columns` list in `view.json`. Pressure is read only while something
+shows it: a stall column, a stall sort, the `i` pane, or `--json`. Turned on
+mid-run, the figures are blank for the first interval.
 
 Each figure is the percentage of the last interval during which at least one
 task in the row's cgroup was stalled on that resource, from `cpu.pressure`,

@@ -4,6 +4,7 @@ use std::fs;
 use std::io;
 use std::num::NonZero;
 use std::os::fd::{AsFd, AsRawFd, FromRawFd, OwnedFd};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
@@ -734,10 +735,13 @@ struct Sampler {
     rules: &'static Rules,
     psi: psi::Sampler,
     net: net::Sampler,
+    /// Whether anything shows a stall figure. Pressure is three reads per
+    /// cgroup per tick, so it is skipped while nothing would draw it.
+    stalls: Arc<AtomicBool>,
 }
 
 impl Sampler {
-    fn prime(pss_interval: Duration, walkers: usize) -> Self {
+    fn prime(pss_interval: Duration, walkers: usize, stalls: Arc<AtomicBool>) -> Self {
         let rules = crate::rules::Rules::load();
         let mut inspect_cache = InspectCache::default();
         let mut net = net::Sampler::default();
@@ -751,7 +755,9 @@ impl Sampler {
         // baseline here the first published tick has nothing to subtract and
         // every stall column would be blank.
         let mut psi = psi::Sampler::default();
-        psi.tick(&prev, 1.0);
+        if stalls.load(Ordering::Relaxed) {
+            psi.tick(&prev, 1.0);
+        }
         let t0 = Instant::now();
         Self {
             consts: cpu::host_consts(),
@@ -765,6 +771,7 @@ impl Sampler {
             rules,
             net,
             psi,
+            stalls,
         }
     }
 
@@ -786,7 +793,14 @@ impl Sampler {
         let elapsed = t1.duration_since(self.t0);
         let secs = elapsed.as_secs_f64().max(1e-6);
         let net = self.net.tick(&containers, &curr, secs);
-        let stalls = self.psi.tick(&curr, secs);
+        // Switched off, the baseline goes too: switched back on, the first
+        // tick is blank rather than a rate over the whole gap.
+        let stalls = if self.stalls.load(Ordering::Relaxed) {
+            self.psi.tick(&curr, secs)
+        } else {
+            self.psi = psi::Sampler::default();
+            psi::Stalls::default()
+        };
         let mut tree = group::build_tree(
             &self.prev,
             &curr,
@@ -822,9 +836,10 @@ impl Sampler {
 pub(crate) fn sample_stream(
     interval: Duration,
     pss_interval: Duration,
+    stalls: bool,
     mut emit: impl FnMut(&HostTree) -> Result<(), crate::types::Error>,
 ) -> Result<(), crate::types::Error> {
-    let mut sampler = Sampler::prime(pss_interval, FOLLOW_WALKERS);
+    let mut sampler = Sampler::prime(pss_interval, FOLLOW_WALKERS, Arc::new(stalls.into()));
     let mut first = true;
     loop {
         thread::sleep(interval);
@@ -834,8 +849,8 @@ pub(crate) fn sample_stream(
     }
 }
 
-pub(crate) fn sample_world(interval: Duration) -> HostTree {
-    let mut sampler = Sampler::prime(interval, usize::MAX);
+pub(crate) fn sample_world(interval: Duration, stalls: bool) -> HostTree {
+    let mut sampler = Sampler::prime(interval, usize::MAX, Arc::new(stalls.into()));
     thread::sleep(interval);
     sampler.tick(true)
 }
@@ -904,11 +919,12 @@ pub(crate) fn spawn_sampler(
     interval: Duration,
     pss_interval: Duration,
     slot: Arc<Mutex<Option<HostTree>>>,
+    stalls: Arc<AtomicBool>,
 ) -> io::Result<thread::JoinHandle<()>> {
     thread::Builder::new()
         .name("heft-sample".into())
         .spawn(move || {
-            let mut sampler = Sampler::prime(pss_interval, FOLLOW_WALKERS);
+            let mut sampler = Sampler::prime(pss_interval, FOLLOW_WALKERS, stalls);
             loop {
                 let start = Instant::now();
                 let tree = sampler.tick(false);

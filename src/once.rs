@@ -356,6 +356,12 @@ impl Columns {
     }
 }
 
+/// Whether a stall column is shown or sorts the table, so pressure must be
+/// sampled. `--json` samples regardless: its shape is a contract.
+pub(crate) fn shows_stalls(cols: &Columns, view: &View) -> bool {
+    cols.iter().any(|c| c.stall) || COLUMNS.iter().any(|c| c.stall && c.label == view.sort)
+}
+
 /// Index into `COLUMNS`; the saved view stores that column's label.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Sort(usize);
@@ -690,7 +696,7 @@ pub(crate) fn keep_users(tree: &mut HostTree, uids: &[u32]) {
 /// Returns an error if writing the table to stdout fails.
 pub fn print_table(interval: Duration, view: &View) -> Result<(), Error> {
     let cols = Columns::from_view(view);
-    let tree = proc::sample_world(interval);
+    let tree = proc::sample_world(interval, shows_stalls(&cols, view));
     render_table(&mut io::stdout(), &tree, view, &cols)
 }
 
@@ -704,7 +710,7 @@ pub fn print_table(interval: Duration, view: &View) -> Result<(), Error> {
 pub fn follow_table(interval: Duration, pss_interval: Duration, view: &View) -> Result<(), Error> {
     let cols = Columns::from_view(view);
     let mut out = io::stdout();
-    proc::sample_stream(interval, pss_interval, |tree| {
+    proc::sample_stream(interval, pss_interval, shows_stalls(&cols, view), |tree| {
         render_table(&mut out, tree, view, &cols)?;
         writeln!(out)?;
         out.flush()?;
@@ -949,7 +955,7 @@ fn host_swap(tree: &HostTree) -> String {
 ///
 /// Returns an error if the tree cannot be serialized or stdout cannot be written.
 pub fn print_json(interval: Duration, view: &View) -> Result<(), Error> {
-    let tree = proc::sample_world(interval);
+    let tree = proc::sample_world(interval, true);
     let text = json_text(&tree, view, true)?;
     writeln!(io::stdout(), "{text}")?;
     Ok(())
@@ -964,7 +970,7 @@ pub fn print_json(interval: Duration, view: &View) -> Result<(), Error> {
 /// Returns an error if a sample cannot be serialized or written.
 pub fn follow_json(interval: Duration, pss_interval: Duration, view: &View) -> Result<(), Error> {
     let mut out = io::stdout();
-    proc::sample_stream(interval, pss_interval, |tree| {
+    proc::sample_stream(interval, pss_interval, true, |tree| {
         let text = json_text(tree, view, false)?;
         writeln!(out, "{text}")?;
         out.flush()?;
@@ -1237,6 +1243,24 @@ mod tests {
 
         sort_tree(&mut tree, Sort::from_label("machine"), true);
         assert_eq!(instance_keys(&tree), ["busy-cpu", "big-pss"]);
+    }
+
+    /// The default view hides the stall trio, so pressure is not sampled for
+    /// it; showing one or sorting by one is what turns it back on.
+    #[test]
+    fn stalls_are_sampled_only_when_a_stall_column_is_shown_or_sorts() {
+        let v = View::default();
+        assert!(!shows_stalls(&Columns::from_view(&v), &v));
+        let sorted = View {
+            sort: "iostall".into(),
+            ..View::default()
+        };
+        assert!(shows_stalls(&Columns::from_view(&sorted), &sorted));
+        let shown = View {
+            hide_columns: Vec::new(),
+            ..View::default()
+        };
+        assert!(shows_stalls(&Columns::from_view(&shown), &shown));
     }
 
     #[test]

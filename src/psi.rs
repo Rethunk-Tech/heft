@@ -20,8 +20,10 @@
 //! machine-wide trend is the one place smoothing helps.
 
 use std::collections::HashMap;
-use std::fs;
 
+use rustix::fs::CWD;
+
+use crate::proc::read_str;
 use crate::types::{HostTree, IdentNode, Metrics, Process};
 
 /// Cumulative `some` stall microseconds for one cgroup.
@@ -252,15 +254,19 @@ fn read_totals(path: &str) -> Option<Totals> {
         crate::root::prefix(),
         path.trim_end_matches('/')
     );
+    let mut buf = Vec::new();
     Some(Totals {
-        cpu: read_some_total(&format!("{base}/cpu.pressure"))?,
-        io: read_some_total(&format!("{base}/io.pressure"))?,
-        mem: read_some_total(&format!("{base}/memory.pressure"))?,
+        cpu: read_some_total(&format!("{base}/cpu.pressure"), &mut buf)?,
+        io: read_some_total(&format!("{base}/io.pressure"), &mut buf)?,
+        mem: read_some_total(&format!("{base}/memory.pressure"), &mut buf)?,
     })
 }
 
-fn read_some_total(path: &str) -> Option<u64> {
-    parse_some(&fs::read_to_string(path).ok()?, "total=")?
+/// `proc::read_str`, not `fs::read_to_string`, for the reason on `read_at`:
+/// `statx` calls went from 3,087 to 621 over 6 s of `--json --follow` on 138
+/// cgroups.
+fn read_some_total(path: &str, buf: &mut Vec<u8>) -> Option<u64> {
+    parse_some(&read_str(CWD, path, buf)?, "total=")?
         .parse()
         .ok()
 }
@@ -274,11 +280,12 @@ fn parse_some<'a>(text: &'a str, key: &str) -> Option<&'a str> {
 
 /// The one pid in this cgroup, or `None` if it holds any other number.
 fn sole_member(path: &str) -> Option<u32> {
-    let text = fs::read_to_string(format!(
-        "{}/sys/fs/cgroup{path}/cgroup.procs",
-        crate::root::prefix()
-    ))
-    .ok()?;
+    let mut buf = Vec::new();
+    let text = read_str(
+        CWD,
+        format!("{}/sys/fs/cgroup{path}/cgroup.procs", crate::root::prefix()),
+        &mut buf,
+    )?;
     let mut it = text.split_whitespace();
     let first = it.next()?.parse().ok()?;
     it.next().is_none().then_some(first)
@@ -310,9 +317,13 @@ fn delta(prev: Option<&Totals>, cur: Totals, secs: f64) -> Option<Stall> {
 /// which case the header simply carries no PSI tail, the way a swapless host
 /// gets no swap tank.
 pub(crate) fn host_avg10(tree: &mut HostTree) {
-    let read = |res: &str| {
-        let text =
-            fs::read_to_string(format!("{}/proc/pressure/{res}", crate::root::prefix())).ok()?;
+    let mut buf = Vec::new();
+    let mut read = |res: &str| {
+        let text = read_str(
+            CWD,
+            format!("{}/proc/pressure/{res}", crate::root::prefix()),
+            &mut buf,
+        )?;
         parse_some(&text, "avg10=")?.parse::<f64>().ok()
     };
     tree.psi_cpu_avg10 = read("cpu");

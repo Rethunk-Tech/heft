@@ -270,7 +270,19 @@ pub(crate) fn read_pid(
     let (uid, exe, cmdline, cgroup, rss_pages) = if parsed.kthread {
         (0, None, Vec::new(), String::new(), Some(0))
     } else {
-        let exe = read_exe(&dir);
+        // An exec maps a new image, which moves `exec_mark` under ASLR, and
+        // renames `comm`; `exe` is read again when either changes. A foreign
+        // pid reads `exec_mark` as constants, but its `exe` is unreadable anyway.
+        let same_exec = prev.is_some_and(|p| {
+            walks > 0
+                && !walks.wrapping_add(p.pid).is_multiple_of(IDENTITY_EVERY)
+                && p.comm == parsed.comm
+                && p.exec_mark == parsed.exec_mark
+        });
+        let exe = match prev {
+            Some(p) if same_exec => p.exe.clone(),
+            _ => read_exe(&dir),
+        };
         let (uid, cmdline, cgroup) = match prev {
             Some(p) if carries_identity(p, walks, &parsed.comm, exe.as_deref()) => {
                 cgroup_id = p.cgroup_id;
@@ -357,6 +369,7 @@ pub(crate) fn read_pid(
         rollup_periods: rollup.periods,
         walks,
         cgroup_id,
+        exec_mark: parsed.exec_mark,
         read_bytes,
         write_bytes,
         gpu,
@@ -515,6 +528,7 @@ struct StatFields {
     stime: u64,
     threads: Option<u64>,
     starttime_ticks: Option<u64>,
+    exec_mark: (u64, u64, u64),
     kthread: bool,
 }
 
@@ -544,6 +558,11 @@ fn parse_stat(stat: &[u8]) -> Option<StatFields> {
     // not the whole process, and a missing one is the blank cell either way.
     let threads = fields.nth(4).flatten();
     let starttime_ticks = fields.nth(1).flatten();
+    let exec_mark = (
+        fields.nth(3).flatten().unwrap_or(0),
+        fields.next().flatten().unwrap_or(0),
+        fields.next().flatten().unwrap_or(0),
+    );
     Some(StatFields {
         comm,
         ppid,
@@ -552,6 +571,7 @@ fn parse_stat(stat: &[u8]) -> Option<StatFields> {
         stime,
         threads,
         starttime_ticks,
+        exec_mark,
         kthread: flags & 0x0020_0000 != 0,
     })
 }
@@ -976,12 +996,16 @@ mod tests {
     /// process's counter as a thread count.
     #[test]
     fn threads_and_starttime_come_from_their_own_fields() {
-        let stat =
-            "10 (bash) S 1 10 10 0 -1 4194304 91 0 0 0 30 40 0 0 25 5 17 0 221093059 236335104 474";
+        let stat = "10 (bash) S 1 10 10 0 -1 4194304 91 0 0 0 30 40 0 0 25 5 17 0 221093059 236335104 474 \
+             18446744073709551615 94000000000000 94000000100000 140730000000000";
         let p = parse_stat(stat.as_bytes()).unwrap();
         assert_eq!(p.utime, 30);
         assert_eq!(p.threads, Some(17));
         assert_eq!(p.starttime_ticks, Some(221_093_059));
+        assert_eq!(
+            p.exec_mark,
+            (94_000_000_000_000, 94_000_000_100_000, 140_730_000_000_000)
+        );
         // A truncated tail costs those two columns, not the process.
         let short = parse_stat(b"10 (bash) S 1 10 10 0 -1 0 0 0 0 0 30 40").unwrap();
         assert_eq!(short.utime, 30);

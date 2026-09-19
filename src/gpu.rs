@@ -11,16 +11,14 @@ use crate::types::{GpuCounters, sum_opt};
 
 /// Dri/drm symlink names select which fdinfo to read on every tick. When
 /// that prefilter is empty, `full_scan` (PSS / `--once`) does not walk every
-/// fdinfo, so a GPU client whose fd name omits dri/drm stays blank: that walk
-/// measured ~318 ms of ~760 ms serial PSS-tick kernel work on 308 pids with no
-/// dri/drm fd. A full walk still runs when the prefilter finds fds but they
-/// yield no GPU metrics. `dir` is the process's `/proc/<pid>`.
+/// fdinfo, so a GPU client whose fd name omits dri/drm stays blank: walking
+/// every fdinfo of every process would dominate a PSS tick. A full walk still
+/// runs when the prefilter finds fds but they yield no GPU metrics. `dir` is the process's `/proc/<pid>`.
 ///
 /// `carried` is the prefilter from an earlier tick, used instead of reading
 /// every `fd` symlink; the returned list is the prefilter to carry next. That
-/// scan is a `readlinkat` per open fd, ~8.8k per tick and ~17 ms of kernel
-/// time per pass here, while the fdinfo reads it selects stay per tick so
-/// GFX/CMP rates keep their cadence. A carried fd number since reused for
+/// scan is a `readlinkat` per open fd, while the fdinfo reads it selects stay
+/// per tick so GFX/CMP rates keep their cadence. A carried fd number since reused for
 /// something else fails the `drm-client-id` check in `push_drm_text`.
 pub(crate) fn read_pid(
     dir: impl AsFd,
@@ -117,11 +115,10 @@ fn read_all_fdinfo(dir: impl AsFd, buf: &mut Vec<u8>) -> GpuCounters {
     merge_fdinfo_texts(&texts)
 }
 
-/// Observed drm fdinfo on this host: vivaldi max 7 KiB, cursor 14 KiB.
-/// `localsearch-3` has a 16_038_344-byte `anon_inode:[fanotify]` fdinfo
-/// with 0 `drm-client-id`. 64 KiB is well above real drm and well below
-/// that dump. `/proc/<pid>/fdinfo/*` reports `st_size` 0 (measured on
-/// `/proc/self/fdinfo/0`), so the cap is on bytes read, never on metadata.
+/// A drm client's fdinfo is a few KiB; a fanotify fdinfo can run to megabytes
+/// with no `drm-client-id`. The cap sits well above the first and well below
+/// the second. `/proc/<pid>/fdinfo/*` reports `st_size` 0, so the cap is on
+/// bytes read, never on metadata.
 const FDINFO_MAX_BYTES: usize = 64 * 1024;
 
 fn push_drm_text(

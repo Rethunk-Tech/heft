@@ -26,33 +26,22 @@ use crate::{gpu, io as pio, net, psi};
 /// those files one at a time while this process waits. Splitting the pid list
 /// across threads overlaps that wait.
 ///
-/// Measured on a 723-pid, 32-CPU host, pinned with `taskset`, ten interleaved
-/// runs each, median: `--once --interval 0.05` (a plain walk, then a PSS walk)
-/// takes 618 ms on one CPU, 376 ms on four and 170 ms on 32; `--fixture` (one
-/// plain walk) 37.4, 19.0 and 11.2 ms. The PSS walk gains less, because
-/// `smaps_rollup` makes the kernel walk that process's page tables, which is
-/// memory-bound rather than latency-bound, so a PSS tick still stretches its
-/// interval, exactly as HUMANS.md says it does.
+/// The PSS walk gains less, because `smaps_rollup` makes the kernel walk that
+/// process's page tables, which is memory-bound rather than latency-bound, so
+/// a PSS tick still stretches its interval, as HUMANS.md says.
 ///
-/// Parallel walkers cost kernel time, though: idle `--json --follow` pinned to
-/// 1, 4, 8, 16 and 32 CPUs spent 3.96, 4.19, 4.27, 4.57 and 5.25-5.66 s of CPU
-/// per 30 s. So the continuous modes, which pay that every tick forever, take
+/// Parallel walkers cost kernel time, which grows with the worker count. So
+/// the continuous modes, which pay that every tick forever, take
 /// `FOLLOW_WALKERS`, while `--once`, one-shot `--json`, `--fixture` and
 /// `--explain`, where latency is the point, take every CPU.
 ///
 /// Workers live on the Sampler (so `--once` / `--json` still pool their two
-/// walks) and `sample_stream` drop joins them. A `thread::scope` per sample
-/// was refused because spawn cost tens of microseconds; the RSS is why a
-/// pool exists now. New glibc arenas each tick climbed ~15 MiB every 5s PSS
-/// tick to ~488 MiB. `MALLOC_ARENA_MAX=2` plateaued at 39 MiB, so arenas
-/// dominate the `HostTree`.
+/// walks) and `sample_stream` drop joins them. Long-lived workers keep glibc
+/// from creating fresh malloc arenas every tick, which otherwise dominate RSS.
 ///
-/// Workers take equal-count slices. Pulling one pid at a time off a shared
-/// index was measured and refused: on ~750 pids and 32 threads it shortened
-/// the walk (PSS tick 98 to 82 ms, plain tick 8.7 to 6.5 ms) because one slow
-/// `smaps_rollup` no longer stalls a slice, but it kept every worker in procfs
-/// until the list drained, and idle `--json --follow` rose from 5.1 s to 6.6 s
-/// of CPU per 30 s, nearly all system time. Idle cost outranks a shorter tick.
+/// Each worker takes a fixed slice rather than pulling pids off a shared
+/// index: pulling keeps every worker in procfs until the list drains, and
+/// idle cost outranks a shorter tick.
 ///
 /// Each worker has its own result channel, so a worker that panics in a
 /// debug build drops its sender and `collect` fails on that `recv` instead of
@@ -182,14 +171,9 @@ fn walk(
 
 /// `/proc/<pid>` opened once, so every file under it is an `openat` of one
 /// name rather than a path the kernel resolves from `/` again. `O_PATH`
-/// because the handle is only ever a base for those lookups.
-///
-/// Carrying the handle to the next tick on `Process` was measured and refused.
-/// On 819 pids it saved an `open` and a `close` per pid per tick (7% of
-/// syscalls) with idle CPU unchanged, 1.66 to 1.64 s per 30 s, but one-shot
-/// `--fixture` went from 8.7 to 68 ms: holding one fd per pid grows the fd
-/// table while the walk threads share it, and opens stalled 15 to 20 ms at
-/// each growth.
+/// because the handle is only ever a base for those lookups. It is closed
+/// before the next pid: holding one per pid grows the fd table the walk
+/// threads share, and every growth stalls their opens.
 fn open_pid(pid: u32) -> Option<OwnedFd> {
     let flags = OFlags::PATH | OFlags::DIRECTORY | OFlags::CLOEXEC;
     rustix::fs::openat(proc_dir()?, DecInt::new(pid), flags, Mode::empty()).ok()
@@ -211,16 +195,11 @@ fn proc_dir() -> Option<&'static OwnedFd> {
 /// without being read whole. `None` when it cannot be opened or read.
 ///
 /// Not `fs::read`: that `statx`es every file to size a buffer, and procfs
-/// reports size 0, so the call bought nothing. With the `open_pid` handle and
-/// a buffer reused across the walk, `--once` on ~745 pids went from 91.9k
-/// syscalls to 66.8k (`read` 39.1k to 19.4k, `statx` 9.3k to 1.0k), and a
-/// one-CPU plain walk from 41.3 ms [40.3-42.9] to 35.8 [34.8-37.0], median and
-/// p10-p90 over ten interleaved runs. The 32-thread pool shows no wall change.
+/// reports size 0, so the call buys nothing.
 ///
 /// A short read is the end: every caller reads a procfs `seq_file` or
 /// `cmdline`, and both fill the buffer whenever the file has more, so the read
-/// that would only return 0 is skipped. That cut `read` calls from 63.2k to
-/// 38.6k over 6 s of `--json --follow` on 819 pids. A file that can return a
+/// that would only return 0 is skipped. A file that can return a
 /// short read before its end must not come through here.
 pub(crate) fn read_at(
     dir: impl AsFd,
@@ -326,11 +305,8 @@ pub(crate) fn read_pid(
             exe,
             cmdline,
             cgroup,
-            // Not `stat` field 24: `do_task_stat` prints `get_mm_rss`, the
-            // `percpu_counter_read_positive` estimate, where `task_statm`
-            // prints `get_mm_counter_sum`. On 7.1, 240 of 716 pids disagreed
-            // (avahi-daemon 0 pages against 468), so dropping this read was
-            // refused.
+            // `statm`, not `stat` field 24: that one is `get_mm_rss`, a
+            // per-CPU estimate that can read 0 for a resident process.
             read_str(&dir, c"statm", buf).and_then(|s| parse_rss_pages(&s)),
         )
     };
@@ -440,8 +416,8 @@ const ROLLUP_SCALE_BYTES: u64 = 512 << 20;
 const ROLLUP_AGE_CAP: u32 = 60;
 
 /// A `smaps_rollup` read walks the page tables, so it costs in proportion to
-/// RSS: on one desktop an 8.4 GiB and a 5.2 GiB process were 54% of a full
-/// pass. A large process therefore ages longer between reads.
+/// RSS, and a few large processes dominate a full pass. A large process
+/// therefore ages longer between reads.
 fn rollup_age_bound(rss_bytes: u64) -> u32 {
     let units = u32::try_from(rss_bytes / ROLLUP_SCALE_BYTES).unwrap_or(u32::MAX);
     ROLLUP_MAX_PERIODS
@@ -452,12 +428,7 @@ fn rollup_age_bound(rss_bytes: u64) -> u32 {
 /// Whether a PSS tick may keep `prev`'s PSS and `SwapPss` instead of reading
 /// `smaps_rollup`: the same process (`starttime` unchanged), RSS within 1% or
 /// 1 MiB of what it was at the last real read, whichever is larger, and that
-/// read fewer than `rollup_age_bound` PSS periods ago. Replayed over 10
-/// minutes of a desktop (289 processes, every rollup read every 5 s), a flat
-/// six periods read 112 ms of rollup CPU per PSS tick; the RSS-scaled bound
-/// read 77 ms. Summed PSS was off by 0.023% mean and 0.079% at worst against
-/// 0.015% and 0.070% flat, and a carried row by 1.03% at p99 against 1.02%.
-/// A 256 MiB scale read 67 ms but summed PSS reached 0.122%.
+/// read fewer than `rollup_age_bound` PSS periods ago.
 ///
 /// `want_swap` must also match what the last read saw, so a `swapon` or
 /// `swapoff` forces one read rather than carrying a blank or a figure from a
@@ -520,9 +491,6 @@ const IDENTITY_EVERY: u32 = 5;
 /// field betrays later -- `setuid`, a cgroup move, an argv rewrite -- shows
 /// within `IDENTITY_EVERY` walks; adding `pid` staggers those rereads so no
 /// tick takes them all.
-///
-/// Idle `--json --follow` on 4 CPUs and ~700 pids, three interleaved 60 s
-/// runs: 1.71-1.78 s of CPU to 1.61-1.64.
 fn carries_identity(prev: &Process, walks: u32, comm: &str, exe: Option<&str>) -> bool {
     walks >= IDENTITY_EVERY
         && !walks.wrapping_add(prev.pid).is_multiple_of(IDENTITY_EVERY)
@@ -612,8 +580,7 @@ pub(crate) fn atoi(token: &[u8]) -> Option<u64> {
 }
 
 /// Bytes, so only the `Uid:` line is converted: the file also carries the
-/// process's own name, which need not be UTF-8. Validating all of `status`
-/// for one line took UTF-8 checks from 2.0% to 4.7% of heft's user time.
+/// process's own name, which need not be UTF-8.
 fn parse_uid(status: &[u8]) -> Option<u32> {
     // /proc/<pid> inode uid is euid; grouping uses ruid (Uid: field 1). They
     // diverge on setuid (e.g. fusermount3).

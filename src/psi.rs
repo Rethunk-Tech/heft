@@ -56,15 +56,6 @@ impl Sampler {
     /// `net::Sampler` is, so `Sampler::prime` can take a baseline before any
     /// tree exists — without one the first published sample would have no
     /// previous total to subtract and the whole column would be blank.
-    ///
-    /// Measured on a host with 139 distinct cgroups, ten interleaved runs of
-    /// `--once` each: 0.31s without pressure sampling, 0.32s with. That is
-    /// about 5 ms a tick, for three pressure files per cgroup plus the
-    /// `cgroup.procs` reads the solo-process rule needs — never enough to
-    /// justify a cadence of its own the way `--pss-interval` was. Those are
-    /// wall-clock figures. In CPU time, on a host with 136 distinct cgroups,
-    /// the three pressure files cost 1.08 to 1.13 ms of kernel time a pass
-    /// over three runs, and `cgroup.procs` at most 1.01 to 1.07 ms more.
     pub(crate) fn tick(&mut self, procs: &PidMap<Process>, secs: f64) -> Stalls {
         let mut curr = HashMap::new();
         let mut rates = HashMap::new();
@@ -151,8 +142,7 @@ impl<'a> Apply<'a> {
     /// One non-root cgroup is that cgroup's `some` rate. Several is the max of
     /// each member's `some`, per resource independently. Sum can exceed 100%
     /// (stall intervals overlap); average hides a member that was fully
-    /// stalled. Max is the worst constituent and stays ≤100%. Measured on one
-    /// desktop, 82% of rows are already a single cgroup; this is the rest.
+    /// stalled. Max is the worst constituent and stays ≤100%.
     ///
     /// Folder, User and Host rows are never billed here. Root-cgroup rows stay
     /// blank for the same reason as a `--network=host` container's RX/TX: that
@@ -219,8 +209,7 @@ impl<'a> Apply<'a> {
 
     /// Two walked pids in one cgroup already settle that it is not solo, so
     /// `cgroup.procs` is read only for a cgroup the walk saw once, where it
-    /// still matters because it also lists pids `/proc` hides. On ~750
-    /// processes that took the apply pass from 1.79 to 0.78 ms a tick. It can
+    /// still matters because it also lists pids `/proc` hides. It can
     /// disagree with a full read only when a pid leaves the cgroup between
     /// the walk and the apply, and then it blanks a row for one tick.
     fn solo_cgroup(&self, pid: u32) -> Option<&'a str> {
@@ -268,9 +257,7 @@ fn read_totals(path: &str, buf: &mut Vec<u8>) -> Option<Totals> {
     })
 }
 
-/// `proc::read_str`, not `fs::read_to_string`, for the reason on `read_at`:
-/// `statx` calls went from 3,087 to 621 over 6 s of `--json --follow` on 138
-/// cgroups.
+/// `proc::read_str`, not `fs::read_to_string`, for the reason on `read_at`.
 fn read_some_total(dir: &OwnedFd, name: &CStr, buf: &mut Vec<u8>) -> Option<u64> {
     parse_some(&read_str(dir, name, buf)?, "total=")?
         .parse()

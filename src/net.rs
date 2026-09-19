@@ -31,10 +31,8 @@ pub(crate) struct Sampler {
 impl Sampler {
     /// One `net/dev` read per container and none for anything else. The file is
     /// per network namespace, so reading it for an ordinary pid returns the
-    /// machine total, not that process's traffic; measured, it was byte-identical
-    /// across five unrelated pids and the host file. Cost is the other half of
-    /// the reason: 200 reads for two containers took 1.5 ms, against 32 ms to
-    /// read it for all 844 pids and learn nothing.
+    /// host namespace's total, not that process's traffic, so reading it for
+    /// every pid costs a walk's worth of reads to learn nothing.
     pub(crate) fn tick(
         &mut self,
         idx: &ContainerIndex,
@@ -144,10 +142,8 @@ fn read_pid(pid: u32) -> Option<Sample> {
 }
 
 /// Sums every interface but `lo`, which carries traffic that never left the
-/// namespace: measured on one container, loopback moved 47,332,844 bytes
-/// against 26,295,295 on eth0, so summing all of them nearly triples the
-/// figure. The host-side veth is not read at all — its direction is inverted
-/// and its name is not derivable without `/proc/<pid>/ns/net`, which is
+/// namespace and can outweigh the real interfaces. The host-side veth is not
+/// read at all — its direction is inverted and its name is not derivable without `/proc/<pid>/ns/net`, which is
 /// EACCES for a root-owned pid.
 fn parse_dev(text: &str) -> (u64, u64) {
     let mut rx = 0;

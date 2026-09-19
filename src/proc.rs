@@ -260,16 +260,25 @@ pub(crate) fn read_pid(
 ) -> Option<Process> {
     let dir = open_pid(pid)?;
     let parsed = parse_stat(read_at(&dir, c"stat", buf, usize::MAX)?)?;
-    let uid = read_str(&dir, c"status", buf)
-        .and_then(|s| parse_uid(&s))
-        .unwrap_or(0);
-    let exe = read_exe(&dir);
-    let cmdline = read_cmdline(&dir, buf);
-    let cgroup = read_str(&dir, c"cgroup", buf)
-        .unwrap_or_default()
-        .trim()
-        .to_string();
-    let rss_pages = read_str(&dir, c"statm", buf).and_then(|s| parse_rss_pages(&s));
+    // A kernel thread's other files say only uid 0, no exe, no argv, no memory,
+    // and it is System on the flag alone, so they are not read: over half the
+    // pids on a desktop, and five files each, every tick.
+    let (uid, exe, cmdline, cgroup, rss_pages) = if parsed.kthread {
+        (0, None, Vec::new(), String::new(), Some(0))
+    } else {
+        (
+            read_str(&dir, c"status", buf)
+                .and_then(|s| parse_uid(&s))
+                .unwrap_or(0),
+            read_exe(&dir),
+            read_cmdline(&dir, buf),
+            read_str(&dir, c"cgroup", buf)
+                .unwrap_or_default()
+                .trim()
+                .to_string(),
+            read_str(&dir, c"statm", buf).and_then(|s| parse_rss_pages(&s)),
+        )
+    };
     // PSS is a level, not a rate. Kernel threads have no rollup. Prime and
     // TUI ticks between `--pss-interval` reuse last (new PIDs stay blank).
     let rollup = rollup_for(

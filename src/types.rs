@@ -61,6 +61,9 @@ pub struct Process {
     /// periods ago that was: what `proc::rollup_holds` weighs to skip a read.
     pub rollup_rss_pages: Option<u64>,
     pub rollup_periods: u32,
+    /// Ticks this process has been walked, which staggers when
+    /// `proc::read_pid` rereads the identity files it otherwise carries.
+    pub walks: u32,
     pub read_bytes: Option<u64>,
     pub write_bytes: Option<u64>,
     pub gpu: GpuCounters,

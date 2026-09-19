@@ -269,19 +269,38 @@ pub(crate) fn read_pid(
     // A kernel thread's other files say only uid 0, no exe, no argv, no memory,
     // and it is System on the flag alone, so they are not read: over half the
     // pids on a desktop, and five files each, every tick.
+    let walks = prev
+        .filter(|p| p.starttime_ticks.is_some() && p.starttime_ticks == parsed.starttime_ticks)
+        .map_or(0, |p| p.walks.wrapping_add(1));
     let (uid, exe, cmdline, cgroup, rss_pages) = if parsed.kthread {
         (0, None, Vec::new(), String::new(), Some(0))
     } else {
+        let exe = read_exe(&dir);
+        let (uid, cmdline, cgroup) = match prev {
+            Some(p) if carries_identity(p, walks, &parsed.comm, exe.as_deref()) => {
+                (p.uid, p.cmdline.clone(), p.cgroup.clone())
+            }
+            _ => (
+                read_at(&dir, c"status", buf, usize::MAX)
+                    .and_then(parse_uid)
+                    .unwrap_or(0),
+                read_cmdline(&dir, buf),
+                read_str(&dir, c"cgroup", buf)
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string(),
+            ),
+        };
         (
-            read_at(&dir, c"status", buf, usize::MAX)
-                .and_then(parse_uid)
-                .unwrap_or(0),
-            read_exe(&dir),
-            read_cmdline(&dir, buf),
-            read_str(&dir, c"cgroup", buf)
-                .unwrap_or_default()
-                .trim()
-                .to_string(),
+            uid,
+            exe,
+            cmdline,
+            cgroup,
+            // Not `stat` field 24: `do_task_stat` prints `get_mm_rss`, the
+            // `percpu_counter_read_positive` estimate, where `task_statm`
+            // prints `get_mm_counter_sum`. On 7.1, 240 of 716 pids disagreed
+            // (avahi-daemon 0 pages against 468), so dropping this read was
+            // refused.
             read_str(&dir, c"statm", buf).and_then(|s| parse_rss_pages(&s)),
         )
     };
@@ -329,6 +348,7 @@ pub(crate) fn read_pid(
         swap_pss_kb: rollup.swap_pss_kb,
         rollup_rss_pages: rollup.rss_pages,
         rollup_periods: rollup.periods,
+        walks,
         read_bytes,
         write_bytes,
         gpu,
@@ -428,6 +448,29 @@ fn rollup_holds(
         && prev.rollup_periods + 1 < rollup_age_bound(then.saturating_mul(page_size))
         && (prev.pss_kb.is_none() || prev.swap_pss_kb.is_some() == want_swap)
         && now.abs_diff(then) <= (then / 100).max(floor)
+}
+
+/// Every `IDENTITY_EVERY`th walk of a process rereads its uid, argv and
+/// cgroup; the rest carry them.
+const IDENTITY_EVERY: u32 = 5;
+
+/// Whether `prev`'s uid, argv and cgroup still stand without rereading
+/// `status`, `cmdline` and `cgroup`. `walks` restarts at 0 for a pid first
+/// seen or reused (its `starttime` changed), and a process reads in full for
+/// its first `IDENTITY_EVERY` walks, because that is when a launcher moves it
+/// into its own scope and a server retitles its argv. An `exec` changes `exe`
+/// or `comm`, both read every tick, so it rereads at once. What no fresh
+/// field betrays later -- `setuid`, a cgroup move, an argv rewrite -- shows
+/// within `IDENTITY_EVERY` walks; adding `pid` staggers those rereads so no
+/// tick takes them all.
+///
+/// Idle `--json --follow` on 4 CPUs and ~700 pids, three interleaved 60 s
+/// runs: 1.71-1.78 s of CPU to 1.61-1.64.
+fn carries_identity(prev: &Process, walks: u32, comm: &str, exe: Option<&str>) -> bool {
+    walks >= IDENTITY_EVERY
+        && !walks.wrapping_add(prev.pid).is_multiple_of(IDENTITY_EVERY)
+        && prev.comm == comm
+        && prev.exe.as_deref() == exe
 }
 
 /// The fastest catch-all sample heft will take. Below this a tick cannot
@@ -843,6 +886,22 @@ pub(crate) fn spawn_sampler(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn identity_rereads_while_young_on_an_exec_and_every_fifth_walk() {
+        let prev = Process {
+            pid: 10,
+            comm: "bash".into(),
+            exe: Some("/usr/bin/bash".into()),
+            ..Default::default()
+        };
+        let bash = |walks| carries_identity(&prev, walks, "bash", Some("/usr/bin/bash"));
+        assert!((0..IDENTITY_EVERY).all(|w| !bash(w)));
+        let carried = (5..15).filter(|&w| bash(w)).count();
+        assert_eq!(carried, 8);
+        assert!(!carries_identity(&prev, 6, "bash", Some("/usr/bin/sleep")));
+        assert!(!carries_identity(&prev, 6, "sleep", Some("/usr/bin/bash")));
+    }
 
     #[test]
     fn stat_with_spaces_in_comm() {

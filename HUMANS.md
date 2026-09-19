@@ -101,7 +101,8 @@ time; a PSS pass may stretch that tick. `--pss-interval` (default 5s, at least
 `--interval`) sets how often the TUI and `--follow` read `smaps_rollup`;
 between reads heft reuses each PID's last PSS, and a new PID shows a blank PSS
 until the next read. A PSS tick also skips a process whose RSS has moved less
-than 1% (or 1 MiB) since its last read, for up to six PSS periods. A value below the 0.05s floor is a usage error.
+than 1% (or 1 MiB) since its last read, for up to six PSS periods per 512 MiB
+of RSS, and never more than 60. A value below the 0.05s floor is a usage error.
 
 A one-shot `--once` or `--json` takes two `/proc` walks `--interval` apart so
 rates exist, and always reads PSS.

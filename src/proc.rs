@@ -453,7 +453,7 @@ fn rollup_holds(
 }
 
 /// The real uid and v2 cgroup id from one `PIDFD_GET_INFO`, which needs no
-/// procfs file built. `None` before 6.9, under `--proc-root` (whose pids are
+/// procfs file built. `None` before 6.13, under `--proc-root` (whose pids are
 /// not this kernel's), or when the pid is gone.
 fn pidfd_info(pid: u32) -> Option<(u32, u64)> {
     if !crate::root::prefix().is_empty() {
@@ -1056,7 +1056,7 @@ mod tests {
         assert_eq!(atoi(b"12kB"), None);
     }
 
-    /// Before 6.9 there is no `PIDFD_GET_INFO`, and `status` answers instead.
+    /// Before 6.13 there is no `PIDFD_GET_INFO`, and `status` answers instead.
     #[test]
     fn pidfd_info_gives_this_process_its_own_real_uid() {
         if let Some((uid, _)) = pidfd_info(std::process::id()) {

@@ -180,6 +180,13 @@ fn walk(
 /// `/proc/<pid>` opened once, so every file under it is an `openat` of one
 /// name rather than a path the kernel resolves from `/` again. `O_PATH`
 /// because the handle is only ever a base for those lookups.
+///
+/// Carrying the handle to the next tick on `Process` was measured and refused.
+/// On 819 pids it saved an `open` and a `close` per pid per tick (7% of
+/// syscalls) with idle CPU unchanged, 1.66 to 1.64 s per 30 s, but one-shot
+/// `--fixture` went from 8.7 to 68 ms: holding one fd per pid grows the fd
+/// table while the walk threads share it, and opens stalled 15 to 20 ms at
+/// each growth.
 fn open_pid(pid: u32) -> Option<OwnedFd> {
     let path = format!("{}/proc/{pid}", crate::root::prefix());
     let flags = OFlags::PATH | OFlags::DIRECTORY | OFlags::CLOEXEC;

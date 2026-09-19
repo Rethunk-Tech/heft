@@ -501,22 +501,23 @@ fn parse_stat(stat: &[u8]) -> Option<StatFields> {
         return None;
     }
     let comm = String::from_utf8_lossy(&stat[open + 1..close]).into_owned();
-    let mut fields = std::str::from_utf8(&stat[close + 1..])
-        .ok()?
-        .split_whitespace();
+    let mut fields = stat[close + 1..]
+        .split(u8::is_ascii_whitespace)
+        .filter(|f| !f.is_empty())
+        .map(atoi);
     // after comm: state ppid pgrp ... flags ... utime stime ...
     // num_threads ... starttime (0-based: 0,1,2,6,11,12,17,19), taken in
     // order, so each `nth` skips the fields between.
-    let ppid = fields.nth(1)?.parse().ok()?;
-    let pgrp = fields.next()?.parse().ok()?;
+    let ppid = u32::try_from(fields.nth(1)??).ok()?;
+    let pgrp = i32::try_from(fields.next()??).ok()?;
     // PF_KTHREAD in include/linux/sched.h — no userspace smaps/io/fdinfo.
-    let flags: u32 = fields.nth(3).and_then(|s| s.parse().ok()).unwrap_or(0);
-    let utime = fields.nth(4)?.parse().ok()?;
-    let stime = fields.next()?.parse().ok()?;
+    let flags = fields.nth(3).flatten().unwrap_or(0);
+    let utime = fields.nth(4)??;
+    let stime = fields.next()??;
     // Optional, unlike the fields above: a truncated tail costs two columns,
     // not the whole process, and a missing one is the blank cell either way.
-    let threads = fields.nth(4).and_then(|s| s.parse().ok());
-    let starttime_ticks = fields.nth(1).and_then(|s| s.parse().ok());
+    let threads = fields.nth(4).flatten();
+    let starttime_ticks = fields.nth(1).flatten();
     Some(StatFields {
         comm,
         ppid,
@@ -533,12 +534,24 @@ fn parse_stat(stat: &[u8]) -> Option<StatFields> {
 /// only: meminfo and `smaps_rollup` append a ` kB` unit that parsing the whole
 /// remainder would reject. `None` covers both a missing key and an unparsable
 /// value; each caller decides whether that is a blank cell or a default.
-pub(crate) fn field_u64(line: &str, key: &str) -> Option<u64> {
-    line.strip_prefix(key)?
-        .split_whitespace()
-        .next()?
-        .parse()
-        .ok()
+pub(crate) fn field_u64(line: impl AsRef<[u8]>, key: &str) -> Option<u64> {
+    line.as_ref()
+        .strip_prefix(key.as_bytes())?
+        .split(u8::is_ascii_whitespace)
+        .find(|t| !t.is_empty())
+        .and_then(atoi)
+}
+
+/// An unsigned decimal token: digits only, `None` on anything else or on
+/// overflow. Procfs numbers are ASCII, so there is no text to validate first.
+pub(crate) fn atoi(token: &[u8]) -> Option<u64> {
+    if token.is_empty() {
+        return None;
+    }
+    token.iter().try_fold(0u64, |n, &b| {
+        b.is_ascii_digit().then_some(())?;
+        n.checked_mul(10)?.checked_add(u64::from(b - b'0'))
+    })
 }
 
 /// Bytes, so only the `Uid:` line is converted: the file also carries the
@@ -550,7 +563,7 @@ fn parse_uid(status: &[u8]) -> Option<u32> {
     let line = status
         .split(|&b| b == b'\n')
         .find(|l| l.starts_with(b"Uid:"))?;
-    let uid = field_u64(std::str::from_utf8(line).ok()?, "Uid:")?;
+    let uid = field_u64(line, "Uid:")?;
     u32::try_from(uid).ok()
 }
 
@@ -1007,6 +1020,16 @@ mod tests {
         assert_eq!(pw.name(7), "7");
         assert_eq!(pw.uid("root"), Some(0));
         assert_eq!(pw.name(0), "root");
+    }
+
+    #[test]
+    fn atoi_takes_digits_only_and_blanks_on_overflow() {
+        assert_eq!(atoi(b"0"), Some(0));
+        assert_eq!(atoi(b"18446744073709551615"), Some(u64::MAX));
+        assert_eq!(atoi(b"18446744073709551616"), None);
+        assert_eq!(atoi(b""), None);
+        assert_eq!(atoi(b"-1"), None);
+        assert_eq!(atoi(b"12kB"), None);
     }
 
     #[test]

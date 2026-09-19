@@ -5,7 +5,7 @@ use std::os::fd::AsFd;
 use rustix::fs::{Dir, Mode, OFlags};
 use rustix::io::Errno;
 
-use crate::proc::{read_at, read_link_at};
+use crate::proc::{atoi, read_at, read_link_at};
 use crate::types::{GpuCounters, sum_opt};
 
 /// Dri/drm symlink names select which fdinfo to read on every tick. When
@@ -65,7 +65,7 @@ fn subdir(dir: impl AsFd, name: &CStr) -> rustix::io::Result<Dir> {
 
 /// `.` and `..` are the only non-numeric names in `fd` and `fdinfo`.
 fn fd_num(name: &CStr) -> Option<u32> {
-    name.to_str().ok()?.parse().ok()
+    u32::try_from(atoi(name.to_bytes())?).ok()
 }
 
 fn drm_fd_nums(dir: impl AsFd) -> rustix::io::Result<Vec<u32>> {

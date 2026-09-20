@@ -29,11 +29,17 @@ struct Ctx<'a> {
     /// `Ctx` only: `exec` keeps the pid while changing exe and comm, and a
     /// `Ctx` lives one `build_tree` call, so no invalidation is needed.
     judged: PidMap<Judged>,
+    /// The app each `app-…` scope names, for the scopes where a process of
+    /// that name is running: everything else in such a scope is that app's
+    /// own helper, whatever it calls itself. Empty for a scope that names
+    /// nothing running in it, which is what keeps a terminal's or a browser's
+    /// scope from swallowing the commands launched from it.
+    scope_app: HashMap<String, String>,
 }
 
 impl<'a> Ctx<'a> {
     fn new(containers: &'a ContainerIndex, rules: &'a Rules, curr: &'a Procs) -> Self {
-        let judged = curr
+        let judged: PidMap<Judged> = curr
             .iter()
             .map(|(pid, p)| (*pid, judge(p, rules)))
             .collect();
@@ -44,7 +50,29 @@ impl<'a> Ctx<'a> {
         for kids in children.values_mut() {
             kids.sort_unstable();
         }
+        let mut members: HashMap<&str, Vec<&str>> = HashMap::new();
+        for (pid, p) in curr {
+            let j = &judged[pid];
+            if let Some(u) = j.unit.as_deref()
+                && !j.unit_flags.contains(UnitFlags::LYING)
+            {
+                members.entry(u).or_default().push(classify::name_ref(p));
+            }
+        }
+        let scope_app = members
+            .iter()
+            .filter_map(|(unit, names)| {
+                let (full, short) = identity::app_scope_names(unit)?;
+                let app = [Some(full), short]
+                    .into_iter()
+                    .flatten()
+                    .find(|c| names.iter().any(|n| n.eq_ignore_ascii_case(c)))?;
+                Some(((*unit).to_string(), app.to_string()))
+            })
+            .collect();
+        drop(members);
         Self {
+            scope_app,
             containers,
             rules,
             procs: curr,
@@ -60,6 +88,11 @@ impl<'a> Ctx<'a> {
     }
     fn judged(&self, p: &Process) -> &Judged {
         &self.judged[&p.pid]
+    }
+    /// The `app-…` scope's app, for a process whose unit is one of the scopes
+    /// `scope_app` resolved.
+    fn scope_app(&self, j: &Judged) -> Option<&str> {
+        self.scope_app.get(j.unit.as_deref()?).map(String::as_str)
     }
     fn instance(&self, p: &Process) -> String {
         identity::instance_key(p, None, self.judged(p))
@@ -430,10 +463,12 @@ fn user_place(p: &Process, ctx: &Ctx<'_>) -> Place {
     Place {
         folder,
         uid: Some(p.uid),
-        key: if j.classes.intersects(Classes::GENERIC) {
-            identity::generic_fallback(p, j, ctx.rules)
-        } else {
-            name_of(p)
+        key: match ctx.scope_app(j) {
+            Some(app) => app.to_string(),
+            None if j.classes.intersects(Classes::GENERIC) => {
+                identity::generic_fallback(p, j, ctx.rules)
+            }
+            None => name_of(p),
         },
         instance: ctx.instance(p),
         member: None,
@@ -1081,5 +1116,50 @@ mod tests {
         assert_eq!(placed[&4].key, "cursor");
         // Not an interpreter, so it bills to its process group's app instead.
         assert_eq!(placed[&6].key, "claude");
+    }
+
+    /// Steam's helpers share its scope and nothing else: no name, no path and
+    /// no ancestry ties `srt-logger` to `steam`. The scope does, and only
+    /// because `steam` itself runs in it, which is what keeps the commands
+    /// launched from a browser or a terminal out of that app's row.
+    #[test]
+    fn an_app_scope_that_names_a_process_in_it_owns_the_rest_of_that_scope() {
+        let at = |pid, exe: &str, name: &str, cgroup: &str| Process {
+            pid,
+            ppid: 1,
+            uid: 1000,
+            comm: name.into(),
+            exe: Some(exe.into()),
+            cmdline: vec![name.into()].into(),
+            cgroup: cgroup.into(),
+            ..Process::default()
+        };
+        let user = "0::/user.slice/user-1000.slice/user@1000.service/app.slice";
+        let steam = format!("{user}/app-gnome-steam-9.scope");
+        let browser = format!("{user}/app-com.vivaldi.Vivaldi-8.scope");
+        let curr = PidMap::from_iter([
+            (
+                2,
+                at(2, "/home/u/.local/share/Steam/steam", "steam", &steam),
+            ),
+            (
+                3,
+                at(
+                    3,
+                    "/home/u/.local/share/Steam/libexec/srt-logger",
+                    "srt-logger",
+                    &steam,
+                ),
+            ),
+            (4, at(4, "/usr/bin/vivaldi-bin", "vivaldi-bin", &browser)),
+            (5, at(5, "/home/u/.local/bin/claude", "claude", &browser)),
+        ]);
+        let containers = ContainerIndex::default();
+        let rules = Rules::builtin();
+        let placed = super::resolve(&curr, &Ctx::new(&containers, &rules, &curr));
+        assert_eq!(placed[&3].key, "steam");
+        // The scope names a desktop id no process carries, so it names nothing.
+        assert_eq!(placed[&4].key, "vivaldi-bin");
+        assert_eq!(placed[&5].key, "claude");
     }
 }

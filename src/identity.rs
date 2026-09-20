@@ -140,6 +140,23 @@ fn unit_stem(unit: &str) -> &str {
     s.split_once('@').map_or(s, |(name, _)| name)
 }
 
+/// The app an `app-…` unit names, in the two spellings systemd's
+/// `app[-<launcher>]-<AppID>[-<random>]` allows: the whole stem, and the stem
+/// without its first component. Which one is real is decided by matching it
+/// against a process actually running in that scope, so no table of launcher
+/// names is needed and a scope that names nothing running in it yields no
+/// identity at all.
+pub(crate) fn app_scope_names(unit: &str) -> Option<(&str, Option<&str>)> {
+    let stem = unit_stem(unit).strip_prefix("app-")?;
+    let stem = stem
+        .rsplit_once('-')
+        .filter(|(head, last)| {
+            !head.is_empty() && !last.is_empty() && last.bytes().all(|b| b.is_ascii_digit())
+        })
+        .map_or(stem, |(head, _)| head);
+    (!stem.is_empty()).then(|| (stem, stem.split_once('-').map(|(_, rest)| rest)))
+}
+
 /// `PF_KTHREAD` is the kernel's own answer, so nothing here re-derives it from
 /// uid/ppid/comm. Those two agreed on all 864 live pids of this machine, but
 /// only the flag survives a kthread reparented away from `kthreadd`.

@@ -61,6 +61,15 @@ Never read `/proc/pid/mem`. Never ptrace.
   service; so is the `compositor` class whatever its unit looks like.
 - `identity::unit_line` picks the one cgroup line a unit name is read from:
   the `0::` line on v2, else `1:name=systemd:`. The v1 trap is on that function.
+- An `app-…` scope owns everything in it when a process in it carries the app
+  the scope names (`identity::app_scope_names` reads systemd's
+  `app[-<launcher>]-<AppID>[-<random>]` as both the full stem and the stem
+  without its launcher component; `group::Ctx::scope_app` resolves one app per
+  scope per tick). Steam's `srt-logger`, `pv-adverb`, `srt-bwrap` and
+  `steamwebhelper` share only that scope, and that is enough. A scope naming a
+  desktop id no process carries (`app-com.vivaldi.Vivaldi-…`) names nothing, so
+  a command launched from a browser or a terminal keeps its own row; a `lying`
+  unit is skipped before the question is asked.
 - Display name is `classify::name_of` (`exe` basename else `comm`), not the
   inherited cgroup. The exception is an `exe` of `tdeinit`, which runs
   programs as in-process modules, so there `comm` names the program. TDE

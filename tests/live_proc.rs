@@ -710,7 +710,7 @@ fn check_rules_passes_the_built_ins_and_fails_a_wrong_user_example() {
         Some(0),
         "set but empty, only the built-ins load: {empty_out}"
     );
-    assert!(empty_out.contains(" in 12 files:"), "{empty_out}");
+    assert!(empty_out.contains(" in 13 files:"), "{empty_out}");
 
     let usage = heft(&["--check-rules", "--once"])
         .output()

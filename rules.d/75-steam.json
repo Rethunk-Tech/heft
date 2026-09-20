@@ -1,0 +1,16 @@
+{
+  "stage": "app",
+  "rules": [
+    { "id": "steam-runtime", "match": { "exe_contains": "/libexec/steam-runtime-tools-0/" }, "identity": "steam" },
+    { "id": "steam-client", "match": { "name": ["steamwebhelper", "steamerrorreporter", "steamservice"] }, "identity": "steam" }
+  ],
+  "examples": [
+    { "comm": "srt-logger", "exe": "~/.local/share/Steam/ubuntu12_32/steam-runtime/usr/libexec/steam-runtime-tools-0/srt-logger", "expect": { "identity": "steam", "rule": "steam-runtime" } },
+    { "comm": "srt-bwrap", "exe": "~/.local/share/Steam/steamrt64/pv-runtime/steam-runtime-steamrt/pressure-vessel/libexec/steam-runtime-tools-0/srt-bwrap", "expect": { "identity": "steam", "rule": "steam-runtime" } },
+    { "comm": "pv-adverb", "exe": "/usr/lib/pressure-vessel/from-host/libexec/steam-runtime-tools-0/pv-adverb", "expect": { "identity": "steam", "rule": "steam-runtime" } },
+    { "comm": "steam-runtime-l", "exe": "~/.local/share/Steam/ubuntu12_32/steam-runtime/usr/libexec/steam-runtime-tools-0/x86_64-linux-gnu-srt-launcher-service", "expect": { "identity": "steam", "rule": "steam-runtime" } },
+    { "comm": "steamwebhelper", "exe": "~/.local/share/Steam/ubuntu12_64/steamwebhelper", "expect": { "identity": "steam", "rule": "steam-client" } },
+    { "comm": "steam", "exe": "~/.local/share/Steam/ubuntu12_32/steam", "expect": null },
+    { "comm": "HalfLife", "exe": "~/.local/share/Steam/steamapps/common/Half-Life/hl_linux", "expect": null }
+  ]
+}

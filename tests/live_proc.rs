@@ -647,13 +647,16 @@ fn heft_rules_path_replaces_the_rules_directories() {
     std::fs::remove_dir_all(&bare).ok();
 
     assert!(stderr.is_empty(), "{stderr}");
-    // Not read while isolated: every pid both runs saw is on the same row.
-    // System rows are left out because a kworker renames itself between two
-    // samples.
+    // Not read while isolated: the rule pins `identity: heft`, so a heft row is
+    // the only row it can move. Every other pid is the live machine sampled
+    // twice, and comparing those is the load-dependent assertion this file
+    // exists to avoid.
     let moved_by_the_file: Vec<_> = with_file
         .iter()
         .filter(|(pid, row)| {
-            !row.starts_with("host/system") && without_file.get(pid).is_some_and(|r| r != *row)
+            let heft_row = |r: &str| r.rsplit('/').next() == Some("heft");
+            (heft_row(row) || without_file.get(pid).is_some_and(|r| heft_row(r)))
+                && without_file.get(pid).is_some_and(|r| r != *row)
         })
         .collect();
     assert!(moved_by_the_file.is_empty(), "{moved_by_the_file:?}");

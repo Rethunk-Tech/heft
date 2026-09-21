@@ -12,7 +12,6 @@
 //! for on every process of every tick to serve one invocation.
 
 use std::io::Write;
-use std::time::Duration;
 
 use crate::glyph;
 use crate::once::printable;

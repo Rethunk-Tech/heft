@@ -904,6 +904,56 @@ fn disabling_the_trinity_file_makes_a_tde_module_an_application() {
 }
 
 #[test]
+fn an_idle_shell_folds_into_a_terminal_the_class_list_names() {
+    let row = |pid: u32, ppid: u32, name: &str, args: &[&str]| Process {
+        pid,
+        ppid,
+        pgrp: i32::try_from(pid).expect("fixture pid fits i32"),
+        uid: 1000,
+        comm: name.into(),
+        exe: Some(format!("/usr/bin/{name}")),
+        cmdline: args
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect::<Vec<_>>()
+            .into(),
+        cgroup: "0::/user.slice/user-1000.slice/user@1000.service/app.slice".into(),
+        ..Process::default()
+    };
+    let curr = PidMap::from_iter([
+        (1, row(1, 0, "cosmic-term", &["cosmic-term"])),
+        (2, row(2, 1, "bash", &["bash"])),
+        (3, row(3, 0, "xterm", &["xterm"])),
+        (4, row(4, 3, "zsh", &["zsh"])),
+    ]);
+    let header = HostHeader {
+        nproc: 1,
+        clk_tck: 100,
+        page_size: 4096,
+    };
+    let tree = build_tree(
+        &curr,
+        &curr,
+        Duration::from_secs(1),
+        &header,
+        HostTree::default(),
+        &ContainerIndex::default(),
+        &Rules::builtin(),
+    );
+    let user = user_of(&tree, 1000);
+    assert!(
+        has(&user.applications, "cosmic-term") && has(&user.applications, "xterm"),
+        "{:?}",
+        titles(&user.applications)
+    );
+    assert!(
+        !has(&user.applications, "bash") && !has(&user.applications, "zsh"),
+        "idle shells bill to the terminal class, not their own row: {:?}",
+        titles(&user.applications)
+    );
+}
+
+#[test]
 fn a_malformed_rules_file_is_rejected_rather_than_obeyed() {
     // The loader turns each of these into a stderr warning and built-in
     // behaviour; parsing is where the file is judged.

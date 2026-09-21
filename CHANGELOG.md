@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Added
+
+- The `terminal` class includes `cosmic-term` (with the existing `cosmic-comp`
+  compositor), `xterm`/`uxterm`, `qterminal`, `lxterminal`, `mate-terminal`,
+  `contour`, and `blackbox-terminal`, so idle shells fold into those rows.
+
 ### Changed
 
 - `--explain` is one `/proc` walk. It no longer waits `--interval` for rates

@@ -1200,7 +1200,7 @@ mod tests {
         let r = rules.report(&Rules::builtin());
         assert_eq!(r.failed, 0, "{}", r.lines.join("\n"));
         assert!(r.lines.is_empty(), "{}", r.lines.join("\n"));
-        assert_eq!(r.examples, 134);
+        assert_eq!(r.examples, 137);
     }
 
     /// Every variant of a derived enum, by index: serde deserializes one from
@@ -1637,7 +1637,7 @@ mod tests {
                 .any(|l| l.starts_with("90-a.json:x#0 (xdg): "))
         );
         assert!(r.lines.iter().any(|l| l.starts_with("91-b.json (xdg): ")));
-        assert_eq!(r.examples, 135);
+        assert_eq!(r.examples, 138);
     }
 
     #[test]

@@ -733,7 +733,7 @@ fn explain_names_the_placement_rule_for_its_identity() {
     let explain = |cmd: &mut std::process::Command| {
         String::from_utf8_lossy(&cmd.output().expect("run heft --explain").stdout).into_owned()
     };
-    let first = explain(&mut heft(&["--explain", &me, "--interval", &fast()]));
+    let first = explain(&mut heft(&["--explain", &me]));
     let ident = first
         .lines()
         .find_map(|l| l.trim_start().strip_prefix("identity"))
@@ -746,8 +746,7 @@ fn explain_names_the_placement_rule_for_its_identity() {
     let rule = serde_json::json!({"stage": "placement", "rules": [
         {"id": "pin", "match": {"identity": ident}, "folder": "applications"}]});
     std::fs::write(dir.join("90-mine.json"), rule.to_string()).expect("write rule");
-    let second =
-        explain(heft(&["--explain", &me, "--interval", &fast()]).env("HEFT_RULES_PATH", &dir));
+    let second = explain(heft(&["--explain", &me]).env("HEFT_RULES_PATH", &dir));
     std::fs::remove_dir_all(&dir).ok();
     assert!(
         second
@@ -761,7 +760,7 @@ fn explain_names_the_placement_rule_for_its_identity() {
 /// 2^22, so this pid can never exist.
 #[test]
 fn explain_exits_non_zero_for_a_pid_it_cannot_see() {
-    let out = heft(&["--explain", "999999999", "--interval", &fast()])
+    let out = heft(&["--explain", "999999999"])
         .output()
         .expect("run heft --explain");
     let stdout = String::from_utf8_lossy(&out.stdout);
@@ -776,7 +775,7 @@ fn explain_exits_non_zero_for_a_pid_it_cannot_see() {
 #[test]
 fn explain_ends_quietly_when_the_reader_closes() {
     let me = std::process::id().to_string();
-    let mut child = heft(&["--explain", &me, "--interval", "0.3"])
+    let mut child = heft(&["--explain", &me])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -793,7 +792,7 @@ fn explain_ends_quietly_when_the_reader_closes() {
 #[test]
 fn explain_draws_its_path_in_the_glyph_set_asked_for() {
     let me = std::process::id().to_string();
-    let out = heft(&["--glyphs", "ascii", "--explain", &me, "--interval", &fast()])
+    let out = heft(&["--glyphs", "ascii", "--explain", &me])
         .output()
         .expect("run heft --explain");
     let out = String::from_utf8_lossy(&out.stdout);

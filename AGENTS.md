@@ -227,9 +227,11 @@ facts against the merged set, so anything an ancestor walk decides stays a
 fixture test.
 
 `--explain <PID>` is `src/explain.rs`, whose module doc carries the design.
-`locate` recurses through `ProcNode::children`, since the pid asked about is
-usually a folded worker, and offers no key for a container or System row
-because `override_place` cannot move one.
+`proc::sample_placement` is one walk and grouping, not `sample_world`'s
+sleep-and-second-tick: the report never prints rates. `locate` recurses
+through `ProcNode::children`, since the pid asked about is usually a folded
+worker, and offers no key for a container or System row because
+`override_place` cannot move one.
 
 `--fixture` (`proc::print_fixture`) is the other half: a grouping report from
 a desktop heft has never run on arrives as the `tests/grouping.rs` fixture

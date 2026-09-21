@@ -105,7 +105,8 @@ than 1% (or 1 MiB) since its last read, for up to six PSS periods per 512 MiB
 of RSS, and never more than 60. A value below the 0.05s floor is a usage error.
 
 A one-shot `--once` or `--json` takes two `/proc` walks `--interval` apart so
-rates exist, and always reads PSS.
+rates exist, and always reads PSS. `--explain` is one walk: grouping does not
+use rates, so it does not wait `--interval`. The flag is still accepted.
 
 The TUI and `--follow` keep each process's `stat`, `statm` and `io` open
 between ticks, which raises heft's soft open-file limit toward the hard one;

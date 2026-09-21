@@ -61,7 +61,10 @@ fn main() -> ExitCode {
     let pss_interval = check_interval("pss-interval", cli.pss_interval).max(interval);
     let view = resolve_view(&cli);
     let result = if let Some(pid) = cli.explain {
-        heft::explain::run(pid, interval)
+        // Grouping does not use rates, so this is one walk rather than
+        // `sample_world`'s sleep-and-second-tick. `--interval` is still
+        // checked above so a typo on a combined command is reported.
+        heft::explain::run(pid)
     } else if cli.fixture {
         heft::proc::print_fixture().map(|()| true)
     } else {

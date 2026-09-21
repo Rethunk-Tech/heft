@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Changed
+
+- `--explain` is one `/proc` walk. It no longer waits `--interval` for rates
+  it never prints.
+
 ## 0.12.1 - 2026-09-19
 
 ### Added

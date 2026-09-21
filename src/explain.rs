@@ -239,8 +239,8 @@ fn trace(rules: &Rules, p: Option<&Process>, ident: &str) -> Vec<String> {
 /// # Errors
 ///
 /// Returns an error if stdout cannot be written.
-pub fn run(pid: u32, interval: Duration) -> Result<bool, Error> {
-    let tree = proc::sample_world(interval, false);
+pub fn run(pid: u32) -> Result<bool, Error> {
+    let tree = proc::sample_placement();
     let found = locate(&tree, pid);
     // `proc::detail` answers with the fields it could read, so a pid that is
     // not there at all comes back as a column of blanks rather than nothing.
@@ -281,8 +281,8 @@ pub fn run(pid: u32, interval: Duration) -> Result<bool, Error> {
             concat!(
                 "\n",
                 "  placed    nowhere: heft read this process but no row holds it.\n",
-                "            A kernel thread with no cgroup, or it exited between\n",
-                "            the two walks a sample takes.",
+                "            A kernel thread with no cgroup, or it exited after\n",
+                "            the walk grouping used.",
             )
         )?;
         return Ok(true);

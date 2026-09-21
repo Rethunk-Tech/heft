@@ -1081,6 +1081,27 @@ pub(crate) fn sample_world(interval: Duration, stalls: bool) -> HostTree {
     sampler.tick(true)
 }
 
+/// One `/proc` walk and grouping, no rate interval. `--explain` only needs
+/// where a pid landed; sleeping `--interval` for CPU/IO rates the report
+/// never prints was the whole wait. Containers are still inspected, because
+/// a pid inside one would otherwise land nowhere.
+pub(crate) fn sample_placement() -> HostTree {
+    let rules = crate::rules::Rules::load();
+    let curr = WalkPool::new(usize::MAX).collect(false, false, None);
+    let mut inspect_cache = InspectCache::default();
+    let containers = ContainerIndex::load(&mut inspect_cache, rules);
+    let consts = cpu::host_consts();
+    group::build_tree(
+        &PidMap::default(),
+        &curr,
+        Duration::from_secs(1),
+        &consts,
+        placeholder_tree(),
+        &containers,
+        rules,
+    )
+}
+
 /// `--fixture`: the fields grouping reads, in the shape `tests/grouping.rs`
 /// loads, so a wrong row reported from a desktop heft has never run on becomes
 /// a regression test verbatim. A screenshot or `--json` carries none of exe,

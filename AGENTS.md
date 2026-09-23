@@ -86,10 +86,19 @@ Never read `/proc/pid/mem`. Never ptrace.
   inside the expanded process list. An `.appimage` launcher with no payload
   child bills to the app running from its `.mount_<first six bytes of the file
   name>` mount (`classify::appimage_mount_prefix`, which carries the
-  shared-prefix ceiling). Nested bwrap folds into the payload. `cat`
+  shared-prefix ceiling). Nested bwrap folds into the payload. A worker leaf
+  whose own placement names the helper binary bills to the one other identity
+  in its cgroup, when every process there that is not a launcher, worker,
+  noise, shell or crash helper resolves to that same key
+  (`group::worker_leaf_place`); the launcher that adopted the leaf follows.
+  No such process, or more than one identity, leaves the helper as its own
+  row. That is how `glycin-image-rs` under `bwrap` bills to `anydesk` in a
+  scope whose stem matches neither name, and to `gnome-shell` once
+  `mutter-x11-frames` shares that identity. `cat`
   under a launcher or app bills to that parent; it does not break unique-payload
   folding and does not become its own row.
-- Workers (the `worker` class) fold into that app. Walk ancestors skipping
+- Workers (the `worker` class, glycin loaders included) fold into that app.
+  Walk ancestors skipping
   launchers and other generics, except one an `app` rule names (Cursor's
   bundled `node` agent), which owns the chain; do not invent a script-basename
   identity (`context7-mcp`) when a launching agent (`claude`, `cursor`) is above.

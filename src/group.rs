@@ -532,6 +532,62 @@ fn raw_place(p: &Process, ctx: &Ctx<'_>) -> Place {
     direct_place(p, ctx).unwrap_or_else(|| user_place(p, ctx))
 }
 
+/// A worker with no payload of its own, the zygote fallback.
+///
+/// `raw_place` still names a crash helper's app from its path, and a
+/// container, before the basename. When that answer is the helper's own
+/// basename and every other process in the same cgroup — skipping launchers,
+/// workers, noise, shells and crash helpers — resolves to one identity, the
+/// helper bills there. The launcher that adopted this leaf then bills there
+/// too. No such process, or more than one identity, leaves the helper as its
+/// own row.
+fn worker_leaf_place(
+    child: &Process,
+    curr: &Procs,
+    ctx: &Ctx<'_>,
+    memo: &mut PidMap<Place>,
+    walking: &mut PidSet,
+    depth: usize,
+) -> Place {
+    let place = raw_place(child, ctx);
+    let own = classify::name_ref(child);
+    if place.key != own {
+        return place;
+    }
+    let mut siblings: Vec<&Process> = ctx
+        .procs
+        .values()
+        .filter(|q| {
+            q.pid != child.pid
+                && q.cgroup == child.cgroup
+                && !ctx.classes(q).intersects(
+                    Classes::LAUNCHER
+                        | Classes::WORKER
+                        | Classes::NOISE
+                        | Classes::SHELL
+                        | Classes::CRASH_HELPER,
+                )
+        })
+        .collect();
+    if siblings.is_empty() {
+        return place;
+    }
+    siblings.sort_unstable_by_key(|q| q.pid);
+    let mut agreed: Option<Place> = None;
+    for sib in siblings {
+        let Some(next) = resolve_one(sib.pid, curr, ctx, memo, walking, depth + 1) else {
+            return place;
+        };
+        if next.key == own || agreed.as_ref().is_some_and(|prev| prev.key != next.key) {
+            return place;
+        }
+        if agreed.is_none() {
+            agreed = Some(next);
+        }
+    }
+    agreed.unwrap_or(place)
+}
+
 /// Apply the placement stage to a finished placement. It runs last, so a pin
 /// beats every built-in table; it runs only on the two user-owned folders, so
 /// no rule can pull a container or a kernel thread out of where it belongs.
@@ -622,11 +678,10 @@ fn unique_descendant_ident(
             {
                 kids.push(p);
             } else {
-                // Zygote-only sandbox: no non-worker grandchild to resolve, so
-                // the helper answers for itself. `raw_place` rather than
-                // `user_place` because a worker can still be a crash helper
-                // that names its own app, or live in a container.
-                kids.push(raw_place(child, ctx));
+                // No non-worker grandchild. A crash helper or a container still
+                // names itself through `raw_place`; a helper whose answer is
+                // its own basename bills to the one other identity in its cgroup.
+                kids.push(worker_leaf_place(child, curr, ctx, memo, walking, depth));
             }
             continue;
         }

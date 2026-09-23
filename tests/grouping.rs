@@ -85,6 +85,24 @@ fn load(path: &str, rules: &Rules) -> (PidMap<Process>, ContainerIndex, HostHead
     (curr, idx, header)
 }
 
+fn tree_from(procs: Vec<Process>) -> HostTree {
+    let curr = PidMap::from_iter(procs.into_iter().map(|p| (p.pid, p)));
+    let header = HostHeader {
+        nproc: 1,
+        clk_tck: 100,
+        page_size: 4096,
+    };
+    build_tree(
+        &curr,
+        &curr,
+        Duration::from_secs(1),
+        &header,
+        HostTree::default(),
+        &ContainerIndex::default(),
+        &Rules::builtin(),
+    )
+}
+
 fn tree_of(path: &str, rules: &Rules) -> HostTree {
     let (curr, idx, header) = load(path, rules);
     build_tree(
@@ -661,6 +679,117 @@ fn a_lone_crash_helper_under_a_launcher_bills_to_its_app() {
         "a crash helper is never its own application row: {:?}",
         titles(&user.applications)
     );
+}
+
+/// Glycin loaders are sandboxed workers. `bwrap` would adopt the loader's own
+/// basename; when the cgroup's other non-helper processes resolve to one
+/// identity, the loader and the launcher bill there. Two identities leave the
+/// loader as its own row. A crash helper that already named its app from its
+/// path is not moved onto a sibling.
+#[test]
+fn a_sandboxed_glycin_loader_bills_to_the_one_app_in_its_cgroup() {
+    let at = |pid, ppid, comm: &str, exe: &str, cgroup: &str| Process {
+        pid,
+        ppid,
+        pgrp: i32::try_from(pid).expect("pid fits i32"),
+        uid: 1000,
+        comm: comm.into(),
+        exe: Some(exe.into()),
+        cmdline: vec![comm.into()].into(),
+        cgroup: cgroup.into(),
+        ..Process::default()
+    };
+    let anydesk_scope = "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-gnome-anydesk_global_tray-9200.scope";
+    let shell =
+        "0::/user.slice/user-1000.slice/user@1000.service/app.slice/org.gnome.Shell@user.service";
+    let mixed = "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-unrelated-9.scope";
+    let shared = "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-shared-3.scope";
+    let loader = "/usr/libexec/glycin-loaders/2+/glycin-image-rs";
+
+    let anydesk = tree_from(vec![
+        at(2, 1, "anydesk", "/usr/bin/anydesk", anydesk_scope),
+        at(3, 1, "bwrap", "/usr/bin/bwrap", anydesk_scope),
+        at(4, 3, "glycin-image-rs", loader, anydesk_scope),
+    ]);
+    let user = user_of(&anydesk, 1000);
+    assert_eq!(
+        titles(&user.applications),
+        ["anydesk"],
+        "the scope stem matches neither binary: {:?}",
+        titles(&user.applications)
+    );
+    assert!(user.user_services.is_empty());
+    let names = proc_names(&user.applications[0]);
+    assert!(
+        names.iter().any(|n| n == "bwrap") && names.iter().any(|n| n == "glycin-image-rs"),
+        "bwrap and the loader stay visible under anydesk: {names:?}"
+    );
+
+    let gnome = tree_from(vec![
+        at(2, 1, "gnome-shell", "/usr/bin/gnome-shell", shell),
+        at(
+            3,
+            1,
+            "mutter-x11-fram",
+            "/usr/libexec/mutter-x11-frames",
+            shell,
+        ),
+        at(4, 1, "bwrap", "/usr/bin/bwrap", shell),
+        at(5, 4, "glycin-image-rs", loader, shell),
+    ]);
+    let user = user_of(&gnome, 1000);
+    assert!(
+        user.applications.is_empty(),
+        "the loader must not stay an application: {:?}",
+        titles(&user.applications)
+    );
+    assert_eq!(titles(&user.user_services), ["gnome-shell"]);
+    let names = proc_names(&user.user_services[0]);
+    for n in [
+        "gnome-shell",
+        "mutter-x11-frames",
+        "bwrap",
+        "glycin-image-rs",
+    ] {
+        assert!(names.iter().any(|p| p == n), "missing {n} in {names:?}");
+    }
+
+    let split = tree_from(vec![
+        at(2, 1, "anydesk", "/usr/bin/anydesk", mixed),
+        at(3, 1, "vivaldi-bin", "/usr/bin/vivaldi-bin", mixed),
+        at(4, 1, "bwrap", "/usr/bin/bwrap", mixed),
+        at(5, 4, "glycin-image-rs", loader, mixed),
+    ]);
+    let apps = &user_of(&split, 1000).applications;
+    assert_eq!(titles(apps), ["anydesk", "glycin-image-rs", "vivaldi-bin"]);
+    let glycin = proc_names(ident(apps, "glycin-image-rs"));
+    assert!(
+        glycin.iter().any(|n| n == "bwrap") && glycin.iter().any(|n| n == "glycin-image-rs"),
+        "{glycin:?}"
+    );
+    assert_eq!(glycin.len(), 2, "{glycin:?}");
+    assert_eq!(proc_names(ident(apps, "anydesk")), ["anydesk"]);
+    assert_eq!(proc_names(ident(apps, "vivaldi-bin")), ["vivaldi-bin"]);
+
+    let crash = tree_from(vec![
+        at(2, 1, "anydesk", "/usr/bin/anydesk", shared),
+        at(3, 1, "bwrap", "/usr/bin/bwrap", shared),
+        at(
+            4,
+            3,
+            "crashhelper",
+            "/usr/lib64/firefox/crashhelper",
+            shared,
+        ),
+    ]);
+    let apps = &user_of(&crash, 1000).applications;
+    assert_eq!(titles(apps), ["anydesk", "firefox"]);
+    let firefox = proc_names(ident(apps, "firefox"));
+    assert!(
+        firefox.iter().any(|n| n == "crashhelper") && firefox.iter().any(|n| n == "bwrap"),
+        "{firefox:?}"
+    );
+    assert_eq!(proc_names(ident(apps, "anydesk")), ["anydesk"]);
 }
 
 #[test]

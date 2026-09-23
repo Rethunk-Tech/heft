@@ -10,6 +10,8 @@
 
 ### Changed
 
+- `mutter-x11-frames` (comm often truncated to `mutter-x11-fram`) folds into
+  `gnome-shell`. It is the frames helper, not the `mutter` compositor.
 - `--explain` is one `/proc` walk. It no longer waits `--interval` for rates
   it never prints.
 

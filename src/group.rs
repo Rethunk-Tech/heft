@@ -230,40 +230,52 @@ fn compute_place(
     }
 
     let classes = ctx.classes(p);
-    if classes.intersects(Classes::WORKER)
-        && let Some(parent) = resolve_one(p.ppid, curr, ctx, memo, walking, depth + 1)
-        && parent.folder != Folder::System
-        // Asked of the ppid's RESOLVED identity, not its process: a `systemd`
-        // that resolved into a container is a legal fold target, while any
-        // process that folded onto a no_absorb row is not. Not interchangeable
-        // with `classify::absorbs_generic`, which judges the raw process.
-        && !ctx
-            .rules
-            .classes_of_name(&parent.key)
-            .intersects(Classes::NO_ABSORB)
-    {
-        return Place {
-            instance: ctx.instance(p),
-            ..parent
-        };
+    if classes.intersects(Classes::WORKER) {
+        if let Some(parent) = resolve_one(p.ppid, curr, ctx, memo, walking, depth + 1)
+            && parent.folder != Folder::System
+            // Asked of the ppid's RESOLVED identity, not its process: a `systemd`
+            // that resolved into a container is a legal fold target, while any
+            // process that folded onto a no_absorb row is not. Not interchangeable
+            // with `classify::absorbs_generic`, which judges the raw process.
+            && !ctx
+                .rules
+                .classes_of_name(&parent.key)
+                .intersects(Classes::NO_ABSORB)
+        {
+            return Place {
+                instance: ctx.instance(p),
+                ..parent
+            };
+        }
+        if let Some(place) = lying_scope_place(p, curr, ctx, memo, walking, depth + 1) {
+            return place;
+        }
     }
 
     // Pipe helpers under a launcher (flatpak bwrap `cat`) or an app (vivaldi).
     // Immediate parent only — never a sibling identity under a mixed shell.
-    if classes.intersects(Classes::NOISE)
-        && let Some(parent) = resolve_one(p.ppid, curr, ctx, memo, walking, depth + 1)
-        && parent.folder != Folder::System
-    {
-        return Place {
-            instance: ctx.instance(p),
-            ..parent
-        };
+    // A no_absorb parent is not a fold target; use the lying-scope owner.
+    if classes.intersects(Classes::NOISE) {
+        let parent_is_no_absorb = curr
+            .get(&p.ppid)
+            .is_some_and(|q| ctx.classes(q).intersects(Classes::NO_ABSORB));
+        if parent_is_no_absorb {
+            if let Some(place) = lying_scope_place(p, curr, ctx, memo, walking, depth + 1) {
+                return place;
+            }
+        } else if let Some(parent) = resolve_one(p.ppid, curr, ctx, memo, walking, depth + 1)
+            && parent.folder != Folder::System
+        {
+            return Place {
+                instance: ctx.instance(p),
+                ..parent
+            };
+        }
     }
 
     // Launchers and shells share unique-payload folding: the helper has no
-    // top-level row when a single child identity exists. Interactive shells
-    // are included so a `bash` that launched `claude` bills there; an idle
-    // leftover folds into the terminal below, not here.
+    // top-level row when a single child identity exists. A shell with only
+    // noise descendants folds into the launching app or a terminal below.
     if classes.intersects(Classes::LAUNCHER | Classes::SHELL) {
         if let Some(payload) = unique_descendant_ident(p.pid, curr, ctx, memo, walking, depth + 1) {
             return Place {
@@ -312,21 +324,37 @@ fn compute_place(
                 };
             }
         }
-        // Idle interactive shell: not an application. The resolved parent
-        // identity is the terminal that owns the tty. A unique payload child
-        // already returned above, same walk as a launcher.
-        if classify::is_interactive_shell(p, classes)
-            && let Some(parent) = resolve_one(p.ppid, curr, ctx, memo, walking, depth + 1)
-            && parent.folder != Folder::System
-            && ctx
-                .rules
-                .classes_of_name(&parent.key)
-                .intersects(Classes::TERMINAL)
-        {
-            return Place {
-                instance: ctx.instance(p),
-                ..parent
-            };
+        // No unique non-noise payload: fold into the launching app, else a
+        // terminal-class ancestor. Covers idle interactive shells and
+        // `bash -c` that only ran utilities.
+        if classes.intersects(Classes::SHELL) {
+            if let Some(owner) = owning_app_ancestor(p.ppid, curr, ctx, memo, walking, depth + 1)
+                && matches!(owner.folder, Folder::Applications | Folder::UserServices)
+            {
+                return Place {
+                    instance: ctx.instance(p),
+                    ..owner
+                };
+            }
+            let mut pid = p.ppid;
+            for d in (depth + 1)..MAX_WALK {
+                let Some(anc) = curr.get(&pid) else {
+                    break;
+                };
+                if let Some(place) = resolve_one(pid, curr, ctx, memo, walking, d)
+                    && place.folder != Folder::System
+                    && ctx
+                        .rules
+                        .classes_of_name(&place.key)
+                        .intersects(Classes::TERMINAL)
+                {
+                    return Place {
+                        instance: ctx.instance(p),
+                        ..place
+                    };
+                }
+                pid = anc.ppid;
+            }
         }
     }
 

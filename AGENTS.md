@@ -95,8 +95,12 @@ Never read `/proc/pid/mem`. Never ptrace.
   row. That is how `glycin-image-rs` under `bwrap` bills to `anydesk` in a
   scope whose stem matches neither name, and to `gnome-shell` once
   `mutter-x11-frames` shares that identity. `cat`
-  under a launcher or app bills to that parent; it does not break unique-payload
-  folding and does not become its own row.
+  under a launcher or app bills to that parent; so do the other `noise` class
+  names (`sleep`, `tee`, `timeout`, `time`, `git`, `ssh`, `go`, `gopls`,
+  `gitleaks`, `gpg-agent`, `dirmngr`, `keyboxd`, `scdaemon`, `rustc`, and a
+  comm ending `.test`); they do not break unique-payload folding and do not
+  become their own row. Noise whose parent is `systemd --user` uses the lying
+  scope owner rather than the systemd row. `chrome-headless-shell` is a worker.
 - Workers (the `worker` class, glycin loaders included) fold into that app.
   Walk ancestors skipping
   launchers and other generics, except one an `app` rule names (Cursor's
@@ -139,10 +143,10 @@ Never read `/proc/pid/mem`. Never ptrace.
   it a process is placed on its own facts. The process forest nests at most
   `group::MAX_PROC_DEPTH`, whose doc carries the JSON depth arithmetic.
 - Split when the child's resolved identity differs and the child is a real app.
-  Idle interactive shells fold into their terminal (the `terminal` class);
-  a unique payload child (claude, dstat) takes the owning shell, the same
-  walk as a launcher. A shell with no terminal parent and no unique payload
-  stays Applications.
+  A unique non-noise payload child (claude, dstat) takes the owning shell, the
+  same walk as a launcher. A shell with only noise utilities (or none) folds
+  into `owning_app_ancestor` when that place is Applications or User Services,
+  else a terminal-class ancestor; otherwise stays Applications.
 - Generic interpreters (the `generics` class rule) fall back to the user unit or
   a distinctive script basename (`identity::generic_fallback`) so they do not
   collapse into one interpreter row. Non-distinctive script basenames are the
@@ -185,7 +189,7 @@ Each of these has one home; a second copy is the defect.
 `rules.d/*.json` holds every table-shaped grouping decision and `src/rules.rs`
 evaluates it. Procedures stay Rust: the ancestor walks in `group.rs`,
 `classify::crash_helper_app`, `classify::launcher_payload_hint`,
-`classify::is_interactive_shell`, `identity::generic_fallback`, and container,
+`identity::generic_fallback`, and container,
 machine and System bucketing. `build.rs` embeds the directory through a
 generated `include_str!` table, sorted because `read_dir` order is
 machine-dependent, so a file added there cannot be left out of the binary.

@@ -1,63 +1,895 @@
 {
   "stage": "class",
   "rules": [
-    { "id": "launchers", "match": { "any": [ { "name": ["bwrap", "flatpak", "flatpak-run", "zypak-helper", "snap-confine", "bunx", "npx", "apprun", "rtk", "firejail", "xdg-dbus-proxy", "zypak-sandbox"] }, { "name_suffix": ".appimage" } ] }, "classes": ["launcher"] },
-    { "id": "generics", "match": { "any": [ { "name": ["bun", "java", "node", "nodejs", "npm", "mainthread", "perl", "ruby", "php"] }, { "name_prefix": ["python", "node-", "npm "] } ] }, "classes": ["generic"] },
-    { "id": "shells", "match": { "name": ["bash", "zsh", "fish", "sh", "dash", "ksh", "nu", "tcsh", "csh"] }, "classes": ["shell"] },
-    { "id": "terminals", "match": { "name": ["ghostty", "gnome-terminal", "gnome-terminal-server", "kgx", "ptyxis", "kitty", "wezterm", "wezterm-gui", "alacritty", "foot", "footclient", "konsole", "xfce4-terminal", "tilix", "terminator", "cosmic-term", "xterm", "uxterm", "qterminal", "lxterminal", "mate-terminal", "contour", "blackbox-terminal"] }, "classes": ["terminal"] },
-    { "id": "compositors", "match": { "name": ["gnome-shell", "mutter", "kwin_wayland", "kwin_x11", "kwin", "sway", "hyprland", "weston", "labwc", "wayfire", "river", "niri", "cosmic-comp"] }, "classes": ["compositor"] },
-    { "id": "crash-helpers", "match": { "name": ["crashhelper", "chrome_crashpad_handler", "chrome_crashpad"] }, "classes": ["crash_helper", "worker"] },
-    { "id": "type-workers", "match": { "arg_prefix": "--type=" }, "classes": ["worker"] },
-    { "id": "glycin-loaders", "match": { "any": [ { "name": "glycin-image-rs" }, { "all": [ { "name_prefix": "glycin-" }, { "exe_contains": "/usr/libexec/glycin-loaders/" } ] } ] }, "classes": ["worker"] },
-    { "id": "noise", "match": { "name": ["cat", "rustc"] }, "classes": ["noise"] },
-    { "id": "no-absorb", "match": { "name": "systemd" }, "classes": ["no_absorb"] },
-    { "id": "anonymous-scripts", "match": { "script": ["main.js", "main", "index.js", "app.js", "server.js", "run.js", "main.ts", "index.ts", "app.ts", "server.ts"] }, "classes": ["anonymous_script"] },
-    { "id": "container-runtimes", "match": { "any": [ { "name": ["conmon", "runc", "crun"] }, { "name_contains": "containerd-shim" } ] }, "classes": ["container_runtime"] }
+    {
+      "id": "launchers",
+      "match": {
+        "any": [
+          {
+            "name": [
+              "bwrap",
+              "flatpak",
+              "flatpak-run",
+              "zypak-helper",
+              "snap-confine",
+              "bunx",
+              "npx",
+              "apprun",
+              "rtk",
+              "firejail",
+              "xdg-dbus-proxy",
+              "zypak-sandbox"
+            ]
+          },
+          {
+            "name_suffix": ".appimage"
+          }
+        ]
+      },
+      "classes": [
+        "launcher"
+      ]
+    },
+    {
+      "id": "generics",
+      "match": {
+        "any": [
+          {
+            "name": [
+              "bun",
+              "java",
+              "node",
+              "nodejs",
+              "npm",
+              "mainthread",
+              "perl",
+              "ruby",
+              "php"
+            ]
+          },
+          {
+            "name_prefix": [
+              "python",
+              "node-",
+              "npm "
+            ]
+          }
+        ]
+      },
+      "classes": [
+        "generic"
+      ]
+    },
+    {
+      "id": "shells",
+      "match": {
+        "name": [
+          "bash",
+          "zsh",
+          "fish",
+          "sh",
+          "dash",
+          "ksh",
+          "nu",
+          "tcsh",
+          "csh"
+        ]
+      },
+      "classes": [
+        "shell"
+      ]
+    },
+    {
+      "id": "terminals",
+      "match": {
+        "name": [
+          "ghostty",
+          "gnome-terminal",
+          "gnome-terminal-server",
+          "kgx",
+          "ptyxis",
+          "kitty",
+          "wezterm",
+          "wezterm-gui",
+          "alacritty",
+          "foot",
+          "footclient",
+          "konsole",
+          "xfce4-terminal",
+          "tilix",
+          "terminator",
+          "cosmic-term",
+          "xterm",
+          "uxterm",
+          "qterminal",
+          "lxterminal",
+          "mate-terminal",
+          "contour",
+          "blackbox-terminal"
+        ]
+      },
+      "classes": [
+        "terminal"
+      ]
+    },
+    {
+      "id": "compositors",
+      "match": {
+        "name": [
+          "gnome-shell",
+          "mutter",
+          "kwin_wayland",
+          "kwin_x11",
+          "kwin",
+          "sway",
+          "hyprland",
+          "weston",
+          "labwc",
+          "wayfire",
+          "river",
+          "niri",
+          "cosmic-comp"
+        ]
+      },
+      "classes": [
+        "compositor"
+      ]
+    },
+    {
+      "id": "crash-helpers",
+      "match": {
+        "name": [
+          "crashhelper",
+          "chrome_crashpad_handler",
+          "chrome_crashpad"
+        ]
+      },
+      "classes": [
+        "crash_helper",
+        "worker"
+      ]
+    },
+    {
+      "id": "type-workers",
+      "match": {
+        "arg_prefix": "--type="
+      },
+      "classes": [
+        "worker"
+      ]
+    },
+    {
+      "id": "chrome-headless",
+      "match": {
+        "name": "chrome-headless-shell"
+      },
+      "classes": [
+        "worker"
+      ]
+    },
+    {
+      "id": "glycin-loaders",
+      "match": {
+        "any": [
+          {
+            "name": "glycin-image-rs"
+          },
+          {
+            "all": [
+              {
+                "name_prefix": "glycin-"
+              },
+              {
+                "exe_contains": "/usr/libexec/glycin-loaders/"
+              }
+            ]
+          }
+        ]
+      },
+      "classes": [
+        "worker"
+      ]
+    },
+    {
+      "id": "noise",
+      "match": {
+        "any": [
+          {
+            "name": [
+              "cat",
+              "rustc",
+              "sleep",
+              "tee",
+              "timeout",
+              "time",
+              "git",
+              "ssh",
+              "go",
+              "gopls",
+              "gitleaks",
+              "gpg-agent",
+              "dirmngr",
+              "keyboxd",
+              "scdaemon"
+            ]
+          },
+          {
+            "name_suffix": ".test"
+          }
+        ]
+      },
+      "classes": [
+        "noise"
+      ]
+    },
+    {
+      "id": "no-absorb",
+      "match": {
+        "name": "systemd"
+      },
+      "classes": [
+        "no_absorb"
+      ]
+    },
+    {
+      "id": "anonymous-scripts",
+      "match": {
+        "script": [
+          "main.js",
+          "main",
+          "index.js",
+          "app.js",
+          "server.js",
+          "run.js",
+          "main.ts",
+          "index.ts",
+          "app.ts",
+          "server.ts"
+        ]
+      },
+      "classes": [
+        "anonymous_script"
+      ]
+    },
+    {
+      "id": "container-runtimes",
+      "match": {
+        "any": [
+          {
+            "name": [
+              "conmon",
+              "runc",
+              "crun"
+            ]
+          },
+          {
+            "name_contains": "containerd-shim"
+          }
+        ]
+      },
+      "classes": [
+        "container_runtime"
+      ]
+    }
   ],
   "examples": [
-    { "comm": "bunx", "exe": "/usr/bin/bunx", "cmdline": ["bunx", "@x"], "expect": { "classes": ["launcher"] } },
-    { "comm": "Cursor-x86_64.AppImage", "exe": "/opt/Cursor-x86_64.AppImage", "expect": { "classes": ["launcher"] } },
-    { "comm": "cursor.appimage", "exe": "/home/x/cursor.appimage", "expect": { "classes": ["launcher"] } },
-    { "comm": "zypak-helper", "exe": "/usr/bin/zypak-helper", "cmdline": ["zypak-helper", "child"], "expect": { "classes": ["launcher"] } },
-    { "comm": "cursor", "exe": "/usr/bin/cursor", "cmdline": ["cursor"], "expect": { "classes": [] } },
-    { "comm": "bash", "exe": "/usr/bin/bash", "cmdline": ["bash", "/app/bin/AppRun"], "expect": { "classes": ["shell"] } },
-    { "comm": "python3.12", "exe": "/usr/bin/python3.12", "cmdline": ["python3.12", "x.py"], "expect": { "classes": ["generic"] } },
-    { "comm": "npm", "exe": "/usr/bin/npm", "cmdline": ["npm", "exec", "@upstash/context7-mcp"], "expect": { "classes": ["generic"] } },
-    { "comm": "npm exec @upsta", "exe": "/usr/bin/node-24", "cmdline": ["npm", "exec", "@upstash/context7-mcp"], "expect": { "classes": ["generic"] } },
-    { "comm": "gnome-shell", "exe": "/usr/bin/gnome-shell", "expect": { "classes": ["compositor"] } },
-    { "comm": "npmrc-tool", "exe": "/usr/bin/npmrc-tool", "expect": { "classes": [] } },
-    { "comm": "bash", "exe": "/usr/bin/bash", "cmdline": ["-bash"], "expect": { "classes": ["shell"] } },
-    { "comm": "bash", "exe": "/usr/bin/bash", "cmdline": ["/bin/bash", "--posix"], "expect": { "classes": ["shell"] } },
-    { "comm": "bashful", "exe": "/usr/bin/bashful", "expect": { "classes": [] } },
-    { "comm": "ghostty", "exe": "/usr/bin/ghostty", "cmdline": ["/usr/bin/ghostty"], "expect": { "classes": ["terminal"] } },
-    { "comm": "cosmic-term", "exe": "/usr/bin/cosmic-term", "expect": { "classes": ["terminal"] } },
-    { "comm": "xterm", "exe": "/usr/bin/xterm", "expect": { "classes": ["terminal"] } },
-    { "comm": "qterminal", "exe": "/usr/bin/qterminal", "expect": { "classes": ["terminal"] } },
-    { "comm": "kitten", "exe": "/usr/bin/kitten", "expect": { "classes": [] } },
-    { "comm": "kwin_wayland", "exe": "/usr/bin/kwin_wayland", "expect": { "classes": ["compositor"] } },
-    { "comm": "Hyprland", "exe": "/usr/bin/Hyprland", "expect": { "classes": ["compositor"] } },
-    { "comm": "kwin_wayland_wrapper", "exe": "/usr/bin/kwin_wayland_wrapper", "expect": { "classes": [] } },
-    { "comm": "crashhelper", "exe": "/usr/lib64/firefox/crashhelper", "cmdline": ["crashhelper", "12766", "9", "/tmp/"], "expect": { "classes": ["crash_helper", "worker"] } },
-    { "comm": "crashpad-http-upload", "exe": "/usr/bin/crashpad-http-upload", "expect": { "classes": [] } },
-    { "comm": "cursor", "exe": "/usr/bin/cursor", "cmdline": ["cursor", "--type=renderer"], "expect": { "classes": ["worker"], "rules": ["type-workers"] } },
-    { "comm": "cursor", "exe": "/usr/bin/cursor", "cmdline": ["cursor", "--type"], "expect": { "classes": [] } },
-    { "comm": "glycin-image-rs", "exe": "/usr/libexec/glycin-loaders/2+/glycin-image-rs", "expect": { "classes": ["worker"], "rules": ["glycin-loaders"] } },
-    { "comm": "glycin-svg", "exe": "/usr/libexec/glycin-loaders/2+/glycin-svg", "expect": { "classes": ["worker"], "rules": ["glycin-loaders"] } },
-    { "comm": "glycin-image-rs", "expect": { "classes": ["worker"], "rules": ["glycin-loaders"] } },
-    { "comm": "glycin-svg", "exe": "/usr/bin/glycin-svg", "expect": { "classes": [] } },
-    { "comm": "cat", "exe": "/usr/bin/cat", "cmdline": ["cat"], "expect": { "classes": ["noise"] } },
-    { "comm": "rtk", "exe": "/home/linuxbrew/.linuxbrew/Cellar/rtk/0.49.0/bin/rtk", "cmdline": ["rtk", "bun", "run", "dev"], "expect": { "classes": ["launcher"] } },
-    { "comm": "rustc", "exe": "/home/u/.rustup/toolchains/1.98.0-x86_64-unknown-linux-gnu/bin/rustc", "cmdline": ["rustc", "--crate-name", "heft"], "expect": { "classes": ["noise"] } },
-    { "comm": "catalyst", "exe": "/usr/bin/catalyst", "expect": { "classes": [] } },
-    { "comm": "systemd", "exe": "/usr/lib/systemd/systemd", "cmdline": ["/usr/lib/systemd/systemd", "--user"], "expect": { "classes": ["no_absorb"] } },
-    { "comm": "systemd-oomd", "exe": "/usr/lib/systemd/systemd-oomd", "expect": { "classes": [] } },
-    { "comm": "node", "exe": "/usr/bin/node", "cmdline": ["node", "/srv/app/main.js"], "expect": { "classes": ["generic", "anonymous_script"] } },
-    { "comm": "bun", "exe": "/usr/bin/bun", "cmdline": ["bun", "apps/server/src/main.ts"], "expect": { "classes": ["generic", "anonymous_script"] } },
-    { "comm": "node", "exe": "/usr/bin/node", "cmdline": ["node", "/srv/app/worker.js"], "expect": { "classes": ["generic"] } },
-    { "comm": "Containerd-Shim-Runc-V2", "exe": "/usr/bin/Containerd-Shim-Runc-V2", "expect": { "classes": ["container_runtime"] } },
-    { "comm": "n/a", "exe": "/usr/bin/Conmon", "expect": { "classes": ["container_runtime"] } },
-    { "comm": "RunC", "expect": { "classes": ["container_runtime"] } },
-    { "comm": "CRun", "expect": { "classes": ["container_runtime"] } },
-    { "comm": "containerd", "exe": "/usr/bin/containerd", "expect": { "classes": [] } }
+    {
+      "comm": "bunx",
+      "exe": "/usr/bin/bunx",
+      "cmdline": [
+        "bunx",
+        "@x"
+      ],
+      "expect": {
+        "classes": [
+          "launcher"
+        ]
+      }
+    },
+    {
+      "comm": "Cursor-x86_64.AppImage",
+      "exe": "/opt/Cursor-x86_64.AppImage",
+      "expect": {
+        "classes": [
+          "launcher"
+        ]
+      }
+    },
+    {
+      "comm": "cursor.appimage",
+      "exe": "/home/x/cursor.appimage",
+      "expect": {
+        "classes": [
+          "launcher"
+        ]
+      }
+    },
+    {
+      "comm": "zypak-helper",
+      "exe": "/usr/bin/zypak-helper",
+      "cmdline": [
+        "zypak-helper",
+        "child"
+      ],
+      "expect": {
+        "classes": [
+          "launcher"
+        ]
+      }
+    },
+    {
+      "comm": "cursor",
+      "exe": "/usr/bin/cursor",
+      "cmdline": [
+        "cursor"
+      ],
+      "expect": {
+        "classes": []
+      }
+    },
+    {
+      "comm": "bash",
+      "exe": "/usr/bin/bash",
+      "cmdline": [
+        "bash",
+        "/app/bin/AppRun"
+      ],
+      "expect": {
+        "classes": [
+          "shell"
+        ]
+      }
+    },
+    {
+      "comm": "python3.12",
+      "exe": "/usr/bin/python3.12",
+      "cmdline": [
+        "python3.12",
+        "x.py"
+      ],
+      "expect": {
+        "classes": [
+          "generic"
+        ]
+      }
+    },
+    {
+      "comm": "npm",
+      "exe": "/usr/bin/npm",
+      "cmdline": [
+        "npm",
+        "exec",
+        "@upstash/context7-mcp"
+      ],
+      "expect": {
+        "classes": [
+          "generic"
+        ]
+      }
+    },
+    {
+      "comm": "npm exec @upsta",
+      "exe": "/usr/bin/node-24",
+      "cmdline": [
+        "npm",
+        "exec",
+        "@upstash/context7-mcp"
+      ],
+      "expect": {
+        "classes": [
+          "generic"
+        ]
+      }
+    },
+    {
+      "comm": "gnome-shell",
+      "exe": "/usr/bin/gnome-shell",
+      "expect": {
+        "classes": [
+          "compositor"
+        ]
+      }
+    },
+    {
+      "comm": "npmrc-tool",
+      "exe": "/usr/bin/npmrc-tool",
+      "expect": {
+        "classes": []
+      }
+    },
+    {
+      "comm": "bash",
+      "exe": "/usr/bin/bash",
+      "cmdline": [
+        "-bash"
+      ],
+      "expect": {
+        "classes": [
+          "shell"
+        ]
+      }
+    },
+    {
+      "comm": "bash",
+      "exe": "/usr/bin/bash",
+      "cmdline": [
+        "/bin/bash",
+        "--posix"
+      ],
+      "expect": {
+        "classes": [
+          "shell"
+        ]
+      }
+    },
+    {
+      "comm": "bashful",
+      "exe": "/usr/bin/bashful",
+      "expect": {
+        "classes": []
+      }
+    },
+    {
+      "comm": "ghostty",
+      "exe": "/usr/bin/ghostty",
+      "cmdline": [
+        "/usr/bin/ghostty"
+      ],
+      "expect": {
+        "classes": [
+          "terminal"
+        ]
+      }
+    },
+    {
+      "comm": "cosmic-term",
+      "exe": "/usr/bin/cosmic-term",
+      "expect": {
+        "classes": [
+          "terminal"
+        ]
+      }
+    },
+    {
+      "comm": "xterm",
+      "exe": "/usr/bin/xterm",
+      "expect": {
+        "classes": [
+          "terminal"
+        ]
+      }
+    },
+    {
+      "comm": "qterminal",
+      "exe": "/usr/bin/qterminal",
+      "expect": {
+        "classes": [
+          "terminal"
+        ]
+      }
+    },
+    {
+      "comm": "kitten",
+      "exe": "/usr/bin/kitten",
+      "expect": {
+        "classes": []
+      }
+    },
+    {
+      "comm": "kwin_wayland",
+      "exe": "/usr/bin/kwin_wayland",
+      "expect": {
+        "classes": [
+          "compositor"
+        ]
+      }
+    },
+    {
+      "comm": "Hyprland",
+      "exe": "/usr/bin/Hyprland",
+      "expect": {
+        "classes": [
+          "compositor"
+        ]
+      }
+    },
+    {
+      "comm": "kwin_wayland_wrapper",
+      "exe": "/usr/bin/kwin_wayland_wrapper",
+      "expect": {
+        "classes": []
+      }
+    },
+    {
+      "comm": "crashhelper",
+      "exe": "/usr/lib64/firefox/crashhelper",
+      "cmdline": [
+        "crashhelper",
+        "12766",
+        "9",
+        "/tmp/"
+      ],
+      "expect": {
+        "classes": [
+          "crash_helper",
+          "worker"
+        ]
+      }
+    },
+    {
+      "comm": "crashpad-http-upload",
+      "exe": "/usr/bin/crashpad-http-upload",
+      "expect": {
+        "classes": []
+      }
+    },
+    {
+      "comm": "cursor",
+      "exe": "/usr/bin/cursor",
+      "cmdline": [
+        "cursor",
+        "--type=renderer"
+      ],
+      "expect": {
+        "classes": [
+          "worker"
+        ],
+        "rules": [
+          "type-workers"
+        ]
+      }
+    },
+    {
+      "comm": "cursor",
+      "exe": "/usr/bin/cursor",
+      "cmdline": [
+        "cursor",
+        "--type"
+      ],
+      "expect": {
+        "classes": []
+      }
+    },
+    {
+      "comm": "glycin-image-rs",
+      "exe": "/usr/libexec/glycin-loaders/2+/glycin-image-rs",
+      "expect": {
+        "classes": [
+          "worker"
+        ],
+        "rules": [
+          "glycin-loaders"
+        ]
+      }
+    },
+    {
+      "comm": "glycin-svg",
+      "exe": "/usr/libexec/glycin-loaders/2+/glycin-svg",
+      "expect": {
+        "classes": [
+          "worker"
+        ],
+        "rules": [
+          "glycin-loaders"
+        ]
+      }
+    },
+    {
+      "comm": "glycin-image-rs",
+      "expect": {
+        "classes": [
+          "worker"
+        ],
+        "rules": [
+          "glycin-loaders"
+        ]
+      }
+    },
+    {
+      "comm": "glycin-svg",
+      "exe": "/usr/bin/glycin-svg",
+      "expect": {
+        "classes": []
+      }
+    },
+    {
+      "comm": "cat",
+      "exe": "/usr/bin/cat",
+      "cmdline": [
+        "cat"
+      ],
+      "expect": {
+        "classes": [
+          "noise"
+        ]
+      }
+    },
+    {
+      "comm": "sleep",
+      "exe": "/usr/bin/sleep",
+      "cmdline": [
+        "sleep",
+        "1"
+      ],
+      "expect": {
+        "classes": [
+          "noise"
+        ]
+      }
+    },
+    {
+      "comm": "tee",
+      "exe": "/usr/bin/tee",
+      "expect": {
+        "classes": [
+          "noise"
+        ]
+      }
+    },
+    {
+      "comm": "timeout",
+      "exe": "/usr/bin/timeout",
+      "expect": {
+        "classes": [
+          "noise"
+        ]
+      }
+    },
+    {
+      "comm": "time",
+      "exe": "/usr/bin/time",
+      "expect": {
+        "classes": [
+          "noise"
+        ]
+      }
+    },
+    {
+      "comm": "git",
+      "exe": "/usr/bin/git",
+      "expect": {
+        "classes": [
+          "noise"
+        ]
+      }
+    },
+    {
+      "comm": "ssh",
+      "exe": "/usr/bin/ssh",
+      "expect": {
+        "classes": [
+          "noise"
+        ]
+      }
+    },
+    {
+      "comm": "go",
+      "exe": "/usr/bin/go",
+      "expect": {
+        "classes": [
+          "noise"
+        ]
+      }
+    },
+    {
+      "comm": "gopls",
+      "exe": "/usr/bin/gopls",
+      "expect": {
+        "classes": [
+          "noise"
+        ]
+      }
+    },
+    {
+      "comm": "gitleaks",
+      "exe": "/usr/bin/gitleaks",
+      "expect": {
+        "classes": [
+          "noise"
+        ]
+      }
+    },
+    {
+      "comm": "gpg-agent",
+      "exe": "/usr/bin/gpg-agent",
+      "expect": {
+        "classes": [
+          "noise"
+        ]
+      }
+    },
+    {
+      "comm": "dirmngr",
+      "exe": "/usr/bin/dirmngr",
+      "expect": {
+        "classes": [
+          "noise"
+        ]
+      }
+    },
+    {
+      "comm": "keyboxd",
+      "exe": "/usr/bin/keyboxd",
+      "expect": {
+        "classes": [
+          "noise"
+        ]
+      }
+    },
+    {
+      "comm": "scdaemon",
+      "exe": "/usr/bin/scdaemon",
+      "expect": {
+        "classes": [
+          "noise"
+        ]
+      }
+    },
+    {
+      "comm": "app.test",
+      "exe": "/tmp/app.test",
+      "expect": {
+        "classes": [
+          "noise"
+        ]
+      }
+    },
+    {
+      "comm": "dstat",
+      "exe": "/usr/bin/dstat",
+      "expect": {
+        "classes": []
+      }
+    },
+    {
+      "comm": "chrome-headless-shell",
+      "exe": "/usr/bin/chrome-headless-shell",
+      "expect": {
+        "classes": [
+          "worker"
+        ],
+        "rules": [
+          "chrome-headless"
+        ]
+      }
+    },
+    {
+      "comm": "rtk",
+      "exe": "/home/linuxbrew/.linuxbrew/Cellar/rtk/0.49.0/bin/rtk",
+      "cmdline": [
+        "rtk",
+        "bun",
+        "run",
+        "dev"
+      ],
+      "expect": {
+        "classes": [
+          "launcher"
+        ]
+      }
+    },
+    {
+      "comm": "rustc",
+      "exe": "/home/u/.rustup/toolchains/1.98.0-x86_64-unknown-linux-gnu/bin/rustc",
+      "cmdline": [
+        "rustc",
+        "--crate-name",
+        "heft"
+      ],
+      "expect": {
+        "classes": [
+          "noise"
+        ]
+      }
+    },
+    {
+      "comm": "catalyst",
+      "exe": "/usr/bin/catalyst",
+      "expect": {
+        "classes": []
+      }
+    },
+    {
+      "comm": "systemd",
+      "exe": "/usr/lib/systemd/systemd",
+      "cmdline": [
+        "/usr/lib/systemd/systemd",
+        "--user"
+      ],
+      "expect": {
+        "classes": [
+          "no_absorb"
+        ]
+      }
+    },
+    {
+      "comm": "systemd-oomd",
+      "exe": "/usr/lib/systemd/systemd-oomd",
+      "expect": {
+        "classes": []
+      }
+    },
+    {
+      "comm": "node",
+      "exe": "/usr/bin/node",
+      "cmdline": [
+        "node",
+        "/srv/app/main.js"
+      ],
+      "expect": {
+        "classes": [
+          "generic",
+          "anonymous_script"
+        ]
+      }
+    },
+    {
+      "comm": "bun",
+      "exe": "/usr/bin/bun",
+      "cmdline": [
+        "bun",
+        "apps/server/src/main.ts"
+      ],
+      "expect": {
+        "classes": [
+          "generic",
+          "anonymous_script"
+        ]
+      }
+    },
+    {
+      "comm": "node",
+      "exe": "/usr/bin/node",
+      "cmdline": [
+        "node",
+        "/srv/app/worker.js"
+      ],
+      "expect": {
+        "classes": [
+          "generic"
+        ]
+      }
+    },
+    {
+      "comm": "Containerd-Shim-Runc-V2",
+      "exe": "/usr/bin/Containerd-Shim-Runc-V2",
+      "expect": {
+        "classes": [
+          "container_runtime"
+        ]
+      }
+    },
+    {
+      "comm": "n/a",
+      "exe": "/usr/bin/Conmon",
+      "expect": {
+        "classes": [
+          "container_runtime"
+        ]
+      }
+    },
+    {
+      "comm": "RunC",
+      "expect": {
+        "classes": [
+          "container_runtime"
+        ]
+      }
+    },
+    {
+      "comm": "CRun",
+      "expect": {
+        "classes": [
+          "container_runtime"
+        ]
+      }
+    },
+    {
+      "comm": "containerd",
+      "exe": "/usr/bin/containerd",
+      "expect": {
+        "classes": []
+      }
+    }
   ]
 }

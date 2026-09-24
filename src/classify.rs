@@ -157,23 +157,6 @@ pub(crate) fn absorbs_generic(parent: Classes) -> bool {
     )
 }
 
-pub(crate) fn is_interactive_shell(p: &Process, classes: Classes) -> bool {
-    if !classes.intersects(Classes::SHELL) {
-        return false;
-    }
-    let mut has_c = false;
-    let mut has_path = false;
-    for arg in p.cmdline.iter().skip(1) {
-        if arg == "-c" {
-            has_c = true;
-        }
-        if !arg.starts_with('-') && (arg.contains('/') || looks_script(arg)) {
-            has_path = true;
-        }
-    }
-    !has_c && !has_path
-}
-
 pub(crate) fn launcher_payload_hint(p: &Process, rules: &Rules) -> Option<String> {
     // Case-folded the way the `launchers` class rule folds it: real AppImages ship as
     // `Cursor-x86_64.AppImage`, and `name_ref` does not lowercase. A launcher
@@ -313,25 +296,6 @@ mod tests {
             None,
             "a suffix cut inside a multibyte character is a miss"
         );
-    }
-
-    #[test]
-    fn interactive_shells() {
-        let shell = Classes::SHELL;
-        assert!(is_interactive_shell(&p("bash", &["-bash"]), shell));
-        assert!(
-            is_interactive_shell(&p("bash", &["/bin/bash", "--posix"]), shell),
-            "ghostty's login bash is interactive"
-        );
-        let wrapper = p(
-            "bash",
-            &["bash", "/app/bin/zypak-wrapper", "/app/extra/vscode/code"],
-        );
-        assert!(!is_interactive_shell(&wrapper, shell));
-        assert!(!is_interactive_shell(
-            &p("bashful", &["bashful"]),
-            Classes::default()
-        ));
     }
 
     #[test]

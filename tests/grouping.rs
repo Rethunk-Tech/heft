@@ -1157,6 +1157,147 @@ fn an_idle_shell_folds_into_a_terminal_the_class_list_names() {
 }
 
 #[test]
+fn a_utility_shell_bills_to_the_launching_app_or_terminal() {
+    let row = |pid: u32, ppid: u32, name: &str, exe: &str, args: &[&str]| Process {
+        pid,
+        ppid,
+        pgrp: i32::try_from(pid).expect("fixture pid fits i32"),
+        uid: 1000,
+        comm: name.into(),
+        exe: Some(exe.into()),
+        cmdline: args
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect::<Vec<_>>()
+            .into(),
+        cgroup: "0::/user.slice/user-1000.slice/user@1000.service/app.slice".into(),
+        ..Process::default()
+    };
+    let curr = PidMap::from_iter([
+        (1, row(1, 0, "ghostty", "/usr/bin/ghostty", &["ghostty"])),
+        (
+            2,
+            row(2, 1, "bash", "/usr/bin/bash", &["bash", "-c", "sleep 1"]),
+        ),
+        (3, row(3, 2, "sleep", "/usr/bin/sleep", &["sleep", "1"])),
+        (10, row(10, 0, "cursor", "/usr/bin/cursor", &["cursor"])),
+        (
+            11,
+            row(11, 10, "bash", "/usr/bin/bash", &["bash", "-c", "go test"]),
+        ),
+        (12, row(12, 11, "go", "/usr/bin/go", &["go", "test"])),
+        (
+            13,
+            row(13, 10, "app.test", "/tmp/app.test", &["/tmp/app.test"]),
+        ),
+        (20, row(20, 0, "xterm", "/usr/bin/xterm", &["xterm"])),
+        (21, row(21, 20, "bash", "/usr/bin/bash", &["bash"])),
+        (22, row(22, 21, "dstat", "/usr/bin/dstat", &["dstat"])),
+    ]);
+    let header = HostHeader {
+        nproc: 1,
+        clk_tck: 100,
+        page_size: 4096,
+    };
+    let tree = build_tree(
+        &curr,
+        &curr,
+        Duration::from_secs(1),
+        &header,
+        HostTree::default(),
+        &ContainerIndex::default(),
+        &Rules::builtin(),
+    );
+    let user = user_of(&tree, 1000);
+    assert!(
+        !has(&user.applications, "bash")
+            && !has(&user.applications, "sleep")
+            && !has(&user.applications, "go")
+            && !has(&user.applications, "app.test"),
+        "utility shells and noise must not be Applications rows: {:?}",
+        titles(&user.applications)
+    );
+    let ghostty = proc_names(ident(&user.applications, "ghostty"));
+    assert!(
+        ghostty.iter().any(|n| n == "bash") && ghostty.iter().any(|n| n == "sleep"),
+        "bash -c sleep bills to the terminal: {ghostty:?}"
+    );
+    let cursor = proc_names(ident(&user.applications, "cursor"));
+    assert!(
+        cursor.iter().any(|n| n == "bash")
+            && cursor.iter().any(|n| n == "go")
+            && cursor.iter().any(|n| n == "app.test"),
+        "utility shell and .test bill to the launching app: {cursor:?}"
+    );
+    let dstat = proc_names(ident(&user.applications, "dstat"));
+    assert!(
+        dstat.iter().any(|n| n == "bash") && dstat.iter().any(|n| n == "dstat"),
+        "a real unique payload still takes the shell: {dstat:?}"
+    );
+}
+
+#[test]
+fn noise_orphaned_to_systemd_in_a_lying_scope_bills_to_the_terminal() {
+    let ghostty_cg = "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-com.mitchellh.ghostty.service";
+    let scope = "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-ghostty-surface-transient-20523.scope";
+    let row = |pid: u32, ppid: u32, name: &str, cgroup: &str| Process {
+        pid,
+        ppid,
+        pgrp: i32::try_from(pid).expect("fixture pid fits i32"),
+        uid: 1000,
+        comm: name.into(),
+        exe: Some(format!("/usr/bin/{name}")),
+        cmdline: vec![name.into()].into(),
+        cgroup: cgroup.into(),
+        ..Process::default()
+    };
+    let curr = PidMap::from_iter([
+        (
+            1,
+            Process {
+                pid: 1,
+                ppid: 0,
+                pgrp: 1,
+                uid: 1000,
+                comm: "systemd".into(),
+                exe: Some("/usr/lib/systemd/systemd".into()),
+                cmdline: vec!["/usr/lib/systemd/systemd".into(), "--user".into()].into(),
+                cgroup: "0::/user.slice/user-1000.slice/user@1000.service/init.scope".into(),
+                ..Process::default()
+            },
+        ),
+        (2, row(2, 1, "ghostty", ghostty_cg)),
+        (10, row(10, 1, "gpg-agent", scope)),
+        (11, row(11, 1, "gopls", scope)),
+    ]);
+    let header = HostHeader {
+        nproc: 1,
+        clk_tck: 100,
+        page_size: 4096,
+    };
+    let tree = build_tree(
+        &curr,
+        &curr,
+        Duration::from_secs(1),
+        &header,
+        HostTree::default(),
+        &ContainerIndex::default(),
+        &Rules::builtin(),
+    );
+    let user = user_of(&tree, 1000);
+    assert!(
+        !has(&user.applications, "gpg-agent") && !has(&user.applications, "gopls"),
+        "gpg helpers and gopls must not be Applications rows: {:?}",
+        titles(&user.applications)
+    );
+    let ghostty = proc_names(ident(&user.applications, "ghostty"));
+    assert!(
+        ghostty.iter().any(|n| n == "gpg-agent") && ghostty.iter().any(|n| n == "gopls"),
+        "noise orphans in a lying terminal scope bill to ghostty: {ghostty:?}"
+    );
+}
+
+#[test]
 fn a_malformed_rules_file_is_rejected_rather_than_obeyed() {
     // The loader turns each of these into a stderr warning and built-in
     // behaviour; parsing is where the file is judged.

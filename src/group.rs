@@ -423,19 +423,60 @@ fn compute_place(
         };
     }
 
-    // A command belongs to the app that spawned it. The walk skips launchers,
-    // generics, shells and noise, and stops at a terminal, compositor or
-    // systemd, so the same binary from a terminal keeps its own row.
-    if let Some(owner) = owning_app_ancestor(p.ppid, curr, ctx, memo, walking, depth + 1)
-        && owner.folder == Folder::Applications
-    {
-        return Place {
-            instance: ctx.instance(p),
-            ..owner
-        };
+    // A command belongs to the app that spawned it once a shell, launcher,
+    // generic or noise wrapper sits in between. The same binary from a
+    // terminal stops at that terminal. An app-rule process that exec'd this
+    // one directly does not absorb it: cursor's agent launches claude, and
+    // claude stays its own row.
+    if let Some(owner) = spawned_app(p, curr, ctx, memo, walking, depth + 1) {
+        return owner;
     }
 
     user_place(p, ctx)
+}
+
+/// The Applications place of the app that spawned `p`, if a wrapper sits
+/// between them. A terminal, compositor or systemd ends the walk with no
+/// owner. An app-rule ancestor with no wrapper in between is a separate
+/// application, not this process's owner.
+fn spawned_app(
+    p: &Process,
+    curr: &Procs,
+    ctx: &Ctx<'_>,
+    memo: &mut PidMap<Place>,
+    walking: &mut PidSet,
+    depth: usize,
+) -> Option<Place> {
+    let mut pid = p.ppid;
+    let mut crossed_wrapper = false;
+    for _ in depth..MAX_WALK {
+        let proc = curr.get(&pid)?;
+        let classes = ctx.classes(proc);
+        let named = ctx.rules.app(&ctx.facts(proc)).is_some();
+        if !named
+            && classes
+                .intersects(Classes::LAUNCHER | Classes::GENERIC | Classes::SHELL | Classes::NOISE)
+        {
+            crossed_wrapper = true;
+            pid = proc.ppid;
+            continue;
+        }
+        if !named && !classify::absorbs_generic(classes) {
+            return None;
+        }
+        if named && !crossed_wrapper {
+            return None;
+        }
+        let place = resolve_one(pid, curr, ctx, memo, walking, depth)?;
+        if place.folder != Folder::Applications {
+            return None;
+        }
+        return Some(Place {
+            instance: ctx.instance(p),
+            ..place
+        });
+    }
+    None
 }
 
 /// Owner for a process in a lying `app-…` scope whose parent is

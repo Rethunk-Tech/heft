@@ -1033,9 +1033,10 @@ fn disabling_the_trinity_file_makes_a_tde_module_an_application() {
 }
 
 #[test]
-fn a_generic_orphan_in_a_lying_terminal_scope_keeps_its_own_identity() {
+fn a_lying_scope_bills_helpers_to_the_owning_app_not_a_sibling() {
+    let ghostty_cg = "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-com.mitchellh.ghostty.service";
     let scope = "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-ghostty-surface-transient-20523.scope";
-    let row = |pid: u32, ppid: u32, name: &str, args: &[&str]| Process {
+    let row = |pid: u32, ppid: u32, name: &str, args: &[&str], cgroup: &str| Process {
         pid,
         ppid,
         pgrp: i32::try_from(pid).expect("fixture pid fits i32"),
@@ -1047,7 +1048,7 @@ fn a_generic_orphan_in_a_lying_terminal_scope_keeps_its_own_identity() {
             .map(|s| (*s).to_string())
             .collect::<Vec<_>>()
             .into(),
-        cgroup: scope.into(),
+        cgroup: cgroup.into(),
         ..Process::default()
     };
     let curr = PidMap::from_iter([
@@ -1065,10 +1066,17 @@ fn a_generic_orphan_in_a_lying_terminal_scope_keeps_its_own_identity() {
                 ..Process::default()
             },
         ),
-        (10, row(10, 1, "tee", &["tee"])),
+        (2, row(2, 1, "ghostty", &["ghostty"], ghostty_cg)),
+        (10, row(10, 1, "tee", &["tee"], scope)),
         (
             20,
-            row(20, 1, "bun", &["bun", "run", "--watch", "src/main.ts"]),
+            row(
+                20,
+                1,
+                "bun",
+                &["bun", "run", "--watch", "src/main.ts"],
+                scope,
+            ),
         ),
     ]);
     let header = HostHeader {
@@ -1087,9 +1095,14 @@ fn a_generic_orphan_in_a_lying_terminal_scope_keeps_its_own_identity() {
     );
     let user = user_of(&tree, 1000);
     assert!(
-        has(&user.applications, "bun"),
-        "orphan bun in a lying terminal scope must keep its own identity, not bill to tee: {:?}",
+        !has(&user.applications, "bun"),
+        "lying-scope orphan bun must not keep its own Applications row: {:?}",
         titles(&user.applications)
+    );
+    let ghostty = proc_names(ident(&user.applications, "ghostty"));
+    assert!(
+        ghostty.iter().any(|n| n == "bun"),
+        "orphan bun in a lying ghostty scope bills to ghostty, not tee: {ghostty:?}"
     );
 }
 

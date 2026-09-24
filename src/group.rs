@@ -340,15 +340,19 @@ fn compute_place(
     }
 
     // An orphan reparented to `systemd --user` keeps the cgroup of whoever
-    // started it (a `bun` a Claude Code daemon left in its terminal scope), so
-    // the lowest-pid process there that names an app owns it. Skip when the
-    // unit is lying: that scope's sibling is not a reliable owner.
+    // started it. A lying unit skips sibling adoption: that sibling is often a
+    // utility, not the app. Prefer the Applications ancestor, else the
+    // terminal the scope names.
     if classes.intersects(Classes::GENERIC)
-        && !ctx.judged(p).unit_flags.contains(UnitFlags::LYING)
         && curr
             .get(&p.ppid)
             .is_some_and(|q| ctx.classes(q).intersects(Classes::NO_ABSORB))
-        && let Some(owner) = ctx
+    {
+        if ctx.judged(p).unit_flags.contains(UnitFlags::LYING) {
+            if let Some(place) = lying_scope_place(p, curr, ctx, memo, walking, depth + 1) {
+                return place;
+            }
+        } else if let Some(owner) = ctx
             .procs
             .values()
             .filter(|q| {
@@ -363,13 +367,14 @@ fn compute_place(
                     ) || ctx.rules.app(&ctx.facts(q)).is_some())
             })
             .min_by_key(|q| q.pid)
-        && let Some(place) = resolve_one(owner.pid, curr, ctx, memo, walking, depth + 1)
-        && matches!(place.folder, Folder::Applications | Folder::UserServices)
-    {
-        return Place {
-            instance: ctx.instance(p),
-            ..place
-        };
+            && let Some(place) = resolve_one(owner.pid, curr, ctx, memo, walking, depth + 1)
+            && matches!(place.folder, Folder::Applications | Folder::UserServices)
+        {
+            return Place {
+                instance: ctx.instance(p),
+                ..place
+            };
+        }
     }
 
     // Any other orphan (`wl-copy` forking into the background) keeps the
@@ -391,6 +396,48 @@ fn compute_place(
     }
 
     user_place(p, ctx)
+}
+
+/// Owner for a process in a lying `app-…` scope whose parent is
+/// `systemd --user`: an Applications ancestor, else a terminal whose name is
+/// a hyphen-prefix of the scope stem.
+fn lying_scope_place(
+    p: &Process,
+    curr: &Procs,
+    ctx: &Ctx<'_>,
+    memo: &mut PidMap<Place>,
+    walking: &mut PidSet,
+    depth: usize,
+) -> Option<Place> {
+    if let Some(owner) = owning_app_ancestor(p.ppid, curr, ctx, memo, walking, depth)
+        && owner.folder == Folder::Applications
+    {
+        return Some(Place {
+            instance: ctx.instance(p),
+            ..owner
+        });
+    }
+    let unit = ctx.judged(p).unit.as_deref()?;
+    let (full, _) = identity::app_scope_names(unit)?;
+    let stem = full.to_ascii_lowercase();
+    let term = ctx
+        .procs
+        .values()
+        .filter(|q| {
+            q.uid == p.uid && ctx.classes(q).intersects(Classes::TERMINAL) && {
+                let n = classify::name_ref(q).to_ascii_lowercase();
+                stem == n || stem.starts_with(&format!("{n}-"))
+            }
+        })
+        .min_by_key(|q| q.pid)?;
+    let place = resolve_one(term.pid, curr, ctx, memo, walking, depth)?;
+    if place.folder == Folder::System {
+        return None;
+    }
+    Some(Place {
+        instance: ctx.instance(p),
+        ..place
+    })
 }
 
 fn container_place(p: &Process, ctx: &Ctx<'_>) -> Option<Place> {

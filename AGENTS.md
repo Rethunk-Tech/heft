@@ -116,10 +116,12 @@ Never read `/proc/pid/mem`. Never ptrace.
   falls back to the ancestor walk.
 - A generic orphaned to `systemd --user` bills to the lowest-pid process in its
   exact cgroup that names an app (a `bun` a Claude Code daemon left behind),
-  unless the unit is lying; then it falls through to the process-group leader
-  path and `user_place`. Any other orphan bills to its live process-group
-  leader when that leader is an Applications row (a backgrounded `wl-copy` to
-  `claude`); the comment in `group::compute_place` carries why not User Services.
+  unless the unit is lying; then it takes an Applications `owning_app_ancestor`
+  when one exists, else the terminal-class process whose name is a hyphen-prefix
+  of the lying scope stem, else `user_place`. Any other orphan bills to its live
+  process-group leader when that leader is an Applications row (a backgrounded
+  `wl-copy` to `claude`); the comment in `group::compute_place` carries why not
+  User Services.
 - User Services grouping is one identity for processes that share a systemd
   unit family, RPM/package family, D-Bus well-known name family, or documented
   process architecture — not a comm prefix. Mappings live in the `session`

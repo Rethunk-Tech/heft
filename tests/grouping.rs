@@ -1033,6 +1033,67 @@ fn disabling_the_trinity_file_makes_a_tde_module_an_application() {
 }
 
 #[test]
+fn a_generic_orphan_in_a_lying_terminal_scope_keeps_its_own_identity() {
+    let scope = "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-ghostty-surface-transient-20523.scope";
+    let row = |pid: u32, ppid: u32, name: &str, args: &[&str]| Process {
+        pid,
+        ppid,
+        pgrp: i32::try_from(pid).expect("fixture pid fits i32"),
+        uid: 1000,
+        comm: name.into(),
+        exe: Some(format!("/usr/bin/{name}")),
+        cmdline: args
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect::<Vec<_>>()
+            .into(),
+        cgroup: scope.into(),
+        ..Process::default()
+    };
+    let curr = PidMap::from_iter([
+        (
+            1,
+            Process {
+                pid: 1,
+                ppid: 0,
+                pgrp: 1,
+                uid: 1000,
+                comm: "systemd".into(),
+                exe: Some("/usr/lib/systemd/systemd".into()),
+                cmdline: vec!["/usr/lib/systemd/systemd".into(), "--user".into()].into(),
+                cgroup: "0::/user.slice/user-1000.slice/user@1000.service/init.scope".into(),
+                ..Process::default()
+            },
+        ),
+        (10, row(10, 1, "tee", &["tee"])),
+        (
+            20,
+            row(20, 1, "bun", &["bun", "run", "--watch", "src/main.ts"]),
+        ),
+    ]);
+    let header = HostHeader {
+        nproc: 1,
+        clk_tck: 100,
+        page_size: 4096,
+    };
+    let tree = build_tree(
+        &curr,
+        &curr,
+        Duration::from_secs(1),
+        &header,
+        HostTree::default(),
+        &ContainerIndex::default(),
+        &Rules::builtin(),
+    );
+    let user = user_of(&tree, 1000);
+    assert!(
+        has(&user.applications, "bun"),
+        "orphan bun in a lying terminal scope must keep its own identity, not bill to tee: {:?}",
+        titles(&user.applications)
+    );
+}
+
+#[test]
 fn an_idle_shell_folds_into_a_terminal_the_class_list_names() {
     let row = |pid: u32, ppid: u32, name: &str, args: &[&str]| Process {
         pid,

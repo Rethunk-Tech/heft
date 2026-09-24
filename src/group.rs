@@ -341,8 +341,10 @@ fn compute_place(
 
     // An orphan reparented to `systemd --user` keeps the cgroup of whoever
     // started it (a `bun` a Claude Code daemon left in its terminal scope), so
-    // the lowest-pid process there that names an app owns it.
+    // the lowest-pid process there that names an app owns it. Skip when the
+    // unit is lying: that scope's sibling is not a reliable owner.
     if classes.intersects(Classes::GENERIC)
+        && !ctx.judged(p).unit_flags.contains(UnitFlags::LYING)
         && curr
             .get(&p.ppid)
             .is_some_and(|q| ctx.classes(q).intersects(Classes::NO_ABSORB))

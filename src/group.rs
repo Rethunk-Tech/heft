@@ -423,6 +423,18 @@ fn compute_place(
         };
     }
 
+    // A command belongs to the app that spawned it. The walk skips launchers,
+    // generics, shells and noise, and stops at a terminal, compositor or
+    // systemd, so the same binary from a terminal keeps its own row.
+    if let Some(owner) = owning_app_ancestor(p.ppid, curr, ctx, memo, walking, depth + 1)
+        && owner.folder == Folder::Applications
+    {
+        return Place {
+            instance: ctx.instance(p),
+            ..owner
+        };
+    }
+
     user_place(p, ctx)
 }
 

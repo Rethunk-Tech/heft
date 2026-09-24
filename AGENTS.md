@@ -151,10 +151,14 @@ Never read `/proc/pid/mem`. Never ptrace.
   it a process is placed on its own facts. The process forest nests at most
   `group::MAX_PROC_DEPTH`, whose doc carries the JSON depth arithmetic.
 - Split when the child's resolved identity differs and the child is a real app.
-  A unique non-noise payload child (claude, dstat) takes the owning shell, the
-  same walk as a launcher. A shell with only noise utilities (or none) folds
-  into `owning_app_ancestor` when that place is Applications or User Services,
-  else a terminal-class ancestor; otherwise stays Applications.
+  Before `user_place`, a process whose `owning_app_ancestor` is Applications
+  bills there (same instance). That walk skips launchers, generics, shells and
+  noise and stops at a terminal, compositor or systemd, so a command spawned
+  under an app folds into that app while the same binary from a terminal stays
+  its own row. A unique non-noise payload child (claude, dstat) takes the
+  owning shell, the same walk as a launcher. A shell with only noise utilities
+  (or none) folds into `owning_app_ancestor` when that place is Applications or
+  User Services, else a terminal-class ancestor; otherwise stays Applications.
 - Generic interpreters (the `generics` class rule) fall back to the user unit or
   a distinctive script basename (`identity::generic_fallback`) so they do not
   collapse into one interpreter row. Non-distinctive script basenames are the

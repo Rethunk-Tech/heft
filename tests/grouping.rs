@@ -1236,6 +1236,91 @@ fn a_utility_shell_bills_to_the_launching_app_or_terminal() {
     );
 }
 
+/// A plain command bills to the Applications ancestor that spawned it. The
+/// same binary under a terminal keeps its own row; the shell still takes that
+/// payload. Middles (gate under claude) resolve through the chain.
+#[test]
+fn a_spawned_command_bills_to_the_app_that_spawned_it() {
+    let row = |pid: u32, ppid: u32, name: &str, exe: &str| Process {
+        pid,
+        ppid,
+        pgrp: i32::try_from(pid).expect("fixture pid fits i32"),
+        uid: 1000,
+        comm: name.into(),
+        exe: Some(exe.into()),
+        cmdline: vec![name.into()].into(),
+        cgroup: "0::/user.slice/user-1000.slice/user@1000.service/app.slice".into(),
+        ..Process::default()
+    };
+    let curr = PidMap::from_iter([
+        // gh ← bash ← claude
+        (1, row(1, 0, "claude", "/usr/bin/claude")),
+        (2, row(2, 1, "bash", "/usr/bin/bash")),
+        (3, row(3, 2, "gh", "/usr/bin/gh")),
+        // gh ← bash ← ghostty
+        (10, row(10, 0, "ghostty", "/usr/bin/ghostty")),
+        (11, row(11, 10, "bash", "/usr/bin/bash")),
+        (12, row(12, 11, "gh", "/usr/bin/gh")),
+        // turbo ← node ← gate ← timeout ← bash ← claude (pid 1)
+        (20, row(20, 1, "bash", "/usr/bin/bash")),
+        (21, row(21, 20, "timeout", "/usr/bin/timeout")),
+        (22, row(22, 21, "gate", "/usr/bin/gate")),
+        (23, row(23, 22, "node", "/usr/bin/node")),
+        (24, row(24, 23, "turbo", "/usr/bin/turbo")),
+        // turbo ← gate ← bash ← ghostty (pid 10)
+        (30, row(30, 10, "bash", "/usr/bin/bash")),
+        (31, row(31, 30, "gate", "/usr/bin/gate")),
+        (32, row(32, 31, "turbo", "/usr/bin/turbo")),
+    ]);
+    let header = HostHeader {
+        nproc: 1,
+        clk_tck: 100,
+        page_size: 4096,
+    };
+    let tree = build_tree(
+        &curr,
+        &curr,
+        Duration::from_secs(1),
+        &header,
+        HostTree::default(),
+        &ContainerIndex::default(),
+        &Rules::builtin(),
+    );
+    let user = user_of(&tree, 1000);
+    assert!(
+        has(&user.applications, "claude")
+            && has(&user.applications, "ghostty")
+            && has(&user.applications, "gh")
+            && has(&user.applications, "gate")
+            && !has(&user.applications, "turbo")
+            && !has(&user.applications, "bash")
+            && !has(&user.applications, "timeout")
+            && !has(&user.applications, "node"),
+        "claude and terminal-spawned gh/gate stay rows; tool names under them do not: {:?}",
+        titles(&user.applications)
+    );
+    let claude = proc_names(ident(&user.applications, "claude"));
+    assert!(
+        claude.iter().any(|n| n == "gh")
+            && claude.iter().any(|n| n == "gate")
+            && claude.iter().any(|n| n == "turbo")
+            && claude.iter().any(|n| n == "bash"),
+        "claude-spawned gh and turbo-via-gate bill to claude: {claude:?}"
+    );
+    let gh = proc_names(ident(&user.applications, "gh"));
+    assert!(
+        gh.iter().any(|n| n == "gh") && gh.iter().any(|n| n == "bash"),
+        "terminal-spawned gh keeps its row and takes the shell: {gh:?}"
+    );
+    let gate = proc_names(ident(&user.applications, "gate"));
+    assert!(
+        gate.iter().any(|n| n == "gate")
+            && gate.iter().any(|n| n == "turbo")
+            && gate.iter().any(|n| n == "bash"),
+        "terminal-spawned gate keeps its row; turbo bills there: {gate:?}"
+    );
+}
+
 #[test]
 fn noise_orphaned_to_systemd_in_a_lying_scope_bills_to_the_terminal() {
     let ghostty_cg = "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-com.mitchellh.ghostty.service";

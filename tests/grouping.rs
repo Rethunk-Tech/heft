@@ -1396,6 +1396,70 @@ fn a_service_row_takes_its_unit_stem_not_the_comm() {
 }
 
 #[test]
+fn the_anydesk_system_service_joins_the_user_anydesk_application() {
+    let curr = PidMap::from_iter([
+        (
+            1931,
+            Process {
+                pid: 1931,
+                ppid: 1,
+                pgrp: 1931,
+                uid: 0,
+                comm: "anydesk".into(),
+                exe: Some("/usr/bin/anydesk".into()),
+                cmdline: vec!["anydesk".into(), "--service".into()].into(),
+                cgroup: "0::/system.slice/anydesk.service".into(),
+                ..Process::default()
+            },
+        ),
+        (
+            9200,
+            Process {
+                pid: 9200,
+                ppid: 1,
+                pgrp: 9200,
+                uid: 1000,
+                comm: "anydesk".into(),
+                exe: Some("/usr/bin/anydesk".into()),
+                cmdline: vec!["anydesk".into(), "--tray".into()].into(),
+                cgroup: "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-gnome-anydesk_global_tray-9200.scope".into(),
+                ..Process::default()
+            },
+        ),
+    ]);
+    let header = HostHeader {
+        nproc: 1,
+        clk_tck: 100,
+        page_size: 4096,
+    };
+    let tree = build_tree(
+        &curr,
+        &curr,
+        Duration::from_secs(1),
+        &header,
+        HostTree::default(),
+        &ContainerIndex::default(),
+        &Rules::builtin(),
+    );
+    assert!(
+        !has(&tree.system, "anydesk"),
+        "anydesk --service must not stay on System when the tray exists: {:?}",
+        titles(&tree.system)
+    );
+    let user = user_of(&tree, 1000);
+    assert!(
+        !has(&user.user_services, "anydesk") && !has(&user.user_services, "gnome-shell"),
+        "anydesk tray must stay Applications, not fold into gnome-shell: {:?}",
+        titles(&user.user_services)
+    );
+    let anydesk = proc_names(ident(&user.applications, "anydesk"));
+    assert!(
+        anydesk.iter().any(|n| n == "anydesk") && anydesk.len() == 2,
+        "system --service and user --tray share the anydesk Applications row: {anydesk:?}"
+    );
+}
+
+#[test]
 fn a_malformed_rules_file_is_rejected_rather_than_obeyed() {
     // The loader turns each of these into a stderr warning and built-in
     // behaviour; parsing is where the file is judged.

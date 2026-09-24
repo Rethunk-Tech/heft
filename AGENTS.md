@@ -55,7 +55,10 @@ Never read `/proc/pid/mem`. Never ptrace.
 
 - Bucket (`src/group.rs`): docker/libpod scope or helper that names that id →
   Containers; `identity::is_kernel` or leftover `system.slice`
-  (`in_system_slice` and not `in_user_slice`) → System; else that uid's User,
+  (`in_system_slice` and not `in_user_slice`) → System, except a system
+  `.service` whose stem matches a user Applications process (not a user
+  `.service`) bills to that application (`anydesk --service` beside the tray);
+  else that uid's User,
   where a user-instance `*.service` not starting with `app-` is User Services
   and the rest Applications. `init.scope` + `systemd --user` is a user
   service; so is the `compositor` class whatever its unit looks like.

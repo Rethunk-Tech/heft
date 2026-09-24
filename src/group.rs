@@ -516,16 +516,38 @@ fn machine_place(p: &Process, ctx: &Ctx<'_>) -> Option<Place> {
 
 fn system_place(p: &Process, ctx: &Ctx<'_>) -> Place {
     let j = ctx.judged(p);
+    if identity::is_kernel(p) {
+        return Place {
+            folder: Folder::System,
+            uid: None,
+            key: "kernel".to_string(),
+            instance: ctx.instance(p),
+            member: None,
+        };
+    }
+    let key = service_unit_stem(j).map_or_else(|| name_of(p), str::to_string);
+    // A system `.service` whose stem matches a user Applications process
+    // (anydesk --service beside the tray) bills to that application rather
+    // than a System row. Skip user `.service` peers so session daemons stay
+    // on System when the user side is User Services.
+    if let Some(peer) = ctx.procs.values().find(|q| {
+        q.pid != p.pid
+            && identity::in_user_slice(&q.cgroup)
+            && !ctx.judged(q).unit_flags.contains(UnitFlags::SERVICE)
+            && classify::name_ref(q).eq_ignore_ascii_case(&key)
+    }) {
+        return Place {
+            folder: Folder::Applications,
+            uid: Some(peer.uid),
+            key,
+            instance: ctx.instance(p),
+            member: None,
+        };
+    }
     Place {
         folder: Folder::System,
         uid: None,
-        key: if identity::is_kernel(p) {
-            "kernel".to_string()
-        } else if let Some(stem) = service_unit_stem(j) {
-            stem.to_string()
-        } else {
-            name_of(p)
-        },
+        key,
         instance: ctx.instance(p),
         member: None,
     }

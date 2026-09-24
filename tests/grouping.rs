@@ -1298,6 +1298,104 @@ fn noise_orphaned_to_systemd_in_a_lying_scope_bills_to_the_terminal() {
 }
 
 #[test]
+fn a_service_row_takes_its_unit_stem_not_the_comm() {
+    let at = |pid: u32, comm: &str, unit_leaf: &str, system: bool| {
+        let slice = if system {
+            format!("0::/system.slice/{unit_leaf}")
+        } else {
+            format!("0::/user.slice/user-1000.slice/user@1000.service/app.slice/{unit_leaf}")
+        };
+        Process {
+            pid,
+            ppid: 1,
+            pgrp: i32::try_from(pid).expect("fixture pid fits i32"),
+            uid: if system { 0 } else { 1000 },
+            comm: comm.into(),
+            exe: None,
+            cmdline: vec![comm.into()].into(),
+            cgroup: slice.into(),
+            ..Process::default()
+        }
+    };
+    let curr = PidMap::from_iter([
+        (10, at(10, "dbus-broker-lau", "dbus-broker.service", true)),
+        (11, at(11, "dbus-broker", "dbus-broker.service", true)),
+        (20, at(20, "docker", "engined-tls.service", true)),
+        (
+            30,
+            at(
+                30,
+                "python3",
+                "me.proton.vpn.split_tunneling.service",
+                false,
+            ),
+        ),
+        (40, at(40, "localsearch-3", "localsearch-3.service", false)),
+        (
+            41,
+            at(
+                41,
+                "localsearch-extractor-3",
+                "localsearch-3.service",
+                false,
+            ),
+        ),
+        (
+            1,
+            Process {
+                pid: 1,
+                ppid: 0,
+                pgrp: 1,
+                uid: 0,
+                kthread: true,
+                comm: "kthreadd".into(),
+                cgroup: "0::/".into(),
+                ..Process::default()
+            },
+        ),
+    ]);
+    let header = HostHeader {
+        nproc: 1,
+        clk_tck: 100,
+        page_size: 4096,
+    };
+    let tree = build_tree(
+        &curr,
+        &curr,
+        Duration::from_secs(1),
+        &header,
+        HostTree::default(),
+        &ContainerIndex::default(),
+        &Rules::builtin(),
+    );
+    assert!(
+        has(&tree.system, "kernel")
+            && has(&tree.system, "dbus-broker")
+            && has(&tree.system, "engined-tls"),
+        "system .service rows use the unit stem: {:?}",
+        titles(&tree.system)
+    );
+    assert!(
+        !has(&tree.system, "docker") && !has(&tree.system, "dbus-broker-lau"),
+        "comm must not split a shared .service: {:?}",
+        titles(&tree.system)
+    );
+    let user = user_of(&tree, 1000);
+    assert!(
+        has(&user.user_services, "me.proton.vpn.split_tunneling")
+            && has(&user.user_services, "localsearch-3"),
+        "user .service rows use the unit stem: {:?}",
+        titles(&user.user_services)
+    );
+    let local = proc_names(ident(&user.user_services, "localsearch-3"));
+    assert!(
+        local.iter().any(|n| n == "localsearch-3")
+            && local.iter().any(|n| n == "localsearch-extractor-3"),
+        "same unit merges different comms: {local:?}"
+    );
+}
+
+#[test]
 fn a_malformed_rules_file_is_rejected_rather_than_obeyed() {
     // The loader turns each of these into a stderr warning and built-in
     // behaviour; parsing is where the file is judged.

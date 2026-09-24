@@ -132,7 +132,7 @@ fn systemd_unescape(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-fn unit_stem(unit: &str) -> &str {
+pub(crate) fn unit_stem(unit: &str) -> &str {
     let s = unit
         .strip_suffix(".scope")
         .or_else(|| unit.strip_suffix(".service"))

@@ -71,7 +71,9 @@ Never read `/proc/pid/mem`. Never ptrace.
   a command launched from a browser or a terminal keeps its own row; a `lying`
   unit is skipped before the question is asked.
 - Display name is `classify::name_of` (`exe` basename else `comm`), not the
-  inherited cgroup. The exception is an `exe` of `tdeinit`, which runs
+  inherited cgroup, except a non-lying `.service` unit whose stem is the key
+  in `system_place` and the `name_of` branch of `user_place` (`identity::unit_stem`).
+  The exception is an `exe` of `tdeinit`, which runs
   programs as in-process modules, so there `comm` names the program. TDE
   session processes merge as `tdeinit` (`rules.d/40-trinity.json`, which sorts
   before `50-plasma.json` because both ship `kded` and `ksmserver`). An editor's

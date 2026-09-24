@@ -515,11 +515,14 @@ fn machine_place(p: &Process, ctx: &Ctx<'_>) -> Option<Place> {
 }
 
 fn system_place(p: &Process, ctx: &Ctx<'_>) -> Place {
+    let j = ctx.judged(p);
     Place {
         folder: Folder::System,
         uid: None,
         key: if identity::is_kernel(p) {
             "kernel".to_string()
+        } else if let Some(stem) = service_unit_stem(j) {
+            stem.to_string()
         } else {
             name_of(p)
         },
@@ -545,11 +548,22 @@ fn user_place(p: &Process, ctx: &Ctx<'_>) -> Place {
             None if j.classes.intersects(Classes::GENERIC) => {
                 identity::generic_fallback(p, j, ctx.rules)
             }
-            None => name_of(p),
+            None => service_unit_stem(j).map_or_else(|| name_of(p), str::to_string),
         },
         instance: ctx.instance(p),
         member: None,
     }
+}
+
+/// Non-lying `.service` unit stem, used as the identity key when display name
+/// would otherwise split processes that share one unit.
+fn service_unit_stem(j: &Judged) -> Option<&str> {
+    let unit = j.unit.as_deref()?;
+    if j.unit_flags.contains(UnitFlags::LYING) || !unit.ends_with(".service") {
+        return None;
+    }
+    let stem = identity::unit_stem(unit);
+    (!stem.is_empty()).then_some(stem)
 }
 
 fn session_plumbing_place(p: &Process, ctx: &Ctx<'_>) -> Option<Place> {

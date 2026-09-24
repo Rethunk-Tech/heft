@@ -525,7 +525,7 @@ fn system_place(p: &Process, ctx: &Ctx<'_>) -> Place {
             member: None,
         };
     }
-    let key = service_unit_stem(j).map_or_else(|| name_of(p), str::to_string);
+    let key = service_or_name(p, j, ctx);
     // A system `.service` whose stem matches a user Applications process
     // (anydesk --service beside the tray) bills to that application rather
     // than a System row. Skip user `.service` peers so session daemons stay
@@ -570,22 +570,73 @@ fn user_place(p: &Process, ctx: &Ctx<'_>) -> Place {
             None if j.classes.intersects(Classes::GENERIC) => {
                 identity::generic_fallback(p, j, ctx.rules)
             }
-            None => service_unit_stem(j).map_or_else(|| name_of(p), str::to_string),
+            None => service_or_name(p, j, ctx),
         },
         instance: ctx.instance(p),
         member: None,
     }
 }
 
-/// Non-lying `.service` unit stem, used as the identity key when display name
-/// would otherwise split processes that share one unit.
+/// Non-lying `.service` unit stem. `app-*.service` stays on `name_of`: that
+/// stem is the desktop id (`app-com.mitchellh.ghostty`), and the row is the
+/// binary (`ghostty`).
 fn service_unit_stem(j: &Judged) -> Option<&str> {
     let unit = j.unit.as_deref()?;
-    if j.unit_flags.contains(UnitFlags::LYING) || !unit.ends_with(".service") {
+    if j.unit_flags.contains(UnitFlags::LYING)
+        || !unit.ends_with(".service")
+        || unit.starts_with("app-")
+    {
         return None;
     }
     let stem = identity::unit_stem(unit);
     (!stem.is_empty()).then_some(stem)
+}
+
+/// Unit stem when it names the row better than the binary: a generic, a
+/// comm cut at 15 bytes, or a binary the stem does not prefix (`docker` in
+/// `engined-tls.service`). A binary that extends the stem (`dockerd`) keeps
+/// its name unless a sibling in the unit is already called the stem
+/// (`dbus-broker-launch` beside `dbus-broker`). Helpers keep `name_of` so a
+/// launcher in `org.gnome.Shell@user.service` does not open a second row.
+fn service_or_name(p: &Process, j: &Judged, ctx: &Ctx<'_>) -> String {
+    let Some(stem) = service_unit_stem(j) else {
+        return name_of(p);
+    };
+    if j.classes.intersects(Classes::GENERIC) {
+        return stem.to_string();
+    }
+    if j.classes.intersects(
+        Classes::LAUNCHER
+            | Classes::WORKER
+            | Classes::NOISE
+            | Classes::SHELL
+            | Classes::TERMINAL
+            | Classes::COMPOSITOR
+            | Classes::CRASH_HELPER,
+    ) {
+        return name_of(p);
+    }
+    let name = classify::name_ref(p);
+    let joins_stem = ctx.procs.values().any(|q| {
+        q.pid != p.pid
+            && ctx.judged(q).unit.as_deref() == j.unit.as_deref()
+            && classify::name_ref(q).eq_ignore_ascii_case(stem)
+    });
+    if joins_stem || stem_replaces_name(stem, name) {
+        stem.to_string()
+    } else {
+        name_of(p)
+    }
+}
+
+fn stem_replaces_name(stem: &str, name: &str) -> bool {
+    let stem_l = stem.to_ascii_lowercase();
+    let name_l = name.to_ascii_lowercase();
+    if name_l == stem_l {
+        return false;
+    }
+    // Truncated `comm`, or a binary the unit does not prefix.
+    stem_l.starts_with(&name_l) || !name_l.starts_with(&stem_l)
 }
 
 fn session_plumbing_place(p: &Process, ctx: &Ctx<'_>) -> Option<Place> {

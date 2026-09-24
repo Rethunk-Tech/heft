@@ -660,9 +660,10 @@ fn heft_rules_path_replaces_the_rules_directories() {
         })
         .collect();
     assert!(moved_by_the_file.is_empty(), "{moved_by_the_file:?}");
-    // Where heft's own cgroup puts it is the sandbox's business: a container
-    // scope is a Containers row, and no placement rule moves one.
-    if kept.contains("/applications/") {
+    // A placement rule names an identity. It moves heft only when that
+    // process's row is `heft`. Billed to the launching app, the row is that
+    // app, and a container scope is a Containers row no rule can move.
+    if kept.rsplit('/').next() == Some("heft") && kept.contains("/applications/") {
         assert!(moved.contains("/user_services/"), "{kept} -> {moved}");
     }
 }

@@ -74,8 +74,11 @@ Never read `/proc/pid/mem`. Never ptrace.
   a command launched from a browser or a terminal keeps its own row; a `lying`
   unit is skipped before the question is asked.
 - Display name is `classify::name_of` (`exe` basename else `comm`), not the
-  inherited cgroup, except a non-lying `.service` unit whose stem is the key
-  in `system_place` and the `name_of` branch of `user_place` (`identity::unit_stem`).
+  inherited cgroup. A non-lying `.service` that does not start with `app-`
+  uses `identity::unit_stem` for a generic, a comm truncated to a prefix of
+  that stem, or a binary the stem does not prefix. A binary that extends the
+  stem keeps `name_of` unless a sibling in the unit is named the stem.
+  Launchers, workers, shells, noise, terminals and compositors keep `name_of`.
   The exception is an `exe` of `tdeinit`, which runs
   programs as in-process modules, so there `comm` names the program. TDE
   session processes merge as `tdeinit` (`rules.d/40-trinity.json`, which sorts

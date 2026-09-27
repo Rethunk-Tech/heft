@@ -1635,3 +1635,55 @@ fn build_tree_timing() {
         );
     }
 }
+
+/// An interpreter tree is one program: `next dev` forks `next-server`
+/// (retitled argv, no script) which forks a turbopack pool worker, all the
+/// same node binary. And an `app-` scope no process carries (a dev server
+/// left behind by a restarted editor) is a launch counter, not a name.
+#[test]
+fn an_interpreter_tree_is_one_row_and_a_dead_app_scope_is_not_a_name() {
+    let scope = "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-ghostty-surface-transient-7.scope";
+    let row = |pid: u32, ppid: u32, cgroup: &str, argv: &[&str]| Process {
+        pid,
+        ppid,
+        pgrp: 50,
+        uid: 1000,
+        comm: "MainThread".into(),
+        exe: Some("/usr/bin/node-24".into()),
+        cmdline: argv
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect::<Vec<_>>()
+            .into(),
+        cgroup: cgroup.into(),
+        ..Process::default()
+    };
+    let tree = tree_from(vec![
+        row(
+            51,
+            1,
+            scope,
+            &["node", "/src/web/node_modules/.bin/next", "dev"],
+        ),
+        row(52, 51, scope, &["next-server (v16.3.6)"]),
+        row(
+            53,
+            52,
+            scope,
+            &[
+                "node",
+                "/src/web/.next/dev/build/chunks/pool_entry-x._.js",
+                "1",
+            ],
+        ),
+        row(
+            60,
+            1,
+            "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-cursor-1181606.scope",
+            &["node", "/src/demo/node_modules/.bin/vite", "--port", "5173"],
+        ),
+    ]);
+    let apps = &user_of(&tree, 1000).applications;
+    assert_eq!(titles(apps), ["next", "vite"], "{:?}", titles(apps));
+    assert_eq!(proc_names(ident(apps, "next")).len(), 3);
+}

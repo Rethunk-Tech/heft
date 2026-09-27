@@ -367,6 +367,21 @@ fn compute_place(
         };
     }
 
+    // An interpreter's children running the same interpreter are one program
+    // (`next dev` → `next-server` → a turbopack pool worker, python
+    // multiprocessing): their script names and retitled argv are not identities.
+    if classes.intersects(Classes::GENERIC)
+        && p.exe.is_some()
+        && curr.get(&p.ppid).is_some_and(|q| q.exe == p.exe)
+        && let Some(parent) = resolve_one(p.ppid, curr, ctx, memo, walking, depth + 1)
+        && matches!(parent.folder, Folder::Applications | Folder::UserServices)
+    {
+        return Place {
+            instance: ctx.instance(p),
+            ..parent
+        };
+    }
+
     // An orphan reparented to `systemd --user` keeps the cgroup of whoever
     // started it. A lying unit skips sibling adoption: that sibling is often a
     // utility, not the app. Prefer the Applications ancestor, else the

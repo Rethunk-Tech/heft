@@ -165,12 +165,15 @@ pub(crate) const fn is_kernel(p: &Process) -> bool {
 }
 
 /// A generic interpreter's identity: the unit stem when the unit is not
-/// lying, else a distinctive script basename, else the interpreter's name.
+/// lying and not `app-…` (an app scope with no process carrying its app is
+/// a launch counter, `app-cursor-1181606`), else a distinctive script
+/// basename, else the interpreter's name.
 /// The non-distinctive names are the `anonymous_script` class, asked of the
 /// script basename alone (`Facts.script` is set nowhere else).
 pub(crate) fn generic_fallback(p: &Process, j: &Judged, rules: &Rules) -> String {
     if let Some(u) = &j.unit
         && !j.unit_flags.contains(UnitFlags::LYING)
+        && app_scope_names(u).is_none()
     {
         let stem = unit_stem(u);
         if !stem.is_empty() && stem != "app" {

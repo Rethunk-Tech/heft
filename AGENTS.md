@@ -160,10 +160,12 @@ Never read `/proc/pid/mem`. Never ptrace.
   dstat) takes the owning shell, the same walk as a launcher. A shell with only noise utilities
   (or none) folds into `owning_app_ancestor` when that place is Applications or
   User Services, else a terminal-class ancestor; otherwise stays Applications.
-- Generic interpreters (the `generics` class rule) fall back to the user unit or
-  a distinctive script basename (`identity::generic_fallback`) so they do not
-  collapse into one interpreter row. Non-distinctive script basenames are the
-  `anonymous-scripts` class rule.
+- Generic interpreters (the `generics` class rule) fall back to the user unit
+  (never an `app-…` stem) or a distinctive script basename
+  (`identity::generic_fallback`) so they do not collapse into one interpreter
+  row. Non-distinctive script basenames are the `anonymous-scripts` class rule.
+  A generic whose parent runs the same `exe` takes that parent's place (`next
+  dev` → `next-server` → a turbopack pool worker is one `next` row).
 - Containers: never System, never `dockerd`/`containerd`. Project key is
   `com.supabase.cli.project` → `supabase:<name>`, else
   `supabase_<role>_<project>` names, else `com.docker.compose.project`. No

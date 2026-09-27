@@ -8,7 +8,7 @@ Read-only Linux process monitor. Binary name `heft`.
 
 ## Layout
 
-```
+```text
 src/cli.rs           clap Cli and the one definition of the --trend and --glyphs choices; a library module, and build.rs includes it so completions/man cannot drift
 src/main.rs          dispatch: TUI default, --once, --json
 src/lib.rs           modules

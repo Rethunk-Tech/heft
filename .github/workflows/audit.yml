@@ -25,7 +25,7 @@ jobs:
       - uses: Rethunk-Tech/gh-actions/setup-rust@99dfb9093ab089d28f76d8036322a7c062259e76 # v1.13
         with:
           toolchain: stable
-      - uses: cargo-bins/cargo-binstall@422f3094be6a0843857aa008b499caaf6bce0da8 # v1.24.0
+      - uses: cargo-bins/cargo-binstall@7bebc2e59eb8820162b7ac8f62a92bfdb2732447 # v1.25.1
         with:
           version: "1.23.0"
       - run: cargo binstall --no-confirm cargo-deny

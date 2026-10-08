@@ -146,6 +146,14 @@ pub(crate) fn unit_stem(unit: &str) -> &str {
 /// against a process actually running in that scope, so no table of launcher
 /// names is needed and a scope that names nothing running in it yields no
 /// identity at all.
+///
+/// An `app-…` scope owns everything in it when a process in it carries the app
+/// the scope names (`group::Ctx::scope_app` resolves one app per scope per
+/// tick): Steam's `srt-logger`, `pv-adverb`, `srt-bwrap` and `steamwebhelper`
+/// share only that scope, and that is enough. A scope naming a desktop id no
+/// process carries (`app-com.vivaldi.Vivaldi-…`) names nothing, so a command
+/// launched from a browser or a terminal keeps its own row. A `lying` unit is
+/// skipped before the question is asked.
 pub(crate) fn app_scope_names(unit: &str) -> Option<(&str, Option<&str>)> {
     let stem = unit_stem(unit).strip_prefix("app-")?;
     let stem = stem
@@ -167,7 +175,8 @@ pub(crate) const fn is_kernel(p: &Process) -> bool {
 /// A generic interpreter's identity: the unit stem when the unit is not
 /// lying and not `app-…` (an app scope with no process carrying its app is
 /// a launch counter, `app-cursor-1181606`), else a distinctive script
-/// basename, else the interpreter's name.
+/// basename, else the interpreter's name, so interpreters do not collapse into
+/// one row.
 /// The non-distinctive names are the `anonymous_script` class, asked of the
 /// script basename alone (`Facts.script` is set nowhere else).
 pub(crate) fn generic_fallback(p: &Process, j: &Judged, rules: &Rules) -> String {

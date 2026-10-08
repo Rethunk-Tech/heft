@@ -10,8 +10,10 @@ pub(crate) fn name_of(p: &Process) -> String {
     name_ref(p).to_string()
 }
 
-/// The display name, borrowed, so a rules `Facts` does not allocate it once
-/// per pid per tick.
+/// The display name (`exe` basename, else `comm`), borrowed, so a rules `Facts`
+/// does not allocate it once per pid per tick. It is not the inherited cgroup
+/// name. The exception is an `exe` of `tdeinit`, which runs programs as
+/// in-process modules, so there `comm` names the program.
 pub(crate) fn name_ref(p: &Process) -> &str {
     if let Some(exe) = &p.exe {
         let b = basename(exe);
@@ -132,6 +134,10 @@ fn is_temp_unpack_root(lower: &str) -> bool {
         .any(|root| lower.starts_with(root))
 }
 
+/// The mount directory itself under `/tmp`, `/var/tmp` or `/run` (`/tmp/mount`,
+/// `/tmp/.mount_cursorAb12Cd`) is per-run and never an identity; a stable
+/// directory nested under it (`…/usr/share/cursor/chrome_crashpad_handler`)
+/// names the app the same way `/opt/cursor/…` does.
 fn is_ephemeral_mount_dir(owner: &str) -> bool {
     owner.eq_ignore_ascii_case("mount")
         || owner.eq_ignore_ascii_case("appimage")

@@ -186,8 +186,8 @@ fn resolve(curr: &Procs, ctx: &Ctx<'_>) -> PidMap<Place> {
 }
 
 /// How many walker frames one placement may stack, shared by `resolve_one`
-/// climbing parents and `unique_descendant_ident` descending launchers, shells
-/// and workers. A real tree nests those a handful deep (flatpak's bwrap, bwrap,
+/// and `compute_place` climbing parents, `owning_app_ancestor` and
+/// `unique_descendant_ident` descending launchers, shells and workers. A real tree nests those a handful deep (flatpak's bwrap, bwrap,
 /// zypak-helper, zygote is four); a fork chain thousands deep would otherwise
 /// overflow the sampler thread's stack, which aborts rather than panics.
 ///
@@ -217,6 +217,39 @@ fn resolve_one(
     Some(place)
 }
 
+/// Where one process bills, once `direct_place` has not answered.
+///
+/// - Workers (the `worker` class, glycin loaders included) fold into the app
+///   their parent resolves to, unless that is System or a `no_absorb` row;
+///   `chrome-headless-shell` is a worker. Processes stay visible on expand.
+/// - The other `noise` class names (`cat`, `sleep`, `tee`, `timeout`, `time`,
+///   `git`, `ssh`, `go`, `gopls`, `gitleaks`, `gpg-agent`, `dirmngr`,
+///   `keyboxd`, `scdaemon`, `rustc`, and a comm ending `.test`) bill to a
+///   launcher or app parent, do not break unique-payload folding and never
+///   become their own row. Noise whose parent is `systemd --user` uses the
+///   lying scope owner rather than the systemd row.
+/// - Launchers (the `launchers` class rule, names ending `.appimage` included)
+///   have no top-level row: cost bills to the unique payload identity and the
+///   launcher still appears inside the expanded process list. Nested bwrap
+///   folds into the payload. An `.appimage` launcher with no payload child
+///   bills to the app running from its mount (`classify::appimage_mount_prefix`).
+/// - A shell with only noise utilities (or none) folds into
+///   `owning_app_ancestor` when that place is Applications or User Services,
+///   else a terminal-class ancestor; otherwise it stays Applications.
+/// - A generic interpreter whose parent runs the same `exe` takes that parent's
+///   place (`next dev` → `next-server` → a turbopack pool worker is one `next`
+///   row). Otherwise it takes an owning app ancestor.
+/// - A generic orphaned to `systemd --user` bills to the lowest-pid process in
+///   its exact cgroup that names an app (a `bun` a Claude Code daemon left
+///   behind), unless the unit is lying; then `lying_scope_place` decides.
+/// - Any other orphan bills to its live process-group leader when that leader
+///   is an Applications row (a backgrounded `wl-copy` to `claude`); the
+///   Applications-only test is what keeps it out of User Services.
+/// - A command bills to the app that spawned it (`spawned_app`) before
+///   `user_place`.
+///
+/// The placement walks (`resolve_one`, `compute_place`, `owning_app_ancestor`,
+/// `unique_descendant_ident`) share the depth budget `MAX_WALK`.
 fn compute_place(
     p: &Process,
     curr: &Procs,
@@ -453,7 +486,9 @@ fn compute_place(
 /// The Applications place of the app that spawned `p`, if a wrapper sits
 /// between them. A terminal, compositor or systemd ends the walk with no
 /// owner. An app-rule ancestor with no wrapper in between is a separate
-/// application, not this process's owner.
+/// application, not this process's owner. A command splits from its place only
+/// when its own resolved identity differs and it is a real app (cursor's agent
+/// launches claude; claude stays its own row).
 fn spawned_app(
     p: &Process,
     curr: &Procs,
@@ -496,7 +531,9 @@ fn spawned_app(
 
 /// Owner for a process in a lying `app-…` scope whose parent is
 /// `systemd --user`: an Applications ancestor, else a terminal whose name is
-/// a hyphen-prefix of the scope stem.
+/// a hyphen-prefix of the scope stem, else the caller falls to `user_place`.
+/// A lying unit skips sibling adoption because that sibling is often a
+/// utility, not the app.
 fn lying_scope_place(
     p: &Process,
     curr: &Procs,
@@ -536,6 +573,15 @@ fn lying_scope_place(
     })
 }
 
+/// Containers never bill to System and never to `dockerd`/`containerd`. The
+/// project key is `com.supabase.cli.project` → `supabase:<name>`, else
+/// `supabase_<role>_<project>` names, else `com.docker.compose.project`; with
+/// no project each container name is its own row, and a vendor-specific label
+/// is not a merge key. `containerd-shim-runc-v2 -id`, `docker-proxy
+/// -container-ip`, `conmon` and `runc`/`crun` bill to their container. The
+/// owner is the workdir path's uid, else the first non-root uid owning an
+/// `Inspect.Mounts` bind source (named volumes are root-owned and skipped),
+/// else Host → Containers.
 fn container_place(p: &Process, ctx: &Ctx<'_>) -> Option<Place> {
     let containers = ctx.containers;
     let runtime = ctx.classes(p).intersects(Classes::CONTAINER_RUNTIME);
@@ -582,6 +628,10 @@ fn machine_place(p: &Process, ctx: &Ctx<'_>) -> Option<Place> {
     })
 }
 
+/// A system `.service` whose stem matches a user Applications process (not a
+/// user `.service`) bills to that application, not a System row (`anydesk
+/// --service` beside the tray); session daemons stay on System when the user
+/// side is User Services.
 fn system_place(p: &Process, ctx: &Ctx<'_>) -> Place {
     let j = ctx.judged(p);
     if identity::is_kernel(p) {
@@ -621,6 +671,9 @@ fn system_place(p: &Process, ctx: &Ctx<'_>) -> Place {
     }
 }
 
+/// A user-instance `*.service` not starting with `app-` is User Services and
+/// the rest is Applications. `init.scope` + `systemd --user` is a user service,
+/// and so is the `compositor` class whatever its unit looks like.
 fn user_place(p: &Process, ctx: &Ctx<'_>) -> Place {
     let j = ctx.judged(p);
     let folder = if j.classes.intersects(Classes::COMPOSITOR)
@@ -737,6 +790,11 @@ fn crash_helper_place(p: &Process, ctx: &Ctx<'_>) -> Option<Place> {
 
 /// The bucket rules that need no ancestor walk, so the cycle-breaking path can
 /// answer with the same verdict `compute_place` would give instead of a subset.
+///
+/// A docker/libpod scope, or a helper that names that id, is Containers.
+/// `identity::is_kernel` or a leftover `system.slice` (`in_system_slice` and
+/// not `in_user_slice`) is System. Otherwise the session, crash-helper and
+/// `app` stages decide, and the rest is that uid's User folder (`user_place`).
 fn direct_place(p: &Process, ctx: &Ctx<'_>) -> Option<Place> {
     if let Some(place) = container_place(p, ctx) {
         return Some(place);
@@ -772,7 +830,9 @@ fn raw_place(p: &Process, ctx: &Ctx<'_>) -> Place {
 /// workers, noise, shells and crash helpers — resolves to one identity, the
 /// helper bills there. The launcher that adopted this leaf then bills there
 /// too. No such process, or more than one identity, leaves the helper as its
-/// own row.
+/// own row. That is how `glycin-image-rs` under `bwrap` bills to `anydesk` in
+/// a scope whose stem matches neither name, and to `gnome-shell` once
+/// `mutter-x11-frames` shares that identity.
 fn worker_leaf_place(
     child: &Process,
     curr: &Procs,
@@ -849,6 +909,11 @@ fn override_place(rules: &Rules, place: Place) -> Place {
     }
 }
 
+/// The Applications or User Services place of the app that launched `pid`'s
+/// subtree, walking ancestors and skipping launchers and other generics. An
+/// ancestor an `app` rule names (Cursor's bundled `node` agent) owns the chain.
+/// No script-basename identity (`context7-mcp`) is invented when a launching
+/// agent (`claude`, `cursor`) is above.
 fn owning_app_ancestor(
     mut pid: u32,
     curr: &Procs,
@@ -883,6 +948,9 @@ fn owning_app_ancestor(
     None
 }
 
+/// The one identity every payload under a launcher or shell resolves to, or
+/// `None` when there is none or more than one. A unique non-noise payload
+/// child (claude, dstat) takes the owning shell, the same walk as a launcher.
 fn unique_descendant_ident(
     pid: u32,
     curr: &Procs,

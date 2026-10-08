@@ -5,6 +5,30 @@
 //! `Facts` borrows the `Process`; every test folds ASCII case on the fly, so
 //! evaluation allocates nothing and a slice that lands inside a multibyte
 //! character is a miss rather than a panic.
+//!
+//! What the built-in files encode:
+//!
+//! - `05-units.json` flags a unit `lying` for terminal transients, Chromium
+//!   toolkit scopes (`org.chromium.chromium`), `dbus:` activation, `run-u*` and
+//!   `flatpak-session-helper`; a lying unit gives no unit-based identity, and
+//!   `identity::instance_key` falls back to `pgid`.
+//! - The `session` stage (`20-session-bus.json` to `80-apps.json`) groups User
+//!   Services by systemd unit family, RPM/package family, D-Bus well-known name
+//!   family or documented process architecture, never a comm prefix.
+//!   Prefix lookalikes with a different product stay out (`gsd-disk-utility-notify`,
+//!   independent `wsdd`, `wireplumber`, `krunner`, `plasma-discover`,
+//!   `kwindowprop`); independent apps never fold into gnome-shell, plasmashell,
+//!   kwin or these service identities; an arbitrary user CLI is Applications;
+//!   `p11-kit` must not fold into `flatpak-session-helper` (Cursor shares that
+//!   cgroup); user-session `dbus-broker` is User Services, never Applications
+//!   (the `lying` rule matches `dbus:` activation, not `dbus-broker.service`);
+//!   app-bound `xdg-dbus-proxy` bills to that app, unbound folds into `flatpak`;
+//!   `gcr-ssh-agent` absorbs `ssh-agent` only in that unit.
+//! - `40-trinity.json` merges TDE session processes as `tdeinit`; it sorts
+//!   before `50-plasma.json` because both ship `kded` and `ksmserver`.
+//! - `70-editors.json` (the `app` stage) bills an editor's install or extension
+//!   tree to that editor, matched by `exe` path rather than PPID so a real app
+//!   started from its terminal keeps its row.
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashSet};
 

@@ -361,17 +361,14 @@ mod tests {
         }
     }
 
-    #[expect(
-        clippy::cast_possible_truncation,
-        reason = "a test builder is handed a handful of pids, never 4 billion"
-    )]
     fn ident(id: &str, pids: &[u32]) -> IdentNode {
+        let nproc = u32::try_from(pids.len()).expect("a handful of pids");
         IdentNode {
             id: id.into(),
-            nproc: pids.len() as u32,
+            nproc,
             instances: vec![InstanceNode {
                 key: format!("{id}/1"),
-                nproc: pids.len() as u32,
+                nproc,
                 processes: pids.iter().copied().map(proc_node).collect(),
                 ..InstanceNode::default()
             }],

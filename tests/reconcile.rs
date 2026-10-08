@@ -14,6 +14,7 @@
 //! containment arguments, each with a slack that has to hold on a busy desktop
 //! under CPU and page-cache load.
 
+use heft::num::f64_of;
 use std::collections::{HashMap, HashSet};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -197,11 +198,8 @@ fn tree_pss(host: &Value) -> HashMap<u32, Option<u64>> {
     for (_, ident) in idents(host) {
         for inst in arr(ident, "instances") {
             for p in procs_of(inst) {
-                #[expect(
-                    clippy::cast_possible_truncation,
-                    reason = "a pid is a u32 in /proc and in the tree; the JSON widened it, this narrows it back"
-                )]
-                let pid = p["pid"].as_u64().expect("a process node carries its pid") as u32;
+                let pid = u32::try_from(p["pid"].as_u64().expect("a process node carries its pid"))
+                    .expect("a pid is a u32 in /proc and in the tree");
                 out.insert(pid, p.get("pss_bytes").and_then(Value::as_u64));
             }
         }
@@ -246,10 +244,6 @@ fn mem_used_is_memtotal_minus_memavailable_while_heft_ran() {
 }
 
 #[test]
-#[expect(
-    clippy::cast_precision_loss,
-    reason = "tick counters over one test interval are millions, not 2^53"
-)]
 fn host_cpu_claims_no_more_busy_ticks_than_the_kernel_counted() {
     let s = sample();
     let pct = s.host["cpu_pct"].as_f64().expect("cpu_pct");
@@ -270,14 +264,14 @@ fn host_cpu_claims_no_more_busy_ticks_than_the_kernel_counted() {
     // CI runs. It always catches the errors that move a figure by a factor: a
     // tick count read as seconds, or a per-core percentage published as a
     // per-machine one.
-    let capacity = s.my_total as f64 * (INTERVAL / s.wall);
+    let capacity = f64_of(s.my_total) * (INTERVAL / s.wall);
     let claimed = pct / 100.0 * capacity;
     // /proc/stat accrues in whole ticks per CPU, so the outer window can read
     // a tick per CPU short at each end. Twice that theoretical bound; on an
     // idle many-core box it is the dominant term.
-    let slack = (4 * s.nproc) as f64;
+    let slack = f64_of(4 * s.nproc);
     assert!(
-        claimed <= s.my_busy as f64 + slack,
+        claimed <= f64_of(s.my_busy) + slack,
         "cpu_pct {pct:.2} over a >={INTERVAL}s window claims {claimed:.0} busy ticks; \
          the kernel counted {} busy of {} total across the {:.2}s that contains it",
         s.my_busy,

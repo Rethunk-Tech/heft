@@ -301,6 +301,7 @@ dependencies = [
  "clap_mangen",
  "crossterm",
  "libc",
+ "num-traits",
  "ratatui",
  "regex-lite",
  "rustix",

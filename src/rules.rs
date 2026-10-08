@@ -1671,10 +1671,6 @@ mod tests {
     /// with `cargo test --release --lib -- --ignored --nocapture rules_timing`.
     #[test]
     #[ignore = "timing bench: cargo test --release --lib -- --ignored --nocapture rules_timing"]
-    #[expect(
-        clippy::cast_precision_loss,
-        reason = "a process count and a nanosecond total both fit in 52 bits"
-    )]
     fn rules_timing() {
         use std::fmt::Write;
         #[derive(Deserialize)]
@@ -1719,7 +1715,7 @@ mod tests {
                     (p, unit)
                 })
                 .collect();
-            let n = procs.len() as f64;
+            let n = crate::num::f64_of_usize(procs.len());
             let mut acc = 0u64;
             let mut line = format!("rules_timing {path}: {} processes", procs.len());
             for (label, which) in [
@@ -1740,7 +1736,7 @@ mod tests {
                         };
                     }
                 }
-                let ns = t.elapsed().as_nanos() as f64 / f64::from(iters) / n;
+                let ns = crate::num::f64_of_u128(t.elapsed().as_nanos()) / f64::from(iters) / n;
                 let _ = write!(line, ", {label} {ns:.0} ns");
             }
             std::hint::black_box(acc);

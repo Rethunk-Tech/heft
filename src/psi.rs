@@ -19,6 +19,7 @@
 //! by ten ticks. The header is the exception and does use `avg10`, because a
 //! machine-wide trend is the one place smoothing helps.
 
+use crate::num::f64_of;
 use std::collections::HashMap;
 
 use std::ffi::CStr;
@@ -287,17 +288,13 @@ fn sole_member(path: &str) -> Option<u32> {
 /// `None` discards the interval rather than publishing a bogus figure. The
 /// counters are cumulative, and a cgroup destroyed and recreated under the
 /// same path (a restarted unit, a container that came back) starts from zero.
-#[expect(
-    clippy::cast_precision_loss,
-    reason = "a pressure counter is microseconds of stall, so 2^53 of them is 285 years"
-)]
 fn delta(prev: Option<&Totals>, cur: Totals, secs: f64) -> Option<Stall> {
     let p = prev?;
     if cur.cpu < p.cpu || cur.io < p.io || cur.mem < p.mem || secs <= 0.0 {
         return None;
     }
     // total is microseconds of stall; the interval is seconds.
-    let pct = |a: u64, b: u64| ((a - b) as f64 / (secs * 1e6) * 100.0).min(100.0);
+    let pct = |a: u64, b: u64| (f64_of(a - b) / (secs * 1e6) * 100.0).min(100.0);
     Some(Stall {
         cpu: pct(cur.cpu, p.cpu),
         io: pct(cur.io, p.io),

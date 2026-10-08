@@ -27,6 +27,7 @@ use crate::explain;
 use crate::glyph;
 use crate::kgp;
 use crate::mem;
+use crate::num::{f64_of_usize, sat_u64, sat_usize};
 use crate::once::{
     COLUMNS, Column, Columns, Filter, Sort, fmt_bytes, fmt_pct, haystack, hide_column,
     ident_haystack, keep_matches, keep_top, keep_users, sort_tree,
@@ -501,13 +502,6 @@ fn trend_scale(sort: Sort, rows: &[Flat], history: &HashMap<String, VecDeque<f64
 /// throughout has a history, and it is flat. A row with no history at all --
 /// one that has just appeared -- gets an empty cell, which is heft's blank:
 /// no figure exists yet.
-#[expect(
-    clippy::cast_precision_loss,
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    reason = "the ramp is eight characters; the step is a non-negative fraction of its \
-last index, and clamped to it besides"
-)]
 fn spark(buf: Option<&VecDeque<f64>>, full: f64) -> String {
     let Some(buf) = buf.filter(|b| !b.is_empty()) else {
         return String::new();
@@ -518,14 +512,14 @@ fn spark(buf: Option<&VecDeque<f64>>, full: f64) -> String {
         // rather than dividing by it.
         return ramp[0].to_string().repeat(buf.len());
     }
-    let top = (ramp.len() - 1) as f64;
+    let top = f64_of_usize(ramp.len() - 1);
     buf.iter()
         .map(|v| {
             if v.is_nan() || *v <= 0.0 {
                 return ramp[0];
             }
             let step = ((v / full).min(1.0) * top).round();
-            ramp[(step as usize).min(ramp.len() - 1)]
+            ramp[sat_usize(step).min(ramp.len() - 1)]
         })
         .collect()
 }
@@ -1461,14 +1455,8 @@ fn swap_header_line(tree: &HostTree, width: usize, bar_w: usize) -> Option<Line<
     Some(Line::from(spans))
 }
 
-#[expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    reason = "the percentage is clamped to 0..=100 before the scale, so the product is \
-0..=10000"
-)]
 fn pct_weight(p: f64) -> u64 {
-    (p.clamp(0.0, 100.0) * 100.0).round() as u64
+    sat_u64((p.clamp(0.0, 100.0) * 100.0).round())
 }
 
 /// `bar_w` is the MEMORY row's first tank, not this row's own slack. MEM's

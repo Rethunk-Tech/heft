@@ -339,13 +339,9 @@ tight enough to catch a leak in seconds is below what heft legitimately uses
 on a busy host. It guards the walk pool: a fresh thread per walk leaves glibc
 arenas climbing.
 
-The four cast lints denied in `Cargo.toml` are at zero, which is what makes
-denying them free. A claim that a cast is bounded lives as an
-`#[expect(..., reason = ...)]` at that site naming the bound, never as prose,
-so the compiler checks the expect is still firing. `cpu.rs` takes one
-module-level expect because every cast in it has the same bound: one
-interval's `saturating_sub` delta of a kernel counter, widened into the f64 a
-rate is divided in.
+The four cast lints denied in `Cargo.toml` are at zero, and no cast is silenced: a conversion either has a
+`From`/`try_from`, or goes through `src/num.rs` (`f64_of` for u64 to f64 with the `as` rounding, `sat_*` for float to
+integer with `as` saturation), so the type system carries the bound a comment would.
 
 ## Git
 

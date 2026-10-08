@@ -1,11 +1,4 @@
-#![expect(
-    clippy::cast_precision_loss,
-    reason = "every cast here is one interval's saturating_sub delta of a kernel \
-counter -- clock ticks, nanoseconds, GPU cycles -- or `clk_tck`. The counters themselves \
-can pass 2^53 (104 days of nanoseconds), but no delta across one sample interval comes \
-near it, and the quotient is printed to three significant figures."
-)]
-
+use crate::num::f64_of;
 use std::fs;
 use std::sync::OnceLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -120,11 +113,11 @@ pub(crate) fn parse_host_cpu(line: &str) -> Option<HostCpu> {
 }
 
 fn host_split(a: &HostCpu, b: &HostCpu) -> HostSplit {
-    let dt = b.total.saturating_sub(a.total) as f64;
+    let dt = f64_of(b.total.saturating_sub(a.total));
     if dt <= 0.0 {
         return HostSplit::default();
     }
-    let pct = |lo: u64, hi: u64| (hi.saturating_sub(lo) as f64 / dt * 100.0).clamp(0.0, 100.0);
+    let pct = |lo: u64, hi: u64| (f64_of(hi.saturating_sub(lo)) / dt * 100.0).clamp(0.0, 100.0);
     let user = pct(a.user, b.user);
     let system = pct(a.system, b.system);
     let wait = pct(a.wait, b.wait);
@@ -148,8 +141,8 @@ pub(crate) fn process_metrics(
     let cores = f64::from(consts.nproc.max(1));
     let (core, machine) = match prev {
         Some(p) => {
-            let ticks = (cur.utime + cur.stime).saturating_sub(p.utime + p.stime) as f64;
-            let core = 100.0 * ticks / (consts.clk_tck as f64 * secs);
+            let ticks = f64_of((cur.utime + cur.stime).saturating_sub(p.utime + p.stime));
+            let core = 100.0 * ticks / (f64_of(consts.clk_tck) * secs);
             (core, core / cores)
         }
         None => (0.0, 0.0),
@@ -239,12 +232,12 @@ fn age_secs(starttime_ticks: Option<u64>, clk_tck: u64, btime: u64, now: u64) ->
 
 fn rate(prev: Option<u64>, cur: Option<u64>, secs: f64) -> Option<f64> {
     let (a, b) = (prev?, cur?);
-    Some(b.saturating_sub(a) as f64 / secs)
+    Some(f64_of(b.saturating_sub(a)) / secs)
 }
 
 fn engine_pct(prev: Option<u64>, cur: Option<u64>, secs: f64) -> Option<f64> {
     let (a, b) = (prev?, cur?);
-    let dns = b.saturating_sub(a) as f64;
+    let dns = f64_of(b.saturating_sub(a));
     Some((dns / (secs * 1_000_000_000.0) * 100.0).clamp(0.0, 100.0))
 }
 
@@ -263,8 +256,8 @@ fn cycles_span(prev: Option<&Process>, cur: &Process) -> Option<u64> {
 /// cycles to `engine_pct` would print a confident ~0.00% forever.
 fn cycles_pct(prev: Option<u64>, cur: Option<u64>, span: Option<u64>) -> Option<f64> {
     let (a, b) = (prev?, cur?);
-    let busy = b.saturating_sub(a) as f64;
-    Some((busy / span? as f64 * 100.0).clamp(0.0, 100.0))
+    let busy = f64_of(b.saturating_sub(a));
+    Some((busy / f64_of(span?) * 100.0).clamp(0.0, 100.0))
 }
 
 pub(crate) fn host_consts() -> HostHeader {

@@ -14,6 +14,7 @@ pub(crate) mod keys;
 pub(crate) mod kgp;
 pub(crate) mod mem;
 pub(crate) mod net;
+pub mod num;
 pub mod once;
 pub mod proc;
 pub(crate) mod psi;

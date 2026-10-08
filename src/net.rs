@@ -3,6 +3,7 @@ use std::fs;
 
 use crate::containers::ContainerIndex;
 use crate::identity::docker_scope_id;
+use crate::num::f64_of;
 use crate::types::{HostTree, IdentNode, PidMap, Process};
 
 /// Cumulative rx/tx bytes for one network namespace, tagged with the pid they
@@ -123,16 +124,12 @@ fn add(map: &mut HashMap<String, (f64, f64)>, key: &str, rx: f64, tx: f64) {
 /// `None` discards the interval instead of publishing a bogus rate. Counters
 /// are cumulative per namespace, and a restarted container keeps its id while
 /// getting a new pid and a fresh namespace, so the delta would run negative.
-#[expect(
-    clippy::cast_precision_loss,
-    reason = "the cast is on one interval's byte delta, a counter that went backwards having returned None above; 2^53 bytes is over 8 days of 100 GbE, far past any sample interval"
-)]
 fn delta(prev: Option<&Sample>, cur: Sample, secs: f64) -> Option<(f64, f64)> {
     let p = prev?;
     if p.pid != cur.pid || cur.rx < p.rx || cur.tx < p.tx {
         return None;
     }
-    Some(((cur.rx - p.rx) as f64 / secs, (cur.tx - p.tx) as f64 / secs))
+    Some((f64_of(cur.rx - p.rx) / secs, f64_of(cur.tx - p.tx) / secs))
 }
 
 fn read_pid(pid: u32) -> Option<Sample> {

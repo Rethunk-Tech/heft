@@ -23,6 +23,8 @@
 //! read the object reports nothing instead of printing an error into the table.
 
 use std::collections::VecDeque;
+
+use crate::num::sat_u32;
 use std::ffi::{CString, OsStr};
 use std::hash::Hasher;
 use std::io::{self, Write};
@@ -170,10 +172,6 @@ pub(crate) fn cell_px() -> Option<(u32, u32)> {
 /// A row with no history is left transparent rather than painted flat: that
 /// is heft's blank, and the cursor's reverse-video highlight has to show
 /// through it, which is why the image is RGBA and not RGB.
-#[expect(
-    clippy::cast_possible_truncation,
-    reason = "band is under MAX_BANDS and the column under the table width, so both fit u32 pixel coordinates"
-)]
 pub(crate) fn paint(
     rows: &[Option<&VecDeque<f64>>],
     cols: u32,
@@ -203,11 +201,11 @@ pub(crate) fn paint(
         let Some(buf) = buf.filter(|b| !b.is_empty()) else {
             continue;
         };
-        let top = band as u32 * cell_h;
+        let top = u32::try_from(band).ok()? * cell_h;
         let mut prev: Option<u32> = None;
-        for (i, v) in buf.iter().enumerate().take(cols as usize) {
+        for (i, v) in buf.iter().enumerate().take(usize::try_from(cols).ok()?) {
             let y = sample_y(*v, full, cell_h) + top;
-            let x0 = i as u32 * cell_w;
+            let x0 = u32::try_from(i).ok()? * cell_w;
             for x in x0..(x0 + cell_w).min(w) {
                 put(x, y);
             }
@@ -227,12 +225,6 @@ pub(crate) fn paint(
 /// The row of pixels a sample sits on, within a band `cell_h` tall: the bottom
 /// row at zero and the top row at or above `full`. Above full it pins rather
 /// than rescaling, so one row flat out does not flatten every row beside it.
-#[expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    reason = "frac is 0..=1 of a u32 height, so the rounded product is inside that \
-height and never negative"
-)]
 fn sample_y(v: f64, full: f64, cell_h: u32) -> u32 {
     let last = cell_h.saturating_sub(1);
     // Spelled out rather than negating a comparison: these are floats, so
@@ -242,7 +234,7 @@ fn sample_y(v: f64, full: f64, cell_h: u32) -> u32 {
         return last;
     }
     let frac = (v / full).min(1.0);
-    last - (frac * f64::from(last)).round() as u32
+    last - sat_u32((frac * f64::from(last)).round())
 }
 
 /// The cells a table row puts in its TREND column to show band `band` of the
@@ -434,13 +426,11 @@ fn shm_unlink(name: &str) {
 
 /// Create the object, fill it, and close: the terminal opens it by name,
 /// reads it, then unlinks and closes it itself.
-#[expect(
-    clippy::cast_possible_wrap,
-    reason = "the image is capped at MAX_PIXELS, four bytes each, far below off_t's positive range"
-)]
 fn shm_write(name: &str, bytes: &[u8]) -> io::Result<()> {
     let c = CString::new(name).map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
     let len = bytes.len();
+    let off =
+        libc::off_t::try_from(len).map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
     // SAFETY: every pointer below is checked before use, the mapping is the
     // length just ftruncate'd, and both the fd and the mapping are released
     // on every path out.
@@ -458,7 +448,7 @@ fn shm_write(name: &str, bytes: &[u8]) -> io::Result<()> {
             libc::shm_unlink(c.as_ptr());
             Err(e)
         };
-        if libc::ftruncate(fd, len as libc::off_t) != 0 {
+        if libc::ftruncate(fd, off) != 0 {
             return close(fd, io::Error::last_os_error());
         }
         let p = libc::mmap(
@@ -562,12 +552,8 @@ mod tests {
         );
     }
 
-    #[expect(
-        clippy::cast_possible_truncation,
-        reason = "a base64 index is 0..64 and the shifted groups are masked to one byte"
-    )]
     fn b64_decode(s: &str) -> Vec<u8> {
-        let idx = |c: u8| B64.iter().position(|b| *b == c).unwrap() as u32;
+        let idx = |c: u8| u32::try_from(B64.iter().position(|b| *b == c).unwrap()).unwrap();
         let raw: Vec<u8> = s.bytes().filter(|b| *b != b'=').collect();
         let pad = s.bytes().filter(|b| *b == b'=').count();
         let mut out = Vec::new();
@@ -576,7 +562,8 @@ mod tests {
             for (i, b) in c.iter().enumerate() {
                 n |= idx(*b) << (18 - 6 * i);
             }
-            out.extend_from_slice(&[(n >> 16) as u8, (n >> 8) as u8, n as u8]);
+            let byte = |v: u32| u8::try_from(v & 0xFF).unwrap();
+            out.extend_from_slice(&[byte(n >> 16), byte(n >> 8), byte(n)]);
         }
         out.truncate(out.len() - pad);
         out

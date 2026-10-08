@@ -6,6 +6,7 @@ use unicode_truncate::UnicodeTruncateStr;
 use unicode_width::UnicodeWidthStr;
 
 use crate::config::{self, View};
+use crate::num::f64_of;
 use crate::proc;
 use crate::types::{
     Error, Folder, HostTree, IdentNode, Metrics, ProcNode, folder_nproc, host_metrics, sum_idents,
@@ -254,12 +255,8 @@ pub(crate) const COLUMNS: &[Column] = &[
 
 /// Byte counts stay exact in f64 out past 9 PB, so one key type covers the
 /// integer and rate columns alike.
-#[expect(
-    clippy::cast_precision_loss,
-    reason = "the f64 is a sort key: two byte counts close enough to collide past 2^53 order equally either way"
-)]
 fn opt_u(v: Option<u64>) -> Option<f64> {
-    v.map(|x| x as f64)
+    v.map(f64_of)
 }
 
 /// The columns one surface renders, as indices into `COLUMNS` in display
@@ -926,11 +923,7 @@ pub(crate) fn coverage_tail(tree: &HostTree) -> String {
     if total == 0 {
         return String::new();
     }
-    #[expect(
-        clippy::cast_precision_loss,
-        reason = "a thread count large enough to lose precision in f64 is not reachable"
-    )]
-    let share = seen as f64 / total as f64;
+    let share = f64_of(seen) / f64_of(total);
     if share >= VISIBLE_OK {
         return String::new();
     }
@@ -1067,15 +1060,11 @@ fn scale_1024(x: f64) -> Option<String> {
     }
 }
 
-#[expect(
-    clippy::cast_precision_loss,
-    reason = "the result is rounded to three significant figures and a 1024-scale suffix"
-)]
 pub(crate) fn fmt_bytes(n: Option<u64>) -> String {
     let Some(b) = n else {
         return String::new();
     };
-    scale_1024(b as f64).unwrap_or_else(|| b.to_string())
+    scale_1024(f64_of(b)).unwrap_or_else(|| b.to_string())
 }
 
 fn fmt_rate(n: Option<f64>) -> String {

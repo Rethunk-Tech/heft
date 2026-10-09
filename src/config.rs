@@ -207,15 +207,25 @@ pub(crate) fn save_view(view: &View) -> Result<(), Error> {
     fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))?;
     let path = view_path();
     let data = format!("{}{}\n", view_header(), serde_json::to_string_pretty(view)?);
-    let mut f = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(&path)?;
-    f.write_all(data.as_bytes())?;
-    f.set_permissions(fs::Permissions::from_mode(0o600))?;
-    Ok(())
+    // Written beside the target and renamed over it, so a full disk or a kill
+    // mid-write leaves the previous view.json whole rather than truncated.
+    let tmp = path.with_extension("json.tmp");
+    let written = (|| {
+        let mut f = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(&tmp)?;
+        f.write_all(data.as_bytes())?;
+        f.set_permissions(fs::Permissions::from_mode(0o600))?;
+        f.sync_all()?;
+        fs::rename(&tmp, &path)
+    })();
+    if written.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    Ok(written?)
 }
 
 #[cfg(test)]

@@ -1,9 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.12.2 - 2026-10-09
 
 ### Added
 
+- Steam runtime helpers fold into the `steam` row.
 - The `terminal` class includes `cosmic-term` (with the existing `cosmic-comp`
   compositor), `xterm`/`uxterm`, `qterminal`, `lxterminal`, `mate-terminal`,
   `contour`, and `blackbox-terminal`, so idle shells fold into those rows.
@@ -23,6 +24,18 @@
   `gnome-shell`. It is the frames helper, not the `mutter` compositor.
 - `--explain` is one `/proc` walk. It no longer waits `--interval` for rates
   it never prints.
+- Grouping bills more rows to the app that owns them: a command to the app that
+  spawned it (a shell or wrapper in between, not a direct exec), a utility
+  shell to the launching app or terminal, helpers in a scope that misreports
+  its owner to the real owning app, the rest of an app scope that names a
+  running process to that process, and same-interpreter children to their
+  parent. A `.service` row is named from its unit stem (the anydesk service
+  bills to anydesk), while app-unit and daemon binary names are kept.
+
+### Fixed
+
+- `view.json` is written atomically via rename, so an interrupted save cannot
+  leave a truncated file.
 
 ## 0.12.1 - 2026-09-19
 

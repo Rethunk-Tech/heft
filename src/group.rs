@@ -865,11 +865,17 @@ fn worker_leaf_place(
         return place;
     }
     siblings.sort_unstable_by_key(|q| q.pid);
+    let stem = service_unit_stem(ctx.judged(child));
     let mut agreed: Option<Place> = None;
     for sib in siblings {
         let Some(next) = resolve_one(sib.pid, curr, ctx, memo, walking, depth + 1) else {
             return place;
         };
+        // A sibling that resolved to the unit's own stem names the unit, not
+        // an app (Steam's `srt-logger` orphaned into `org.gnome.Shell@user.service`).
+        if stem.is_some_and(|s| next.key == s) {
+            continue;
+        }
         if next.key == own || agreed.as_ref().is_some_and(|prev| prev.key != next.key) {
             return place;
         }

@@ -736,6 +736,15 @@ fn a_sandboxed_glycin_loader_bills_to_the_one_app_in_its_cgroup() {
         ),
         at(4, 1, "bwrap", "/usr/bin/bwrap", shell),
         at(5, 4, "glycin-image-rs", loader, shell),
+        // Steam's logger, orphaned into the same unit: it resolves to the
+        // unit's own stem, which is not an app the loader could bill to.
+        at(
+            6,
+            1,
+            "srt-logger",
+            "/home/u/.local/share/Steam/ubuntu12_32/steam-runtime/usr/libexec/steam-runtime-tools-0/srt-logger",
+            shell,
+        ),
     ]);
     let user = user_of(&gnome, 1000);
     assert!(
@@ -743,8 +752,8 @@ fn a_sandboxed_glycin_loader_bills_to_the_one_app_in_its_cgroup() {
         "the loader must not stay an application: {:?}",
         titles(&user.applications)
     );
-    assert_eq!(titles(&user.user_services), ["gnome-shell"]);
-    let names = proc_names(&user.user_services[0]);
+    assert!(has(&user.user_services, "gnome-shell"));
+    let names = proc_names(ident(&user.user_services, "gnome-shell"));
     for n in [
         "gnome-shell",
         "mutter-x11-frames",

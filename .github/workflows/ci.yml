@@ -49,10 +49,9 @@ jobs:
           targets: aarch64-unknown-linux-gnu
       - run: cargo check --locked --all-targets --target aarch64-unknown-linux-gnu
 
-  # Cargo.toml declares rust-version = "1.98" and AGENTS.md leans on that floor
-  # to keep the hand-rolled helpers, but every other job runs stable, so the
-  # floor was asserted and never tested. rust-toolchain.toml outranks a rustup
-  # override, so the toolchain has to be named on the cargo invocation itself.
+  # Every other job runs stable, so the rust-version floor in Cargo.toml needs
+  # its own job. rust-toolchain.toml outranks a rustup override, so the
+  # toolchain has to be named on the cargo invocation itself.
   msrv:
     runs-on: ubuntu-latest
     timeout-minutes: 15

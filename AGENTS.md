@@ -33,6 +33,7 @@ src/once.rs          columns, tree ordering, table and JSON
 src/explain.rs       --explain PID: resolved placement, the placement key, the rule each stage matched
 src/ui.rs            ratatui header + tree table
 src/tty.rs           panic hook + signal handler; restores the terminal
+src/num.rs           numeric conversions (f64_of, sat_*) so no cast is silenced
 src/glyph.rs         unicode, legacy or ascii bar/rule/marker characters; resolved once
 src/keys.rs          the one TUI key list; build.rs includes it for the man page
 src/root.rs          the /proc and /sys prefix behind --proc-root, resolved once; tests/live_proc.rs:a_proc_root_is_the_only_proc_heft_reads guards it

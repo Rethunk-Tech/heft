@@ -21,7 +21,7 @@ cargo binstall cargo-deny cargo-machete   # pre-push; do not sudo
 
 Pre-commit runs `cargo fmt --check` and `cargo clippy --locked --all-targets -- -D warnings`
 when Rust or Cargo.toml is staged. Pre-push runs `gate`, which is every command below plus
-`cargo build --locked` and actionlint.
+`cargo build --locked`, actionlint and shellcheck.
 
 A local build writes completions and the man page under a hashed `OUT_DIR`.
 Take the newest `heft.1`: an older build leaves stale directories in `target/`.
@@ -73,8 +73,8 @@ tests already use to spawn it.
 
 The gate is `cargo clippy --locked --all-targets -- -D warnings` at the default
 level plus `[lints.clippy]` in `Cargo.toml`. The `pedantic`, `nursery` and
-`cargo` groups stay off. The cast lints' `#[expect]` convention is in
-[AGENTS.md](AGENTS.md#gates).
+`cargo` groups stay off. The cast lints are denied and no cast is silenced;
+the convention is in [AGENTS.md](AGENTS.md#gates).
 
 ## Commits
 

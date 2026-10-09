@@ -453,6 +453,43 @@ fn compute_place(
         }
     }
 
+    // A leaf orphaned into a unit another program owns (Steam's `srt-logger` in
+    // `org.gnome.Shell@user.service`) keeps that unit's cgroup but not its name:
+    // the unit stem would open a phantom row. It bills to the unit's owner, the
+    // lowest-pid process there that is itself an app. A binary the stem names
+    // (`docker` in `engined-tls.service` has no other app beside it) is unaffected.
+    if !classes.intersects(Classes::GENERIC)
+        && curr
+            .get(&p.ppid)
+            .is_some_and(|q| ctx.classes(q).intersects(Classes::NO_ABSORB))
+        && let Some(stem) = service_unit_stem(ctx.judged(p))
+        && stem_replaces_name(stem, classify::name_ref(p))
+        && let Some(owner) = ctx
+            .procs
+            .values()
+            .filter(|q| {
+                q.pid != p.pid
+                    && q.cgroup == p.cgroup
+                    && !ctx.classes(q).intersects(
+                        Classes::LAUNCHER
+                            | Classes::GENERIC
+                            | Classes::SHELL
+                            | Classes::NOISE
+                            | Classes::WORKER
+                            | Classes::CRASH_HELPER,
+                    )
+            })
+            .min_by_key(|q| q.pid)
+        && let Some(place) = resolve_one(owner.pid, curr, ctx, memo, walking, depth + 1)
+        && matches!(place.folder, Folder::Applications | Folder::UserServices)
+        && place.key != stem
+    {
+        return Place {
+            instance: ctx.instance(p),
+            ..place
+        };
+    }
+
     // Any other orphan (`wl-copy` forking into the background) keeps the
     // process group of the app that ran it. Applications only: against any
     // live leader, `bwrap`, `ibus-x11` and `gsd-disk-utility-notify` would

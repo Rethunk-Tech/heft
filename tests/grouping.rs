@@ -725,7 +725,9 @@ fn a_sandboxed_glycin_loader_bills_to_the_one_app_in_its_cgroup() {
         "bwrap and the loader stay visible under anydesk: {names:?}"
     );
 
+    let manager = "0::/user.slice/user-1000.slice/user@1000.service/init.scope";
     let gnome = tree_from(vec![
+        at(1, 0, "systemd", "/usr/lib/systemd/systemd", manager),
         at(2, 1, "gnome-shell", "/usr/bin/gnome-shell", shell),
         at(
             3,
@@ -752,13 +754,18 @@ fn a_sandboxed_glycin_loader_bills_to_the_one_app_in_its_cgroup() {
         "the loader must not stay an application: {:?}",
         titles(&user.applications)
     );
-    assert!(has(&user.user_services, "gnome-shell"));
+    assert!(
+        !has(&user.user_services, "org.gnome.Shell"),
+        "the orphaned logger bills to the unit's owner, not a row named for the unit: {:?}",
+        titles(&user.user_services)
+    );
     let names = proc_names(ident(&user.user_services, "gnome-shell"));
     for n in [
         "gnome-shell",
         "mutter-x11-frames",
         "bwrap",
         "glycin-image-rs",
+        "srt-logger",
     ] {
         assert!(names.iter().any(|p| p == n), "missing {n} in {names:?}");
     }

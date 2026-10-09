@@ -10,6 +10,9 @@
 
 ### Changed
 
+- A leaf orphaned into a unit another program owns (Steam's `srt-logger` in
+  `org.gnome.Shell@user.service`) bills to that program's row instead of opening a
+  User Services row named for the unit.
 - A process tree started by `unshare` or `dbus-run-session` bills to its
   payload (`unshare` skips its options, including `--map-user=…`) instead of
   standing as a top-level Applications row named for the launcher.

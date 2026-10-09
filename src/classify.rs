@@ -174,6 +174,9 @@ pub(crate) fn launcher_payload_hint(p: &Process, rules: &Rules) -> Option<String
     {
         return Some(stem.to_string());
     }
+    if name_ref(p) == "unshare" {
+        return unshare_payload(&p.cmdline).map(str::to_string);
+    }
     if let Some(i) = p.cmdline.iter().rposition(|a| a == "--") {
         for arg in &p.cmdline[i + 1..] {
             if arg.starts_with('-') {
@@ -189,6 +192,47 @@ pub(crate) fn launcher_payload_hint(p: &Process, rules: &Rules) -> Option<String
             }
             return Some(b.to_string());
         }
+    }
+    None
+}
+
+/// `unshare` takes no `--` before its command, so the payload is the first
+/// argument that is neither an option nor a separate-argument option's value.
+/// Options written `--opt=value` carry their value inline.
+fn unshare_payload(cmdline: &[String]) -> Option<&str> {
+    // util-linux unshare: options whose value is the next argument when not
+    // given inline. Optional-argument options (`--mount[=file]`) never take it.
+    const TAKES_VALUE: &[&str] = &[
+        "--propagation",
+        "--setgroups",
+        "--setuid",
+        "--setgid",
+        "--root",
+        "--wd",
+        "--map-user",
+        "--map-group",
+        "--map-users",
+        "--map-groups",
+        "--monotonic",
+        "--boottime",
+        "--load-interp",
+        "-S",
+        "-G",
+        "-R",
+        "-w",
+    ];
+    let mut args = cmdline.iter().skip(1);
+    while let Some(arg) = args.next() {
+        if arg == "--" {
+            return args.next().map(|a| basename(a));
+        }
+        if arg.starts_with('-') {
+            if TAKES_VALUE.contains(&arg.as_str()) {
+                args.next();
+            }
+            continue;
+        }
+        return Some(basename(arg));
     }
     None
 }

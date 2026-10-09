@@ -13,6 +13,8 @@
               "zypak-helper",
               "snap-confine",
               "bunx",
+              "unshare",
+              "dbus-run-session",
               "npx",
               "apprun",
               "rtk",

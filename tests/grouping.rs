@@ -1687,3 +1687,81 @@ fn an_interpreter_tree_is_one_row_and_a_dead_app_scope_is_not_a_name() {
     assert_eq!(titles(apps), ["next", "vite"], "{:?}", titles(apps));
     assert_eq!(proc_names(ident(apps, "next")).len(), 3);
 }
+
+/// `unshare` has no `--` before its command and `dbus-run-session` has
+/// options before one; either way the tree they start bills to the payload
+/// rather than standing as a top-level row named for the launcher.
+#[test]
+fn unshare_and_dbus_run_session_trees_bill_to_their_payload() {
+    let at = |pid, ppid, exe: &str, args: &[&str]| {
+        let comm = exe.rsplit('/').next().expect("exe has a name");
+        Process {
+            pid,
+            ppid,
+            pgrp: i32::try_from(pid).expect("pid fits i32"),
+            uid: 1000,
+            comm: comm.into(),
+            exe: Some(exe.into()),
+            cmdline: std::iter::once(comm)
+                .chain(args.iter().copied())
+                .map(String::from)
+                .collect::<Vec<_>>()
+                .into(),
+            cgroup: "0::/user.slice/user-1000.slice/session-2.scope".into(),
+            ..Process::default()
+        }
+    };
+    let tree = tree_from(vec![
+        at(
+            2,
+            1,
+            "/usr/bin/unshare",
+            &[
+                "--fork",
+                "--map-user=1000",
+                "--propagation",
+                "private",
+                "/opt/mortar/mortar-server",
+                "--port",
+                "1",
+            ],
+        ),
+        at(
+            3,
+            2,
+            "/opt/mortar/mortar-server",
+            &["/opt/mortar/mortar-server", "--port", "1"],
+        ),
+        at(
+            4,
+            1,
+            "/usr/bin/dbus-run-session",
+            &[
+                "--config-file=/etc/s.conf",
+                "--",
+                "/usr/bin/mutter",
+                "--wayland",
+            ],
+        ),
+        at(5, 4, "/usr/bin/dbus-daemon", &["dbus-daemon", "--session"]),
+        at(6, 4, "/usr/bin/mutter", &["mutter", "--wayland"]),
+    ]);
+    let user = user_of(&tree, 1000);
+    for launcher in ["unshare", "dbus-run-session"] {
+        assert!(
+            !has(&user.applications, launcher),
+            "{launcher} must not be a row: {:?}",
+            titles(&user.applications)
+        );
+    }
+    assert!(
+        has(&user.applications, "mortar-server"),
+        "{:?}",
+        titles(&user.applications)
+    );
+    assert!(
+        has(&user.applications, "mutter"),
+        "{:?}",
+        titles(&user.applications)
+    );
+}

@@ -10,6 +10,9 @@
 
 ### Changed
 
+- A process tree started by `unshare` or `dbus-run-session` bills to its
+  payload (`unshare` skips its options, including `--map-user=…`) instead of
+  standing as a top-level Applications row named for the launcher.
 - A glycin loader (`glycin-image-rs`, and other `glycin-` binaries under
   `/usr/libexec/glycin-loaders/`) bills to the one other app in its cgroup.
   Sandboxed by `bwrap`, it was its own Applications row.

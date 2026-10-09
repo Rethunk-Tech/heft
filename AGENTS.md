@@ -42,6 +42,7 @@ src/sixel.rs         --trend sixel: the same image, RLE sixel, positioned from t
 tests/grouping.rs    integration tests over tests/fixtures/; links the library
 tests/live_proc.rs   invariants over the real /proc; must hold in a bare container
 tests/reconcile.rs   heft against /proc read independently, not against itself
+tests/tty_restore.rs SIGTERM and SIGHUP on a real pty: terminal restored, exit 128+signal
 tests/common/mod.rs  heft(), arr() and pids() for the two that drive the built binary
 tests/fixtures/      grouping worlds: gui/ desktop snapshot, zygote/ fallback case
 packaging/aur/       PKGBUILD + .SRCINFO for heft, heft-bin, heft-git; update.sh

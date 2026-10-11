@@ -26,6 +26,8 @@
 //!   `gcr-ssh-agent` absorbs `ssh-agent` only in that unit.
 //! - `40-trinity.json` merges TDE session processes as `tdeinit`; it sorts
 //!   before `50-plasma.json` because both ship `kded` and `ksmserver`.
+//! - `56-sway.json` places the compositor, bar and background as `sway`,
+//!   `swaybar` and `swaybg`; a terminal sway started stays an application.
 //! - `70-editors.json` (the `app` stage) bills an editor's install or extension
 //!   tree to that editor, matched by `exe` path rather than PPID so a real app
 //!   started from its terminal keeps its row.
@@ -1224,7 +1226,7 @@ mod tests {
         let r = rules.report(&Rules::builtin());
         assert_eq!(r.failed, 0, "{}", r.lines.join("\n"));
         assert!(r.lines.is_empty(), "{}", r.lines.join("\n"));
-        assert_eq!(r.examples, 158);
+        assert_eq!(r.examples, 163);
     }
 
     /// Every variant of a derived enum, by index: serde deserializes one from
@@ -1661,7 +1663,7 @@ mod tests {
                 .any(|l| l.starts_with("90-a.json:x#0 (xdg): "))
         );
         assert!(r.lines.iter().any(|l| l.starts_with("91-b.json (xdg): ")));
-        assert_eq!(r.examples, 159);
+        assert_eq!(r.examples, 164);
     }
 
     #[test]

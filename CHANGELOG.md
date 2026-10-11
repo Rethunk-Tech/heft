@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Sway's compositor, bar and background are three User Services rows (`sway`,
+  `swaybar`, `swaybg`). A terminal sway started stays an application.
+
 ## 0.12.2 - 2026-10-09
 
 ### Added

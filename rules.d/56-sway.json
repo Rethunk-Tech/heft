@@ -1,0 +1,80 @@
+{
+  "stage": "session",
+  "rules": [
+    {
+      "id": "sway",
+      "match": {
+        "name": "sway"
+      },
+      "identity": "sway",
+      "folder": "user_services"
+    },
+    {
+      "id": "swaybar",
+      "match": {
+        "name": "swaybar"
+      },
+      "identity": "swaybar",
+      "folder": "user_services"
+    },
+    {
+      "id": "swaybg",
+      "match": {
+        "name": "swaybg"
+      },
+      "identity": "swaybg",
+      "folder": "user_services"
+    }
+  ],
+  "examples": [
+    {
+      "comm": "sway",
+      "exe": "/usr/bin/sway",
+      "cmdline": [
+        "/usr/bin/sway"
+      ],
+      "expect": {
+        "identity": "sway",
+        "rule": "sway"
+      }
+    },
+    {
+      "comm": "swaybar",
+      "exe": "/usr/bin/swaybar",
+      "cmdline": [
+        "/usr/bin/swaybar"
+      ],
+      "expect": {
+        "identity": "swaybar",
+        "rule": "swaybar"
+      }
+    },
+    {
+      "comm": "swaybg",
+      "exe": "/usr/bin/swaybg",
+      "cmdline": [
+        "/usr/bin/swaybg"
+      ],
+      "expect": {
+        "identity": "swaybg",
+        "rule": "swaybg"
+      }
+    },
+    {
+      "comm": "foot",
+      "exe": "/usr/bin/foot",
+      "cmdline": [
+        "/usr/bin/foot"
+      ],
+      "expect": null
+    },
+    {
+      "comm": "kitty",
+      "exe": "/usr/bin/kitty",
+      "cmdline": [
+        "/usr/bin/kitty"
+      ],
+      "expect": null
+    }
+  ]
+}

@@ -245,8 +245,8 @@ and the footer reads `PAUSED 8s`.
   session processes merge as `plasmashell`, kwin and its helpers as `kwin`. A
   Trinity (TDE) session (tdeinit, twin, kicker, kdesktop, artsd, its tdeio
   slaves and tray helpers) merges as `tdeinit`, while apps tdeinit launches
-  keep their own rows. A sway session lands in the right buckets but merges
-  more coarsely under User Services.
+  keep their own rows. Sway's compositor, bar and background are `sway`,
+  `swaybar` and `swaybg`; a terminal sway started keeps its own row.
 - **Containers** under a user are workloads heft can attribute: the owner of
   the container's workdir label, else the owner of its first bind mount under a
   user's paths. Unattributed running containers sit on Host → Containers.

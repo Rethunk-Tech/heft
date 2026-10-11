@@ -386,8 +386,15 @@ fn read_pid_held(
     let mut cgroup_id = None;
     let mut fd_count = None;
     let mut fd_skips = 0;
-    let (uid, exe, cmdline, cgroup, rss_pages) = if parsed.kthread {
-        (0, None, Arc::default(), Arc::default(), Some(0))
+    let (uid, exe, cmdline, cgroup, cwd, rss_pages) = if parsed.kthread {
+        (
+            0,
+            None,
+            Arc::default(),
+            Arc::default(),
+            Arc::default(),
+            Some(0),
+        )
     } else {
         // An exec maps a new image, which moves `exec_mark` under ASLR, and
         // renames `comm`; `exe` is read again when either changes. A foreign
@@ -402,10 +409,10 @@ fn read_pid_held(
             Some(p) if same_exec => p.exe.clone(),
             _ => lazy_dir(&mut dir, pid).and_then(read_exe),
         };
-        let (uid, cmdline, cgroup) = match prev {
+        let (uid, cmdline, cgroup, cwd) = match prev {
             Some(p) if carries_identity(p, walks, &parsed.comm, exe.as_deref()) => {
                 cgroup_id = p.cgroup_id;
-                (p.uid, p.cmdline.clone(), p.cgroup.clone())
+                (p.uid, p.cmdline.clone(), p.cgroup.clone(), p.cwd.clone())
             }
             _ => {
                 let info = pidfd_info(pid);
@@ -433,7 +440,10 @@ fn read_pid_held(
                 cgroup_id = info.map(|i| i.1);
                 let cmdline =
                     lazy_dir(&mut dir, pid).map_or_else(Vec::new, |d| read_cmdline(d, buf));
-                (uid, cmdline.into(), cgroup)
+                let cwd = lazy_dir(&mut dir, pid)
+                    .and_then(read_cwd)
+                    .unwrap_or_default();
+                (uid, cmdline.into(), cgroup, cwd.into())
             }
         };
         (
@@ -441,6 +451,7 @@ fn read_pid_held(
             exe,
             cmdline,
             cgroup,
+            cwd,
             // `statm`, not `stat` field 24: that one is `get_mm_rss`, a
             // per-CPU estimate that can read 0 for a resident process.
             match h.as_ref().and_then(|h| h.statm.as_ref()) {
@@ -526,6 +537,7 @@ fn read_pid_held(
         comm: parsed.comm,
         exe,
         cmdline,
+        cwd,
         cgroup,
         utime: parsed.utime,
         stime: parsed.stime,
@@ -665,19 +677,19 @@ fn is_v2_only(cgroup: &str) -> bool {
 
 const FD_SKIPS_MAX: u32 = 6;
 
-/// Every `IDENTITY_EVERY`th walk of a process rereads its uid, argv and
-/// cgroup; the rest carry them.
+/// Every `IDENTITY_EVERY`th walk of a process rereads its uid, argv, working
+/// directory and cgroup; the rest carry them.
 const IDENTITY_EVERY: u32 = 5;
 
-/// Whether `prev`'s uid, argv and cgroup still stand without rereading
-/// `status`, `cmdline` and `cgroup`. `walks` restarts at 0 for a pid first
-/// seen or reused (its `starttime` changed), and a process reads in full for
-/// its first `IDENTITY_EVERY` walks, because that is when a launcher moves it
-/// into its own scope and a server retitles its argv. An `exec` changes `exe`
-/// or `comm`, both read every tick, so it rereads at once. What no fresh
-/// field betrays later -- `setuid`, a cgroup move, an argv rewrite -- shows
-/// within `IDENTITY_EVERY` walks; adding `pid` staggers those rereads so no
-/// tick takes them all.
+/// Whether `prev`'s uid, argv, working directory and cgroup still stand
+/// without rereading `status`, `cmdline`, `cwd` and `cgroup`. `walks` restarts
+/// at 0 for a pid first seen or reused (its `starttime` changed), and a
+/// process reads in full for its first `IDENTITY_EVERY` walks, because that
+/// is when a launcher moves it into its own scope and a server retitles its
+/// argv. An `exec` changes `exe` or `comm`, both read every tick, so it
+/// rereads at once. What no fresh field betrays later -- `setuid`, a cgroup
+/// move, an argv rewrite, a `chdir` -- shows within `IDENTITY_EVERY` walks;
+/// adding `pid` staggers those rereads so no tick takes them all.
 fn carries_identity(prev: &Process, walks: u32, comm: &str, exe: Option<&str>) -> bool {
     walks >= IDENTITY_EVERY
         && !walks.wrapping_add(prev.pid).is_multiple_of(IDENTITY_EVERY)
@@ -786,8 +798,16 @@ fn parse_uid(status: &[u8]) -> Option<u32> {
 }
 
 fn read_exe(dir: &OwnedFd) -> Option<String> {
+    read_link_str(dir, c"exe")
+}
+
+fn read_cwd(dir: &OwnedFd) -> Option<String> {
+    read_link_str(dir, c"cwd")
+}
+
+fn read_link_str(dir: &OwnedFd, name: &CStr) -> Option<String> {
     let mut link = [0; 4096];
-    let target = read_link_at(dir, c"exe", &mut link)?;
+    let target = read_link_at(dir, name, &mut link)?;
     Some(strip_deleted(&String::from_utf8_lossy(target)).to_string())
 }
 
@@ -905,6 +925,7 @@ pub(crate) fn detail(pid: u32) -> Vec<(&'static str, String)> {
             uid.map_or_else(String::new, |u| format!("{u} ({})", Passwd::read().name(u))),
         ),
         ("EXE", dir.as_ref().and_then(read_exe).unwrap_or_default()),
+        ("CWD", dir.as_ref().and_then(read_cwd).unwrap_or_default()),
         ("CGROUP", cgroup),
         ("CMDLINE", crate::once::trunc(&argv, 240)),
     ]

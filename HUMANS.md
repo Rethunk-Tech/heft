@@ -125,8 +125,9 @@ key toggles.
 
 `--filter` is the `/` key. The pattern is a regex, case-insensitive unless
 `(?-i)` turns that off; Unicode classes (`\p{Greek}`) are not supported. It
-matches a row's name and the argv of every process under it, expanded or not,
-one process per line, so `^` and `$` anchor to one process's argv. Matching
+matches a row's name, the argv of every process under it, and that process's
+working directory, expanded or not, each on its own line, so `^` and `$` anchor
+to one process's argv or its directory. Matching
 rows are kept with their parents, and a parent keeps its full total.
 
 `--once` rows stop at identities and their containers while the TUI also has
@@ -177,7 +178,7 @@ because the kernel does not virtualise `meminfo` and `stat` per namespace.
 | Enter / Space | collapse or expand |
 | `←` `→` / `h` `l` | scroll columns when the terminal is narrower than the table |
 | `Shift-←` `Shift-→` / `[` `]` | previous or next sort column (default PSS descending); `[` `]` for terminals that keep Shift-arrows (Konsole's tab switching, the Linux console, rxvt) |
-| `/` | filter by regex on the name and argv (Enter applies, Esc cancels) |
+| `/` | filter by regex on the name, argv and working directory (Enter applies, Esc cancels) |
 | `n` / `N` | next or previous filter match (wraps; skips Host, users, and folder headers) |
 | `g` | go to a pid (`goto>`; Enter applies, Esc cancels) |
 | `E` | expand every expandable row |

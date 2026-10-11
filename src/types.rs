@@ -47,6 +47,9 @@ pub struct Process {
     pub exe: Option<String>,
     /// Shared, so a tick that carries the identity copies no strings.
     pub cmdline: Arc<[String]>,
+    /// `/proc/<pid>/cwd`, reread with argv. Empty for a kernel thread and
+    /// when the link cannot be read. A `chdir` shows up on that same cadence.
+    pub cwd: Arc<str>,
     pub cgroup: Arc<str>,
     pub utime: u64,
     pub stime: u64,
@@ -357,6 +360,10 @@ pub struct ProcNode {
     /// record alone. Going back to `/proc` is not equivalent: by the time a
     /// line is read the pid may be gone, or worse, reused.
     pub cmdline: String,
+    /// Working directory. The exe basename and argv can both omit the repo a
+    /// process is in; `/` still matches this. Empty when it could not be read.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub cwd: String,
     #[serde(flatten)]
     pub(crate) metrics: Metrics,
     #[serde(skip_serializing_if = "Vec::is_empty")]

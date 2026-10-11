@@ -360,8 +360,8 @@ struct Flat {
     /// of the tree, not candidates for `--top`.
     trimmable: bool,
     /// See `TableRow::search`. A collapsed row has no process rows beneath it
-    /// to match, so an identity carries the argv of its whole subtree or `/`
-    /// would only reach what happens to be expanded.
+    /// to match, so an identity carries the argv and working directory of its
+    /// whole subtree or `/` would only reach what happens to be expanded.
     search: Option<String>,
 }
 
@@ -371,7 +371,7 @@ fn flatten(
     view: &View,
     filter: Option<&Filter>,
 ) -> Vec<Flat> {
-    // Resolved before the walk: the argv haystack is built only for a tick
+    // Resolved before the walk: the filter haystack is built only for a tick
     // that searches it.
     let filter = filter.filter(|_| !view.filter.is_empty());
     let deep = filter.is_some();
@@ -2158,6 +2158,18 @@ mod tests {
         assert_eq!(row_pid(&row.id), Some(1));
         // pid 1 exists on any Linux box the suite runs on, readable or not.
         assert!(detail_text(&row, &HostTree::default(), 80).contains("CGROUP"));
+    }
+
+    /// `i` reads the working directory with the other per-process facts. The
+    /// row is this test process, so the pane shows the directory it is in.
+    #[test]
+    fn detail_shows_the_working_directory() {
+        let mut row = flat(4, "heft");
+        row.id = format!("host/apps/heft/i/1/p/{}", std::process::id());
+        let text = detail_text(&row, &HostTree::default(), 200);
+        let cwd = std::env::current_dir().expect("the test process has a cwd");
+        let cwd = cwd.to_str().expect("the test cwd is utf-8");
+        assert!(text.contains(&format!("CWD       {cwd}")), "{text}");
     }
 
     /// Stacked one per line the pairs ran past the bottom of the pane, cutting

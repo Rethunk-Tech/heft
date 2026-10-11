@@ -1200,10 +1200,10 @@ fn proc_node(
     metrics: &PidMap<Metrics>,
 ) -> ProcNode {
     let name = curr.get(&pid).map_or_else(|| pid.to_string(), name_of);
-    let cmdline = curr
-        .get(&pid)
-        .map(|p| p.cmdline.join(" "))
-        .unwrap_or_default();
+    let (cmdline, cwd) = curr.get(&pid).map_or_else(
+        || (String::new(), String::new()),
+        |p| (p.cmdline.join(" "), p.cwd.to_string()),
+    );
     let mut kids = match (depth + 1).cmp(&MAX_PROC_DEPTH) {
         std::cmp::Ordering::Less => children.get(&pid).cloned().unwrap_or_default(),
         std::cmp::Ordering::Equal => descendants(pid, children),
@@ -1214,6 +1214,7 @@ fn proc_node(
         pid,
         name,
         cmdline,
+        cwd,
         metrics: metrics.get(&pid).cloned().unwrap_or_default(),
         children: kids
             .into_iter()

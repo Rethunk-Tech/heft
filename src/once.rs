@@ -485,8 +485,8 @@ pub fn sort_labels() -> Vec<&'static str> {
 /// `code` has always matched `Code`, and a regex that quietly became
 /// case-sensitive would break every filter anyone had saved. `(?-i)` turns it
 /// back off for whoever wants that. Multi-line too, via the same `(?m)`: the
-/// haystack is one line per process, so `^` and `$` anchor to one process's
-/// argv, and `(?-m)` restores whole-text anchors.
+/// haystack is one line per argv and one per working directory, so `^` and
+/// `$` anchor to one of those, and `(?-m)` restores whole-text anchors.
 ///
 /// `regex-lite` rather than `regex`: the full engine's extra size and crates
 /// buy SIMD literal search, which a few hundred process names matched once a
@@ -751,7 +751,7 @@ fn render_table(
         }
         f
     };
-    // The argv haystack is built only for the tick that searches it.
+    // The filter haystack is built only for the tick that searches it.
     let mut rows = table_rows(&tree, filter.is_some());
     if let Some(f) = &filter {
         keep_matches(&mut rows, f, TableRow::filter_key);
@@ -797,8 +797,9 @@ struct TableRow {
     /// `assemble` happened to build first.
     trimmable: bool,
     /// What `--filter` matches instead of `name`, when a filter is live: the
-    /// title plus the argv of every process under the row. `None` everywhere
-    /// else, so a tick with no filter allocates nothing for it.
+    /// title plus the argv and working directory of every process under the
+    /// row. `None` everywhere else, so a tick with no filter allocates
+    /// nothing for it.
     search: Option<String>,
 }
 
@@ -882,9 +883,11 @@ fn push_folder(
     }
 }
 
-/// Everything a filter searches on one row: the title it displays, then the
-/// argv of every process under it. `name` is an exe basename, so without argv
-/// no pattern can tell four identical workers apart by the `--port` they hold.
+/// Everything a filter searches on one row: the title it displays, then each
+/// process's argv and working directory. `name` is an exe basename, so without
+/// argv no pattern can tell four identical workers apart by the `--port` they
+/// hold, and without the directory a process whose repo is only that path
+/// matches nothing.
 pub(crate) fn haystack(title: &str, procs: &[ProcNode]) -> String {
     let mut s = String::from(title);
     push_cmdlines(&mut s, procs);
@@ -903,11 +906,15 @@ pub(crate) fn ident_haystack(ident: &IdentNode) -> String {
 }
 
 /// Newline-separated so a pattern anchored with `$` cannot run off the end of
-/// one process's argv into the next one's.
+/// one process's argv into its working directory, or into the next process.
 fn push_cmdlines(out: &mut String, procs: &[ProcNode]) {
     for p in procs {
         out.push('\n');
         out.push_str(&p.cmdline);
+        if !p.cwd.is_empty() {
+            out.push('\n');
+            out.push_str(&p.cwd);
+        }
         push_cmdlines(out, &p.children);
     }
 }
@@ -1135,6 +1142,7 @@ mod tests {
         ProcNode {
             pid,
             cmdline: String::new(),
+            cwd: String::new(),
             name: format!("p{pid}"),
             metrics: metrics(pss, 0.0),
             children: Vec::new(),
@@ -1617,6 +1625,48 @@ mod tests {
         // Host, the user, the folder header, and the one worker that holds it.
         assert_eq!(matched(true), 4);
         assert_eq!(matched(false), 0);
+    }
+
+    /// The row title and argv are the binary name. The repo is only the
+    /// working directory, so `/` matches that line and nothing about the
+    /// sibling whose directory has no slash.
+    #[test]
+    fn a_cwd_only_repo_matches_slash() {
+        let worker = |cwd: &str| IdentNode {
+            id: "python3".into(),
+            instances: vec![InstanceNode {
+                key: cwd.into(),
+                nproc: 1,
+                metrics: Metrics::default(),
+                processes: vec![ProcNode {
+                    cmdline: "python3".into(),
+                    cwd: cwd.into(),
+                    ..proc_node(1, None)
+                }],
+            }],
+            ..sample_ident(1.0)
+        };
+        let tree = HostTree {
+            users: vec![UserNode {
+                uid: 1000,
+                name: "u".into(),
+                applications: vec![worker("/home/u/repo"), worker("relative")],
+                ..UserNode::default()
+            }],
+            ..HostTree::default()
+        };
+        let filter = Filter::new("/").expect("test patterns compile");
+        let mut rows = table_rows(&tree, true);
+        keep_matches(&mut rows, &filter, TableRow::filter_key);
+        let kept: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(kept, ["Host", "u", "Applications (2)", "python3"]);
+        let hay = haystack(
+            "python3",
+            &tree.users[0].applications[0].instances[0].processes,
+        );
+        assert!(Filter::new("^python3$").unwrap().0.is_match(&hay));
+        assert!(Filter::new("^/home/u/repo$").unwrap().0.is_match(&hay));
+        assert!(!Filter::new("^python3 /home").unwrap().0.is_match(&hay));
     }
 
     /// Silent when heft can account for the machine; a figure when it cannot.

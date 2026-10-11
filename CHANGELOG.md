@@ -6,6 +6,9 @@
 
 - An `FD` column (`fds` in `--json`) sums open file descriptors. Blank on
   kernel threads and until the first fd scan.
+- `/` and `--filter` match a process's working directory as well as its name
+  and argv, and `i` shows that directory. It is not a column. A non-empty
+  directory is also `cwd` on the process in `--json`.
 
 ### Changed
 

@@ -83,6 +83,17 @@ pub(crate) const COLUMNS: &[Column] = &[
         stall: false,
         key: Some(|_, m| opt_u(m.threads)),
     },
+    // Open fds. Blank on a kernel thread and until the first fd scan; between
+    // scans the count is the one `proc` already held, the way PSS is.
+    Column {
+        label: "fds",
+        header: "FD",
+        width: 5,
+        fmt: |_, _, m| m.fds.map(|n| n.to_string()).unwrap_or_default(),
+        pct: false,
+        stall: false,
+        key: Some(|_, m| opt_u(m.fds)),
+    },
     // Oldest, not a sum — see `Metrics::age_secs`.
     Column {
         label: "age",
@@ -1396,8 +1407,8 @@ mod tests {
         assert_eq!(
             labels(&hiding(&["gtt", "vram", "netns_rx", "netns_tx"])),
             [
-                "name", "nproc", "threads", "age", "core", "machine", "pss", "rss", "swap", "gfx",
-                "compute", "diskr", "diskw", "cpustall", "iostall", "memstall"
+                "name", "nproc", "threads", "fds", "age", "core", "machine", "pss", "rss", "swap",
+                "gfx", "compute", "diskr", "diskw", "cpustall", "iostall", "memstall"
             ]
         );
         assert_eq!(labels(&hiding(&["name"])), all_labels());
@@ -1482,8 +1493,8 @@ mod tests {
     fn hiding_a_column_only_removes_its_cells() {
         let mut out = Vec::new();
         let cols = hiding(&[
-            "nproc", "threads", "age", "diskr", "diskw", "gfx", "compute", "cpustall", "iostall",
-            "memstall", "netns_rx", "netns_tx",
+            "nproc", "threads", "fds", "age", "diskr", "diskw", "gfx", "compute", "cpustall",
+            "iostall", "memstall", "netns_rx", "netns_tx",
         ]);
         write_header(&mut out, &cols).unwrap();
         write_rows(&mut out, &cols, &folder_rows(1536.0)).unwrap();
@@ -1498,7 +1509,7 @@ mod tests {
     #[test]
     fn sort_cycle_skips_hidden_columns() {
         let cols = hiding(&["nproc", "threads"]);
-        assert_eq!(Sort::from_label("name").step(&cols, false).label(), "age");
+        assert_eq!(Sort::from_label("name").step(&cols, false).label(), "fds");
         // A saved view may sort by a column it also hides; the cycle restarts
         // rather than stalling on it.
         assert_eq!(Sort::from_label("nproc").step(&cols, false).label(), "name");
@@ -1517,6 +1528,7 @@ mod tests {
                 // zeros, which is the layout most machines print.
                 swap_bytes: None,
                 threads: Some(19),
+                fds: None,
                 age_secs: Some(3 * 3600 + 12),
                 disk_r_bps: Some(disk_r_bps),
                 disk_w_bps: None,
@@ -1763,14 +1775,14 @@ mod tests {
         write_rows(&mut out, &cols, &folder_rows(1536.0)).unwrap();
         assert_eq!(
             String::from_utf8(out).unwrap(),
-            "NAME                            N   THR   AGE   %CORE   %MACH      PSS      RSS   SWAP     VRAM      GTT   GFX   CMP   DISK R   DISK W CPU ST  IO ST MEM ST NETNS RX NETNS TX\n  Applications (1)              7    19    3h    12.2     1.5     1.5K     2.0K            1.0M            3.0         1.5K/s                                                \n    an-identity-name-long-e\u{2026}    7    19    3h    12.2     1.5     1.5K     2.0K            1.0M            3.0         1.5K/s             0.5   12.0                         \n"
+            "NAME                            N   THR    FD   AGE   %CORE   %MACH      PSS      RSS   SWAP     VRAM      GTT   GFX   CMP   DISK R   DISK W CPU ST  IO ST MEM ST NETNS RX NETNS TX\n  Applications (1)              7    19          3h    12.2     1.5     1.5K     2.0K            1.0M            3.0         1.5K/s                                                \n    an-identity-name-long-e\u{2026}    7    19          3h    12.2     1.5     1.5K     2.0K            1.0M            3.0         1.5K/s             0.5   12.0                         \n"
         );
 
         let mut out = Vec::new();
         write_rows(&mut out, &cols, &folder_rows(1_030_963.0)).unwrap();
         assert_eq!(
             String::from_utf8(out).unwrap(),
-            "  Applications (1)              7    19    3h    12.2     1.5     1.5K     2.0K            1.0M            3.0       1006.8K/s                                                \n    an-identity-name-long-e\u{2026}    7    19    3h    12.2     1.5     1.5K     2.0K            1.0M            3.0       1006.8K/s             0.5   12.0                         \n"
+            "  Applications (1)              7    19          3h    12.2     1.5     1.5K     2.0K            1.0M            3.0       1006.8K/s                                                \n    an-identity-name-long-e\u{2026}    7    19          3h    12.2     1.5     1.5K     2.0K            1.0M            3.0       1006.8K/s             0.5   12.0                         \n"
         );
     }
 

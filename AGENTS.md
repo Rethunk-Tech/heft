@@ -158,6 +158,7 @@ field there when grouping starts reading one, or reports stop reproducing.
 | SWAP | `SwapPss:` from the PSS rollup read (`Metrics::swap_bytes`) |
 | Host swap | `SwapTotal` − `SwapFree` from `/proc/meminfo` (`SwapCached` is neither, so it is not subtracted) |
 | THR | `num_threads`, field 20 of the `/proc/pid/stat` already parsed for utime/stime |
+| FD | fds in the table at the last fd scan (`Process::fd_count`); blank on kernel threads and until that scan, then held between scans the way PSS is; sums like THR |
 | AGE | `now - (btime + starttime / CLK_TCK)`; `starttime` is field 22 of that `stat`, `btime` read once per run; aggregates in `Metrics::age_secs` |
 | Disk R/W | Δ `read_bytes` / `write_bytes` from `/proc/pid/io` |
 | GPU mem | first tier the client publishes of `gpu::MEM_PREFIXES`; regions `vram`/`gtt` (amdgpu), `local0`/`system0` (i915), `vram0`/`gtt` (xe) |
@@ -174,7 +175,7 @@ field there when grouping starts reading one, or reports stop reproducing.
 | Swap | own row against `SwapTotal`, never a MEM segment (`ui::header_rows`) |
 | Layout | CPU and MEMORY, unbordered, plus a SWAP row where there is swap. Discrete VRAM shares the MEMORY row (`ui::tank_widths`). `ui::bar_prefix` aligns the labels and every row draws its bar to `mem_header_line`'s width so the brackets stack; persistent rules header↔tree and tree↔footer |
 | Disk R/W | table columns only (formatted rates change width every tick); after compute, before the stall trio |
-| THR / AGE | beside `N`, before the metric columns: all three say what the row *is* rather than what it is currently costing |
+| THR / FD / AGE | beside `N`, before the metric columns: all four say what the row *is* rather than what it is currently costing |
 | CPU/IO/MEM ST | max rather than sum or average across a row's cgroups: sum exceeds 100% on overlap, average hides a fully-stalled member. Folder, User and Host rows are blank because `user-<uid>.slice` is not the User row (a rootful container bills to its owner from `system.slice`) nor `system.slice` the System row (kernel threads are in the root cgroup); root-cgroup pressure is the machine's, the same rule as a `--network=host` container |
 | Ordering | one comparator in `once.rs` for every level; a `None` metric sorts last in either direction, name breaks ties, stable over `group::proc_forest` pid order |
 

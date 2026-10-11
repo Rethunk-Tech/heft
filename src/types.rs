@@ -126,6 +126,13 @@ pub(crate) struct Metrics {
     /// spawned none.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) threads: Option<u64>,
+    /// Open file descriptors, from the last scan of the fd table. A kernel
+    /// thread has no table, and a process stays blank until the first scan;
+    /// between scans `proc` holds the last count the way it holds PSS. Summed
+    /// like `threads`: `N` is a process count, so a row that opened thousands
+    /// of fds was indistinguishable from one that opened none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) fds: Option<u64>,
     /// Seconds since the process started. On a row covering several processes
     /// this is the OLDEST of them — when the thing on this row first appeared
     /// — never a sum, which for a duration would be meaningless. `accumulate`
@@ -174,6 +181,7 @@ impl Metrics {
         self.pss_bytes = sum_opt(self.pss_bytes, other.pss_bytes);
         self.swap_bytes = sum_opt(self.swap_bytes, other.swap_bytes);
         self.threads = sum_opt(self.threads, other.threads);
+        self.fds = sum_opt(self.fds, other.fds);
         self.age_secs = self.age_secs.max(other.age_secs);
         self.disk_r_bps = sum_opt(self.disk_r_bps, other.disk_r_bps);
         self.disk_w_bps = sum_opt(self.disk_w_bps, other.disk_w_bps);
@@ -425,6 +433,7 @@ mod tests {
         folder.accumulate(&with(20.0));
 
         assert_eq!(folder.pss_bytes, Some(8), "quantities still add up");
+        assert_eq!(folder.fds, None, "a blank fd count is not a zero");
         for (name, got) in [
             ("net_rx_bps", folder.net_rx_bps),
             ("net_tx_bps", folder.net_tx_bps),
@@ -434,5 +443,26 @@ mod tests {
         ] {
             assert_eq!(got, Some(10.0), "{name} was summed into its parent");
         }
+    }
+
+    /// `N` counts processes. Open fds add the way threads do, and a count
+    /// heft has not scanned yet is absent from `--json` rather than `0`.
+    #[test]
+    fn open_fds_sum_and_a_blank_is_left_out_of_json() {
+        let row = |n| Metrics {
+            fds: Some(n),
+            ..Metrics::default()
+        };
+        let mut summed = row(4);
+        summed.accumulate(&row(6));
+        assert_eq!(summed.fds, Some(10));
+        let mut blank = Metrics::default();
+        blank.accumulate(&row(3));
+        assert_eq!(blank.fds, Some(3));
+
+        let omitted = serde_json::to_value(Metrics::default()).unwrap();
+        assert!(omitted.get("fds").is_none(), "{omitted}");
+        let present = serde_json::to_value(row(3)).unwrap();
+        assert_eq!(present["fds"], 3);
     }
 }

@@ -29,11 +29,12 @@ fn fast() -> String {
 /// cell HUMANS.md promises; `0` would be a lie about a metric heft could not
 /// read, so these are only ever compared against each other, never to a
 /// number.
-const COUNTERS: [&str; 6] = [
+const COUNTERS: [&str; 7] = [
     "rss_bytes",
     "pss_bytes",
     "swap_bytes",
     "threads",
+    "fds",
     "vram_bytes",
     "gtt_bytes",
 ];

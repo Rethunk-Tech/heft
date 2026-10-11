@@ -331,10 +331,14 @@ cadence. `SwapPss` rather than `Swap`, so a swapped page shared by four
 processes is counted once in a summed tree. Blank when `SwapTotal` is 0; `0`
 means that process has nothing paged out.
 
-## THR / AGE
+## THR / FD / AGE
 
 `THR` is the thread count (`num_threads` from `/proc/<pid>/stat`). `THR` sums
 like `N`.
+
+`FD` is how many file descriptors the row has open, from the last scan of
+`/proc/<pid>/fd`. It sums like `THR`. Blank on a kernel thread, and blank
+until the first scan; between scans the last count stays, the way PSS does.
 
 `AGE` is time since the process started, in the largest unit that fits: `45s`,
 `12m`, `3h`, `9d`. On a row covering several processes it is the oldest of
@@ -410,7 +414,7 @@ cgroup files.
 A column is drawn whole or not at all: one that does not fit is left off
 rather than clipped. `←` and `→` reach the rest while NAME stays put.
 
-There are twenty-one columns. `H` hides the sort column and moves the sort to
+There are twenty-two columns. `H` hides the sort column and moves the sort to
 the next visible one; `u` restores the last hidden. `name` cannot be hidden but
 can be moved. `--hide` (repeatable) adds to what `view.json` hides. `--order`
 (repeatable) overwrites the saved order: named columns come first in that
@@ -432,7 +436,7 @@ the file the extra is warned and ignored. `s` writes both lists.
 column labels. A save rewrites the whole file, so comments you add do not
 survive one; rules.d files, which heft never writes, keep theirs.
 
-Labels are `name`, `spark`, `nproc`, `threads`, `age`, `core`,
+Labels are `name`, `spark`, `nproc`, `threads`, `fds`, `age`, `core`,
 `machine`, `pss`, `rss`, `swap`, `vram`, `gtt`, `gfx`, `compute`, `diskr`,
 `diskw`, `cpustall`, `iostall`, `memstall`, `netns_rx`, `netns_tx`. `--sort`
 and `Shift-←` `Shift-→` (`[` `]`) take all of them except `spark`, `--hide` all of

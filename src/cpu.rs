@@ -187,6 +187,9 @@ pub(crate) fn process_metrics(
         pss_bytes,
         swap_bytes,
         threads: cur.threads,
+        // `None` on a kernel thread and until the first fd scan. Later ticks
+        // already hold the last count on `Process::fd_count`.
+        fds: cur.fd_count.map(u64::from),
         age_secs: age_secs(cur.starttime_ticks, consts.clk_tck, btime(), now_epoch()),
         disk_r_bps: read_bps,
         disk_w_bps: write_bps,
@@ -360,6 +363,26 @@ mod tests {
         ns_prev.gpu.gfx_ns = Some(0);
         let m = process_metrics(Some(&ns_prev), &ns, Duration::from_secs(1), &consts);
         assert!((m.gfx_pct.unwrap() - 50.0).abs() < 1e-9, "{:?}", m.gfx_pct);
+    }
+
+    /// The fd table is scanned on its own cadence. Until that scan, and for a
+    /// kernel thread, the column is blank rather than zero.
+    #[test]
+    fn open_fds_copy_the_scan_and_stay_blank_until_one() {
+        let consts = HostHeader {
+            nproc: 1,
+            clk_tck: 100,
+            page_size: 4096,
+        };
+        let gap = Duration::from_secs(1);
+        let blank = process_metrics(None, &Process::default(), gap, &consts);
+        assert_eq!(blank.fds, None);
+        let scanned = Process {
+            fd_count: Some(12),
+            ..Process::default()
+        };
+        let m = process_metrics(None, &scanned, gap, &consts);
+        assert_eq!(m.fds, Some(12));
     }
 
     /// A drm client first seen on this tick brings every nanosecond it ran

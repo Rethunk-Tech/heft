@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Added
+
+- An `FD` column (`fds` in `--json`) sums open file descriptors. Blank on
+  kernel threads and until the first fd scan.
+
 ### Changed
 
 - Sway's compositor, bar and background are three User Services rows (`sway`,

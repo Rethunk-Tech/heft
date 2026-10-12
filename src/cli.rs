@@ -55,8 +55,8 @@ pub struct Cli {
     /// Sort by this column label: the labels Shift-arrows cycle and `view.json` saves; a bad one lists them all
     #[arg(long, value_name = "COLUMN")]
     pub sort: Option<String>,
-    /// Keep only rows whose name, argv, or working directory matches this regex, and their parents
-    #[arg(long, value_name = "REGEX", conflicts_with = "json")]
+    /// Keep only rows whose name, argv, or working directory matches this regex, and their parents. With --json, prunes the host tree to matching processes and those parents
+    #[arg(long, value_name = "REGEX")]
     pub filter: Option<String>,
     /// Show only this user's branch; repeat for several. Takes a name or a uid
     #[arg(long = "user", value_name = "NAME|UID")]

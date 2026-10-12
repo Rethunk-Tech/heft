@@ -64,11 +64,11 @@ Each of these has one home; a second copy is the defect.
 | what | where | rule |
 | --- | --- | --- |
 | `--follow` loop | `proc::sample_stream` | honours `--pss-interval`; `once::follow_table` / `follow_json` share `render_table` and `json_text` with the one-shot pair |
-| flag over `view.json` precedence | `main::resolve_view` | `--hide` adds to the saved list, every other flag overwrites; only `sort`, `desc`, `filter`, `hide_columns`, `column_order` are read back (`users`, `top` are `#[serde(skip)]`). `--once` starts from `config::load_view()`, `--json` from `View::default()` and never the file. `--filter`, `--top`, `--hide`, `--order` are `conflicts_with = "json"` because the JSON shape is a contract |
+| flag over `view.json` precedence | `main::resolve_view` | `--hide` adds to the saved list, every other flag overwrites; only `sort`, `desc`, `filter`, `hide_columns`, `column_order` are read back (`users`, `top` are `#[serde(skip)]`). `--once` starts from `config::load_view()`, `--json` from `View::default()` and never the file. `--top`, `--hide`, `--order` are `conflicts_with = "json"` because the JSON shape is a contract. `--filter` is not: `once::keep_filtered` prunes that tree to matching processes and their ancestors |
 | unknown `--sort` label | clap `InvalidValue` via `once::sort_labels` | not `Sort::from_label`'s fallback: a stale `view.json` must not stop the monitor, an argument just typed can be corrected. `src/cli.rs` cannot reach `COLUMNS` because `build.rs` includes it standalone for the completions and man page |
 | bad regex | `once::Filter::new` returns `None` (`regex-lite`) | each caller decides: clap `InvalidValue`, a `view.json` warning, the TUI's `?` footer |
 | escaping process text for stdout | `once::printable` | the tree and `--json` keep raw strings; the TUI relies on ratatui dropping control characters |
-| `--filter` and `/` haystack | `TableRow::search` / `Flat::search` (`once::haystack`) when built, else `name` | `keep_matches`, `keep_top` and `Filter` carry the rest; `ProcNode::cmdline` is the argv and `ProcNode::cwd` the working directory `proc` already read. `cmdline` is serialized in `types.rs`; `cwd` is too when it is non-empty |
+| `--filter` and `/` haystack | `TableRow::search` / `Flat::search` (`once::haystack`) when built, else `name` | `keep_matches` (table and TUI rows), `keep_filtered` (the `--json` tree), `keep_top` and `Filter` carry the rest; `ProcNode::cmdline` is the argv and `ProcNode::cwd` the working directory `proc` already read. `cmdline` is serialized in `types.rs`; `cwd` is too when it is non-empty |
 | `Set::Legacy` vs `Set::Unicode` | `glyph::spark_ramp`, nowhere else | `glyph.rs` says why, and why `detect` never returns it |
 | `--trend kitty` / `sixel` / `auto` | `src/kgp.rs` / `src/sixel.rs` / `src/caps.rs` | each module doc carries its protocol decisions; `ui::resolve_trend` the kitty-versus-sixel choice; `tty::hold_shm` the signal-safe shm cleanup |
 | `i` and `?` overlays | `ui::popup`, `ui::Overlay` | `i` is `ui::draw_detail`, `ui::metric_grid`, `proc::detail`, plus `explain::placement_lines` / `explain::identity_placement` for the row; `Overlay` holds which is open, so only one draws |
@@ -197,7 +197,8 @@ JSON shape (`src/types.rs` `HostTree`): `host.sampled_at`,
 process node carrying `cmdline`. The document is `{ "host": … }`, plus a
 top-level `warnings` array (the `--once` coverage sentence) when seen threads
 are under 90% of the kernel count; the key is omitted otherwise.
-`kernel_threads` and `walked_threads` stay `#[serde(skip)]`.
+`--filter` prunes the tree to matching processes and their ancestors before
+that serialize. `kernel_threads` and `walked_threads` stay `#[serde(skip)]`.
 
 ## Packaging
 

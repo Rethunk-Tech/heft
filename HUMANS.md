@@ -71,6 +71,7 @@ heft --interval 0.5       # catch-all period (TUI tick and --once/--json gap)
 heft --pss-interval 5     # TUI and --follow: how often to read smaps_rollup (default 5s)
 heft --sort rss           # start on this column instead of the saved one
 heft --once --filter '^(code|claude)$'  # keep rows matching this regex, and their parents
+heft --json --filter '^(code|claude)$'  # same cut, on the JSON tree
 heft --once --user 1000   # only this user's branch (name or uid, repeatable)
 heft --once --sort age --asc   # low to high, rather than the saved direction
 heft --once --top 5       # the five heaviest rows under each parent
@@ -129,9 +130,15 @@ matches a row's name, the argv of every process under it, and that process's
 working directory, expanded or not, each on its own line, so `^` and `$` anchor
 to one process's argv or its directory. Matching
 rows are kept with their parents, and a parent keeps its full total.
+`--json` and `--json --follow` take the same flag. The host tree keeps a
+matching process (its name, argv, or working directory) and the ancestors
+above it; a sibling or child that does not match is left out. Those ancestors
+keep the `nproc` and metrics they were built with.
 
 `--once` rows stop at identities and their containers while the TUI also has
-instance and process rows, so `/` can match rows `--filter` never sees. A
+instance and process rows, so `/` can match a row `--once` never prints.
+`--json` prunes the process tree, so a process name, argv, or directory
+matches there. A
 pattern that does not compile is a usage error on the command line, a warning from
 `view.json`, and a `?` in the TUI footer while the last compiling pattern stays
 live.
@@ -146,8 +153,10 @@ and Host-level Containers stay. A bare number is accepted as a uid even with no
 Host row totals only what survived. It works with `--json` and is never saved.
 
 Flags beat a saved `view.json`. `--once` starts from the saved view; `--json`
-never reads it. `--filter`, `--top`, `--hide` and `--order` are refused with
-`--json` (slice the tree with `jq`), and `--trend` with `--once` and `--json`.
+never reads it. `--top`, `--hide` and `--order` are refused with `--json`
+(slice columns with `jq`), and `--trend` with `--once` and `--json`.
+`--filter` is allowed with `--json`: it prunes the tree the way `/` keeps a
+match and its parents.
 
 `--glyphs auto` (the default) uses block characters only when `LC_ALL`,
 `LC_CTYPE` or `LANG` names a UTF-8 charmap, and one-column ASCII substitutes

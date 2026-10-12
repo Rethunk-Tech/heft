@@ -4,6 +4,9 @@
 
 ### Added
 
+- `--filter` works with `--json` and `--json --follow`. The host tree keeps
+  matching processes and their ancestors; a process that does not match is
+  left out, and a survivor keeps the totals it was built with.
 - `--json` and `--json --follow` include a top-level `warnings` array when
   thread coverage is under 90%, holding the same `seeing N% of M threads`
   sentence the `--once` `WARN` line prints. The array is omitted when coverage

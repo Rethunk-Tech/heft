@@ -151,9 +151,9 @@ fn resolve_view(cli: &Cli) -> heft::config::View {
             })
             .collect();
     }
-    // Unlike `--filter`, this one applies to `--json` too: it prunes User
-    // nodes, which the JSON tree has, where "keep the ancestors" had nothing
-    // to mean there.
+    // `--user` drops other User nodes before any row is built, so the Host
+    // row totals what survived. `--filter` does not: ancestors keep the
+    // totals they were built with, in the table and in the JSON tree.
     view.users = cli.user.iter().map(|who| check_user(who)).collect();
     view
 }

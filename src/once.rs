@@ -9,8 +9,8 @@ use crate::config::{self, View};
 use crate::num::f64_of;
 use crate::proc;
 use crate::types::{
-    Error, Folder, HostTree, IdentNode, Metrics, ProcNode, folder_nproc, host_metrics, sum_idents,
-    tree_host_nproc, user_metrics, user_nproc,
+    Error, Folder, HostTree, IdentNode, InstanceNode, MemberContainer, Metrics, ProcNode, UserNode,
+    folder_nproc, host_metrics, sum_idents, tree_host_nproc, user_metrics, user_nproc,
 };
 
 /// One table column. Adding a column here is the whole change: it reaches the
@@ -502,6 +502,10 @@ impl Filter {
             .ok()
             .map(Filter)
     }
+
+    fn matches(&self, text: &str) -> bool {
+        self.0.is_match(text)
+    }
 }
 
 /// Keeps a row when its own name matches `filter`, or when it is an ancestor
@@ -680,9 +684,10 @@ pub(crate) fn keep_top<T>(rows: &mut Vec<T>, n: usize, row: impl Fn(&T) -> (u16,
 /// about what happens to the Host row. `--filter` builds every row from the
 /// whole tree and drops rows afterwards, so an ancestor keeps the total it
 /// always had: you need that to see what fraction of a browser the matching
-/// helper is. This cuts branches out of the tree before any row is built, so
-/// the Host row totals what is left — which is what someone who asked for one
-/// user wants the top row to mean.
+/// helper is. `--json` drops the nodes (`keep_filtered`) and still leaves
+/// those totals on whoever survived. This cuts branches out of the tree
+/// before any row is built, so the Host row totals what is left — which is
+/// what someone who asked for one user wants the top row to mean.
 ///
 /// System and Host-level Containers stay either way. They are the machine's
 /// cost and belong to nobody, so hiding them would leave a tree that no longer
@@ -695,6 +700,76 @@ pub(crate) fn keep_users(tree: &mut HostTree, uids: &[u32]) {
         tree.walked_threads = host_metrics(tree).threads;
     }
     tree.users.retain(|u| uids.contains(&u.uid));
+}
+
+/// Drop processes the filter misses, keeping each match and its ancestors.
+///
+/// Same keep as `/` and the `--once` table: a node stays when its name
+/// matches, or a process's argv or working directory matches, or a descendant
+/// does. A child that does not match is dropped even when its parent matched.
+/// Metrics and `nproc` on a survivor are left as built, so a parent still
+/// totals the subtree it had.
+///
+/// The flat table applies that with `keep_matches` after the rows exist.
+/// `--json` emits the tree itself, so the cut has to happen on the nodes.
+/// `walked_threads` is taken from the whole tree first, as `keep_users` does,
+/// so a coverage warning still describes the walk rather than the matches.
+pub(crate) fn keep_filtered(tree: &mut HostTree, filter: &Filter) {
+    if tree.walked_threads.is_none() {
+        tree.walked_threads = host_metrics(tree).threads;
+    }
+    tree.users.retain_mut(|user| prune_user(user, filter));
+    prune_idents(&mut tree.containers, filter);
+    prune_idents(&mut tree.system, filter);
+}
+
+fn prune_user(user: &mut UserNode, filter: &Filter) -> bool {
+    let apps = prune_idents(&mut user.applications, filter);
+    let services = prune_idents(&mut user.user_services, filter);
+    let containers = prune_idents(&mut user.containers, filter);
+    apps || services || containers || filter.matches(&user.name)
+}
+
+fn prune_idents(idents: &mut Vec<IdentNode>, filter: &Filter) -> bool {
+    idents.retain_mut(|ident| {
+        let instances = prune_instances(&mut ident.instances, filter);
+        let members = prune_members(&mut ident.containers, filter);
+        instances || members || filter.matches(&ident.id)
+    });
+    !idents.is_empty()
+}
+
+fn prune_instances(instances: &mut Vec<InstanceNode>, filter: &Filter) -> bool {
+    instances.retain_mut(|inst| {
+        let procs = prune_procs(&mut inst.processes, filter);
+        procs || filter.matches(&inst.key)
+    });
+    !instances.is_empty()
+}
+
+fn prune_members(members: &mut Vec<MemberContainer>, filter: &Filter) -> bool {
+    members.retain_mut(|member| {
+        let procs = prune_procs(&mut member.processes, filter);
+        procs || filter.matches(&member.id)
+    });
+    !members.is_empty()
+}
+
+fn prune_procs(procs: &mut Vec<ProcNode>, filter: &Filter) -> bool {
+    procs.retain_mut(|proc| {
+        let kids = prune_procs(&mut proc.children, filter);
+        kids || proc_matches(filter, proc)
+    });
+    !procs.is_empty()
+}
+
+/// Name, argv, and working directory of this process alone. Descendants are
+/// a separate decision: a match below keeps this node as an ancestor, and a
+/// match here does not keep a child that missed.
+fn proc_matches(filter: &Filter, proc: &ProcNode) -> bool {
+    let mut text = String::from(&proc.name);
+    push_proc_lines(&mut text, &proc.cmdline, &proc.cwd);
+    filter.matches(&text)
 }
 
 /// One table on stdout, from two `/proc` walks an `--interval` apart.
@@ -908,13 +983,17 @@ pub(crate) fn ident_haystack(ident: &IdentNode) -> String {
 /// one process's argv into its working directory, or into the next process.
 fn push_cmdlines(out: &mut String, procs: &[ProcNode]) {
     for p in procs {
-        out.push('\n');
-        out.push_str(&p.cmdline);
-        if !p.cwd.is_empty() {
-            out.push('\n');
-            out.push_str(&p.cwd);
-        }
+        push_proc_lines(out, &p.cmdline, &p.cwd);
         push_cmdlines(out, &p.children);
+    }
+}
+
+fn push_proc_lines(out: &mut String, cmdline: &str, cwd: &str) {
+    out.push('\n');
+    out.push_str(cmdline);
+    if !cwd.is_empty() {
+        out.push('\n');
+        out.push_str(cwd);
     }
 }
 
@@ -1003,6 +1082,13 @@ pub fn follow_json(interval: Duration, pss_interval: Duration, view: &View) -> R
 fn json_text(tree: &HostTree, view: &View, pretty: bool) -> Result<String, Error> {
     let mut tree = tree.clone();
     keep_users(&mut tree, &view.users);
+    // A pattern that does not compile never reaches here from the command
+    // line (`main::check_filter` already exited). An empty one keeps the tree.
+    if !view.filter.is_empty()
+        && let Some(filter) = Filter::new(&view.filter)
+    {
+        keep_filtered(&mut tree, &filter);
+    }
     sort_tree(&mut tree, Sort::from_label(&view.sort), view.desc);
     // The `Value` detour is what sorts every key alphabetically, which is the
     // byte shape `--json` publishes. `warnings` is omitted when empty: the
@@ -1757,6 +1843,215 @@ mod tests {
         let fine: serde_json::Value = serde_json::from_str(&fine).unwrap();
         assert!(fine.get("warnings").is_none());
         assert!(fine["host"].get("kernel_threads").is_none());
+    }
+
+    fn branch(
+        id: &str,
+        pss: u64,
+        threads: u64,
+        nproc: u32,
+        processes: Vec<ProcNode>,
+        containers: Vec<crate::types::MemberContainer>,
+    ) -> IdentNode {
+        IdentNode {
+            id: id.into(),
+            nproc,
+            metrics: Metrics {
+                pss_bytes: Some(pss),
+                threads: Some(threads),
+                ..Metrics::default()
+            },
+            instances: vec![InstanceNode {
+                key: "win".into(),
+                nproc,
+                metrics: Metrics {
+                    pss_bytes: Some(pss),
+                    threads: Some(threads),
+                    ..Metrics::default()
+                },
+                processes,
+            }],
+            containers,
+        }
+    }
+
+    /// One machine: firefox with a matching process, a child that only matches
+    /// its own argv, a sibling process, a member container, and a vim identity
+    /// beside it. `^firefox$` has to drop every one of those except the
+    /// matching process and the ancestors above it.
+    fn filter_fixture(kernel: u64) -> HostTree {
+        let firefox = named_proc(
+            10,
+            "firefox",
+            "/usr/lib/firefox/firefox",
+            "/home/ada",
+            vec![
+                named_proc(11, "Web Content", "contentproc", "", Vec::new()),
+                named_proc(12, "RDD", "rdd", "", Vec::new()),
+            ],
+        );
+        HostTree {
+            kernel_threads: Some(kernel),
+            users: vec![UserNode {
+                uid: 1000,
+                name: "ada".into(),
+                applications: vec![
+                    branch(
+                        "firefox",
+                        3000,
+                        19,
+                        2,
+                        vec![
+                            firefox,
+                            named_proc(13, "plugin-container", "plugin-container", "", Vec::new()),
+                        ],
+                        vec![crate::types::MemberContainer {
+                            id: "sandbox".into(),
+                            nproc: 1,
+                            metrics: metrics(Some(10), 0.0),
+                            processes: vec![named_proc(14, "bwrap", "bwrap", "", Vec::new())],
+                        }],
+                    ),
+                    branch(
+                        "vim",
+                        100,
+                        19,
+                        1,
+                        vec![named_proc(20, "vim", "vim notes.txt", "/tmp", Vec::new())],
+                        Vec::new(),
+                    ),
+                ],
+                ..UserNode::default()
+            }],
+            system: vec![branch(
+                "systemd",
+                50,
+                0,
+                1,
+                vec![named_proc(1, "systemd", "systemd", "", Vec::new())],
+                Vec::new(),
+            )],
+            ..HostTree::default()
+        }
+    }
+
+    fn named_proc(
+        pid: u32,
+        name: &str,
+        cmdline: &str,
+        cwd: &str,
+        children: Vec<ProcNode>,
+    ) -> ProcNode {
+        ProcNode {
+            pid,
+            name: name.into(),
+            cmdline: cmdline.into(),
+            cwd: cwd.into(),
+            metrics: metrics(Some(1), 0.0),
+            children,
+        }
+    }
+
+    fn table_text(tree: &HostTree, view: &View) -> String {
+        let mut out = Vec::new();
+        render_table(&mut out, tree, view, &Columns::from_view(view)).unwrap();
+        String::from_utf8(out).unwrap()
+    }
+
+    fn body_row<'a>(text: &'a str, name: &str) -> Option<&'a str> {
+        text.lines().find(|line| {
+            let body = line.trim_start();
+            body.starts_with(name) && body.as_bytes().get(name.len()).is_none_or(|b| *b == b' ')
+        })
+    }
+
+    fn proc_names(value: &serde_json::Value, out: &mut Vec<String>) {
+        match value {
+            serde_json::Value::Array(items) => {
+                for item in items {
+                    proc_names(item, out);
+                }
+            }
+            serde_json::Value::Object(map) => {
+                if map.contains_key("pid")
+                    && let Some(name) = map.get("name").and_then(|n| n.as_str())
+                {
+                    out.push(name.to_string());
+                }
+                for child in map.values() {
+                    proc_names(child, out);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// `--once --filter` and `--json --filter` (including the compact document
+    /// `--json --follow` writes) omit a subtree the pattern misses. Ancestors
+    /// of a match stay, with the totals they were built with. A short walk
+    /// still warns from the uncut tree, and the kernel counters stay off the
+    /// document.
+    #[test]
+    fn once_and_json_filter_omit_nonmatching_subtrees() {
+        let tree = filter_fixture(40);
+        let plain = View::default();
+        let filtered = View {
+            filter: "^firefox$".into(),
+            ..View::default()
+        };
+        let whole = table_text(&tree, &plain);
+        let cut = table_text(&tree, &filtered);
+        assert!(body_row(&whole, "vim").is_some(), "{whole}");
+        assert!(body_row(&cut, "vim").is_none(), "{cut}");
+        assert!(body_row(&cut, "firefox").is_some(), "{cut}");
+        assert_eq!(body_row(&whole, "Host"), body_row(&cut, "Host"));
+        assert!(body_row(&cut, "Applications (2)").is_some(), "{cut}");
+
+        let mut whole_names = Vec::new();
+        let whole_doc: serde_json::Value =
+            serde_json::from_str(&json_text(&tree, &plain, true).unwrap()).unwrap();
+        proc_names(&whole_doc, &mut whole_names);
+        for missing in ["vim", "plugin-container", "Web Content", "bwrap", "systemd"] {
+            assert!(whole_names.iter().any(|n| n == missing), "{whole_names:?}");
+        }
+
+        for pretty in [true, false] {
+            let doc: serde_json::Value =
+                serde_json::from_str(&json_text(&tree, &filtered, pretty).unwrap()).unwrap();
+            let mut names = Vec::new();
+            proc_names(&doc, &mut names);
+            assert_eq!(names, ["firefox"]);
+            let app = &doc["host"]["users"][0]["applications"];
+            assert_eq!(app.as_array().map(Vec::len), Some(1));
+            assert_eq!(app[0]["id"], "firefox");
+            assert_eq!(app[0]["nproc"], 2);
+            assert_eq!(app[0]["pss_bytes"], 3000);
+            assert!(app[0].get("containers").is_none());
+            assert!(doc["host"]["system"].as_array().is_some_and(Vec::is_empty));
+            assert!(doc.get("warnings").is_none(), "38 of 40 threads is enough");
+            assert!(doc["host"].get("kernel_threads").is_none());
+            assert!(doc["host"].get("walked_threads").is_none());
+        }
+
+        let child = View {
+            filter: "^RDD$".into(),
+            ..View::default()
+        };
+        let doc: serde_json::Value =
+            serde_json::from_str(&json_text(&tree, &child, true).unwrap()).unwrap();
+        let mut names = Vec::new();
+        proc_names(&doc, &mut names);
+        assert_eq!(names, ["firefox", "RDD"]);
+
+        let short = filter_fixture(1900);
+        let wording = json_text(&short, &plain, true).unwrap();
+        let wording: serde_json::Value = serde_json::from_str(&wording).unwrap();
+        let filtered_short = json_text(&short, &filtered, false).unwrap();
+        let filtered_short: serde_json::Value = serde_json::from_str(&filtered_short).unwrap();
+        assert_eq!(filtered_short["warnings"], wording["warnings"]);
+        assert_eq!(filtered_short["warnings"][0], "seeing 2% of 1900 threads");
+        assert!(filtered_short["host"].get("kernel_threads").is_none());
+        assert!(filtered_short["host"].get("walked_threads").is_none());
     }
 
     /// Visibility belongs to the walk, not to the rows `--user` kept: cutting

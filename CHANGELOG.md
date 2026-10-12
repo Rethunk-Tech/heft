@@ -4,6 +4,8 @@
 
 ### Added
 
+- `--json` and `--json --follow` include top-level `interval_secs`, the sample
+  interval in seconds. `--json --follow` also includes `pss_interval_secs`.
 - `--filter` works with `--json` and `--json --follow`. The host tree keeps
   matching processes and their ancestors; a process that does not match is
   left out, and a survivor keeps the totals it was built with.

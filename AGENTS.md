@@ -194,7 +194,8 @@ a large `%CORE` is work, not trouble.
 JSON shape (`src/types.rs` `HostTree`): `host.sampled_at`,
 `host.users[].applications|user_services|containers`, `host.containers`,
 `host.system`. Project identities include `containers[].processes[]`, each
-process node carrying `cmdline`. The document is `{ "host": … }`, plus a
+process node carrying `cmdline`. The document is `{ "host": …, "interval_secs": … }`,
+plus `pss_interval_secs` on `--json --follow`, plus a
 top-level `warnings` array (the `--once` coverage sentence) when seen threads
 are under 90% of the kernel count; the key is omitted otherwise.
 `--filter` prunes the tree to matching processes and their ancestors before

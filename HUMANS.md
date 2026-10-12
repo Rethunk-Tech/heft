@@ -118,7 +118,8 @@ writes one compact document per line (NDJSON); `--once --follow` reprints the
 table with its header each interval, separated by a blank line. The first
 sample always reads PSS. Closing the reader ends any mode quietly, so
 `heft --json --follow | head -5` and `heft --explain 1 | head -1` exit 0. Every JSON document carries
-`host.sampled_at`, the unix second the sample was taken.
+`interval_secs`, the sample interval in seconds, and `host.sampled_at`, the unix second the sample was taken.
+`--json --follow` also carries `pss_interval_secs`.
 
 `--sort` takes a column label other than `spark` ([Columns](#columns)); an
 unknown label is a usage error. `--desc` and `--asc` set the direction the `d`

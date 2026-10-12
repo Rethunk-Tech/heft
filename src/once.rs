@@ -1057,7 +1057,7 @@ fn host_swap(tree: &HostTree) -> String {
 /// Returns an error if the tree cannot be serialized or stdout cannot be written.
 pub fn print_json(interval: Duration, view: &View) -> Result<(), Error> {
     let tree = proc::sample_world(interval, true);
-    let text = json_text(&tree, view, true)?;
+    let text = json_text(&tree, view, true, interval, None)?;
     writeln!(io::stdout(), "{text}")?;
     Ok(())
 }
@@ -1072,14 +1072,22 @@ pub fn print_json(interval: Duration, view: &View) -> Result<(), Error> {
 pub fn follow_json(interval: Duration, pss_interval: Duration, view: &View) -> Result<(), Error> {
     let mut out = io::stdout();
     proc::sample_stream(interval, pss_interval, true, |tree| {
-        let text = json_text(tree, view, false)?;
+        let text = json_text(tree, view, false, interval, Some(pss_interval))?;
         writeln!(out, "{text}")?;
         out.flush()?;
         Ok(())
     })
 }
 
-fn json_text(tree: &HostTree, view: &View, pretty: bool) -> Result<String, Error> {
+/// `pss_interval` is `Some` only for `--json --follow`. One-shot `--json`
+/// always reads PSS, so it has no second cadence to publish.
+fn json_text(
+    tree: &HostTree,
+    view: &View,
+    pretty: bool,
+    interval: Duration,
+    pss_interval: Option<Duration>,
+) -> Result<String, Error> {
     let mut tree = tree.clone();
     keep_users(&mut tree, &view.users);
     // A pattern that does not compile never reaches here from the command
@@ -1091,12 +1099,25 @@ fn json_text(tree: &HostTree, view: &View, pretty: bool) -> Result<String, Error
     }
     sort_tree(&mut tree, Sort::from_label(&view.sort), view.desc);
     // The `Value` detour is what sorts every key alphabetically, which is the
-    // byte shape `--json` publishes. `warnings` is omitted when empty: the
-    // other optional arrays in the tree do the same.
-    let doc = match coverage_warning(&tree) {
-        Some(wording) => serde_json::json!({ "host": tree, "warnings": [wording] }),
-        None => serde_json::json!({ "host": tree }),
-    };
+    // byte shape `--json` publishes. `warnings` is omitted when empty, and
+    // `pss_interval_secs` when this is not a follow sample: the other optional
+    // arrays in the tree do the same.
+    let mut doc = serde_json::Map::new();
+    doc.insert("host".into(), serde_json::to_value(&tree)?);
+    doc.insert(
+        "interval_secs".into(),
+        serde_json::json!(interval.as_secs_f64()),
+    );
+    if let Some(pss) = pss_interval {
+        doc.insert(
+            "pss_interval_secs".into(),
+            serde_json::json!(pss.as_secs_f64()),
+        );
+    }
+    if let Some(wording) = coverage_warning(&tree) {
+        doc.insert("warnings".into(), serde_json::json!([wording]));
+    }
+    let doc = serde_json::Value::Object(doc);
     // `println!` panics when the reader closes, and the release profile is
     // `panic = abort`, so `heft --json | head` would abort. Serialize first,
     // then write through `io::Write`: serializing into the stream instead
@@ -1832,17 +1853,67 @@ mod tests {
         assert_eq!(wording, "seeing 1% of 1900 threads");
 
         for pretty in [true, false] {
-            let text = json_text(&short, &View::default(), pretty).unwrap();
+            let text = json_text(
+                &short,
+                &View::default(),
+                pretty,
+                Duration::from_secs(1),
+                None,
+            )
+            .unwrap();
             let doc: serde_json::Value = serde_json::from_str(&text).unwrap();
             assert_eq!(doc["warnings"], serde_json::json!([wording]));
             assert!(doc["host"].get("kernel_threads").is_none());
             assert!(doc["host"].get("walked_threads").is_none());
         }
 
-        let fine = json_text(&tree(20), &View::default(), true).unwrap();
+        let fine = json_text(
+            &tree(20),
+            &View::default(),
+            true,
+            Duration::from_secs(1),
+            None,
+        )
+        .unwrap();
         let fine: serde_json::Value = serde_json::from_str(&fine).unwrap();
         assert!(fine.get("warnings").is_none());
         assert!(fine["host"].get("kernel_threads").is_none());
+    }
+
+    /// `--json` publishes the interval it was sampled against. `--json --follow`
+    /// also publishes the PSS cadence; a one-shot document has no second one.
+    #[test]
+    fn json_interval_secs_matches_the_duration_passed_in() {
+        let tree = HostTree::default();
+        let interval = Duration::from_secs_f64(1.5);
+        let pss = Duration::from_secs(5);
+        for pretty in [true, false] {
+            let once: serde_json::Value = serde_json::from_str(
+                &json_text(&tree, &View::default(), pretty, interval, None).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(once["interval_secs"].as_f64(), Some(interval.as_secs_f64()));
+            assert!(once.get("pss_interval_secs").is_none());
+            assert!(once.get("warnings").is_none());
+            assert!(once["host"].get("kernel_threads").is_none());
+            assert!(once["host"].get("walked_threads").is_none());
+
+            let follow: serde_json::Value = serde_json::from_str(
+                &json_text(&tree, &View::default(), pretty, interval, Some(pss)).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(
+                follow["interval_secs"].as_f64(),
+                Some(interval.as_secs_f64())
+            );
+            assert_eq!(
+                follow["pss_interval_secs"].as_f64(),
+                Some(pss.as_secs_f64())
+            );
+            assert!(follow.get("warnings").is_none());
+            assert!(follow["host"].get("kernel_threads").is_none());
+            assert!(follow["host"].get("walked_threads").is_none());
+        }
     }
 
     fn branch(
@@ -2008,16 +2079,20 @@ mod tests {
         assert!(body_row(&cut, "Applications (2)").is_some(), "{cut}");
 
         let mut whole_names = Vec::new();
-        let whole_doc: serde_json::Value =
-            serde_json::from_str(&json_text(&tree, &plain, true).unwrap()).unwrap();
+        let whole_doc: serde_json::Value = serde_json::from_str(
+            &json_text(&tree, &plain, true, Duration::from_secs(1), None).unwrap(),
+        )
+        .unwrap();
         proc_names(&whole_doc, &mut whole_names);
         for missing in ["vim", "plugin-container", "Web Content", "bwrap", "systemd"] {
             assert!(whole_names.iter().any(|n| n == missing), "{whole_names:?}");
         }
 
         for pretty in [true, false] {
-            let doc: serde_json::Value =
-                serde_json::from_str(&json_text(&tree, &filtered, pretty).unwrap()).unwrap();
+            let doc: serde_json::Value = serde_json::from_str(
+                &json_text(&tree, &filtered, pretty, Duration::from_secs(1), None).unwrap(),
+            )
+            .unwrap();
             let mut names = Vec::new();
             proc_names(&doc, &mut names);
             assert_eq!(names, ["firefox"]);
@@ -2037,16 +2112,19 @@ mod tests {
             filter: "^RDD$".into(),
             ..View::default()
         };
-        let doc: serde_json::Value =
-            serde_json::from_str(&json_text(&tree, &child, true).unwrap()).unwrap();
+        let doc: serde_json::Value = serde_json::from_str(
+            &json_text(&tree, &child, true, Duration::from_secs(1), None).unwrap(),
+        )
+        .unwrap();
         let mut names = Vec::new();
         proc_names(&doc, &mut names);
         assert_eq!(names, ["firefox", "RDD"]);
 
         let short = filter_fixture(1900);
-        let wording = json_text(&short, &plain, true).unwrap();
+        let wording = json_text(&short, &plain, true, Duration::from_secs(1), None).unwrap();
         let wording: serde_json::Value = serde_json::from_str(&wording).unwrap();
-        let filtered_short = json_text(&short, &filtered, false).unwrap();
+        let filtered_short =
+            json_text(&short, &filtered, false, Duration::from_secs(1), None).unwrap();
         let filtered_short: serde_json::Value = serde_json::from_str(&filtered_short).unwrap();
         assert_eq!(filtered_short["warnings"], wording["warnings"]);
         assert_eq!(filtered_short["warnings"][0], "seeing 2% of 1900 threads");

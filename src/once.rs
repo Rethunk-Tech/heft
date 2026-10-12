@@ -1042,13 +1042,13 @@ fn coverage_warning(tree: &HostTree) -> Option<String> {
 /// unconditional ` swap 0 / 0` would be a field about a device that is not
 /// there.
 fn host_swap(tree: &HostTree) -> String {
-    if tree.swap_total_bytes == 0 {
+    if tree.swap.swap_total_bytes == 0 {
         return String::new();
     }
     format!(
         "  swap {} / {}",
-        fmt_bytes(Some(tree.swap_used_bytes)),
-        fmt_bytes(Some(tree.swap_total_bytes))
+        fmt_bytes(Some(tree.swap.swap_used_bytes)),
+        fmt_bytes(Some(tree.swap.swap_total_bytes))
     )
 }
 

@@ -21,6 +21,9 @@
 
 ### Changed
 
+- `--json` omits host `swap_used_bytes` and `swap_total_bytes` when
+  `swap_total_bytes` is 0, matching the text host line. A host with swap
+  keeps both keys, including a used count of zero.
 - Sway's compositor, bar and background are three User Services rows (`sway`,
   `swaybar`, `swaybg`). A terminal sway started stays an application.
 

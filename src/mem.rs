@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 
-use crate::types::{HostTree, sum_opt};
+use crate::types::{HostSwap, HostTree, sum_opt};
 
 /// The sysfs GPU memory counters. Not `HostTree` fields alone: `gtt_total` is
 /// read only to decide `is_unified`, and the header never prints it.
@@ -94,8 +94,10 @@ pub(crate) fn parse_meminfo(text: &str) -> HostTree {
         // `SwapCached:` is swapped-out pages that also still sit in RAM, so it
         // is neither free swap nor a separate tank: total - free is what is
         // actually out on disk.
-        swap_used_bytes: swap_total.saturating_sub(swap_free),
-        swap_total_bytes: swap_total,
+        swap: HostSwap {
+            swap_used_bytes: swap_total.saturating_sub(swap_free),
+            swap_total_bytes: swap_total,
+        },
         ..HostTree::default()
     }
 }
@@ -199,8 +201,8 @@ mod tests {
         assert_eq!(ram.mem_anon_bytes, 30 * 1024);
         // SecPageTables is a different line that merely ends in the same name.
         assert_eq!(ram.mem_kernel_bytes, 6 * 1024);
-        assert_eq!(ram.swap_total_bytes, 800 * 1024);
-        assert_eq!(ram.swap_used_bytes, 500 * 1024);
+        assert_eq!(ram.swap.swap_total_bytes, 800 * 1024);
+        assert_eq!(ram.swap.swap_used_bytes, 500 * 1024);
     }
 
     /// The swapless machine this was written on: every swap key reads 0, and
@@ -208,8 +210,8 @@ mod tests {
     #[test]
     fn swapless_meminfo_is_zero_not_garbage() {
         let ram = parse_meminfo("MemTotal: 1000 kB\nSwapTotal: 0 kB\nSwapFree: 0 kB\n");
-        assert_eq!(ram.swap_total_bytes, 0);
-        assert_eq!(ram.swap_used_bytes, 0);
+        assert_eq!(ram.swap.swap_total_bytes, 0);
+        assert_eq!(ram.swap.swap_used_bytes, 0);
     }
 
     #[test]

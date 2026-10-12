@@ -245,6 +245,17 @@ impl Folder {
     }
 }
 
+/// Flattened onto the host as `swap_used_bytes` and `swap_total_bytes`.
+#[derive(Clone, Copy, Debug, Default, Serialize)]
+pub(crate) struct HostSwap {
+    pub(crate) swap_used_bytes: u64,
+    pub(crate) swap_total_bytes: u64,
+}
+
+const fn host_swap_absent(swap: &HostSwap) -> bool {
+    swap.swap_total_bytes == 0
+}
+
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct HostTree {
     /// When this sample was taken, unix seconds. A `--json --follow` stream is
@@ -286,8 +297,11 @@ pub struct HostTree {
     pub(crate) mem_sreclaimable_bytes: u64,
     /// `AnonPages`, inside `mem_used_bytes`.
     pub(crate) mem_anon_bytes: u64,
-    pub(crate) swap_used_bytes: u64,
-    pub(crate) swap_total_bytes: u64,
+    /// Both keys, or neither. `SwapTotal: 0` is a machine with no swap, and
+    /// the text host line prints nothing then. A used count of zero on a host
+    /// that does have swap is a reading, so it stays.
+    #[serde(flatten, skip_serializing_if = "host_swap_absent")]
+    pub(crate) swap: HostSwap,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) vram_used_bytes: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -471,5 +485,42 @@ mod tests {
         assert!(omitted.get("fds").is_none(), "{omitted}");
         let present = serde_json::to_value(row(3)).unwrap();
         assert_eq!(present["fds"], 3);
+    }
+
+    /// A host with no swap drops both host keys, matching the text host line.
+    /// A host that has swap keeps both, including a used count of zero.
+    #[test]
+    fn a_host_with_no_swap_omits_both_swap_keys() {
+        use super::{HostSwap, HostTree};
+
+        let none = serde_json::to_value(HostTree::default()).unwrap();
+        assert!(none.get("swap_used_bytes").is_none(), "{none}");
+        assert!(none.get("swap_total_bytes").is_none(), "{none}");
+        assert!(none.get("kernel_threads").is_none(), "{none}");
+        assert!(none.get("walked_threads").is_none(), "{none}");
+
+        let idle = HostTree {
+            swap: HostSwap {
+                swap_used_bytes: 0,
+                swap_total_bytes: 8 * 1024,
+            },
+            ..HostTree::default()
+        };
+        let idle = serde_json::to_value(&idle).unwrap();
+        assert_eq!(idle["swap_used_bytes"], 0);
+        assert_eq!(idle["swap_total_bytes"], 8 * 1024);
+
+        let used = HostTree {
+            swap: HostSwap {
+                swap_used_bytes: 2 * 1024,
+                swap_total_bytes: 8 * 1024,
+            },
+            ..HostTree::default()
+        };
+        let used = serde_json::to_value(&used).unwrap();
+        assert_eq!(used["swap_used_bytes"], 2 * 1024);
+        assert_eq!(used["swap_total_bytes"], 8 * 1024);
+        assert!(used.get("kernel_threads").is_none());
+        assert!(used.get("walked_threads").is_none());
     }
 }

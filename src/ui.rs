@@ -46,7 +46,7 @@ const HEADER_ROWS: u16 = 2;
 /// Swap gets a row of its own (`tank_widths` says why it is not a tank), and a
 /// swapless host -- `SwapTotal: 0` -- draws two.
 fn header_rows(tree: &HostTree) -> u16 {
-    HEADER_ROWS + u16::from(tree.swap_total_bytes > 0)
+    HEADER_ROWS + u16::from(tree.swap.swap_total_bytes > 0)
 }
 
 /// What covers the table. One at a time, so opening one closes the other.
@@ -1431,8 +1431,8 @@ fn draw_header(f: &mut ratatui::Frame<'_>, area: Rect, app: &App) {
 /// no swap for a page to be in, so there is no figure and no row, the same
 /// blank contract the `SWAP` column keeps.
 fn swap_header_line(tree: &HostTree, width: usize, bar_w: usize) -> Option<Line<'static>> {
-    let total = (tree.swap_total_bytes > 0).then_some(tree.swap_total_bytes)?;
-    let used = tree.swap_used_bytes.min(total);
+    let total = (tree.swap.swap_total_bytes > 0).then_some(tree.swap.swap_total_bytes)?;
+    let used = tree.swap.swap_used_bytes.min(total);
     let group = |w| {
         bar_group(
             "SWAP",
@@ -1520,7 +1520,7 @@ fn discrete_vram(tree: &HostTree) -> Option<u64> {
 /// The longest label on screen. `CPU` and `MEM` are always there; `VRAM` and
 /// `SWAP` are a column longer and only sometimes.
 fn label_width(tree: &HostTree) -> usize {
-    if tree.swap_total_bytes > 0 || discrete_vram(tree).is_some() {
+    if tree.swap.swap_total_bytes > 0 || discrete_vram(tree).is_some() {
         4
     } else {
         3
@@ -2478,8 +2478,8 @@ mod tests {
         let mut tree = tree_with_gpu(&mem::GpuPool::default());
         assert_eq!(header_rows(&tree), 2);
         assert!(swap_header_line(&tree, 100, 40).is_none());
-        tree.swap_total_bytes = 8 * g;
-        tree.swap_used_bytes = 2 * g;
+        tree.swap.swap_total_bytes = 8 * g;
+        tree.swap.swap_used_bytes = 2 * g;
         assert_eq!(header_rows(&tree), 3);
         let swap = swap_header_line(&tree, 100, 40).expect("a row").to_string();
         assert!(swap.starts_with(" SWAP ["), "{swap}");
@@ -2768,7 +2768,7 @@ mod tests {
     #[test]
     fn a_swapless_host_gets_no_swap_tank() {
         let tree = tree_with_gpu(&mem::GpuPool::default());
-        assert_eq!(tree.swap_total_bytes, 0);
+        assert_eq!(tree.swap.swap_total_bytes, 0);
         let text = mem_header_line(&tree, 100).0.to_string();
         assert!(!text.contains("SWAP"), "{text}");
         assert!(text.starts_with(" MEM ["), "no swap, no padding: {text}");
@@ -2786,7 +2786,7 @@ mod tests {
     #[test]
     fn a_plain_machine_pads_nothing() {
         let tree = tree_with_gpu(&mem::GpuPool::default());
-        assert_eq!(tree.swap_total_bytes, 0);
+        assert_eq!(tree.swap.swap_total_bytes, 0);
         assert_eq!(label_width(&tree), 3);
         let (mem, bar_w) = mem_header_line(&tree, 120);
         assert!(mem.to_string().starts_with(" MEM ["), "{mem}");
@@ -2812,8 +2812,8 @@ mod tests {
     fn every_header_bar_opens_in_the_same_column() {
         let g = 1024 * 1024 * 1024;
         let mut tree = tree_with_gpu(&mem::GpuPool::default());
-        tree.swap_total_bytes = 8 * g;
-        tree.swap_used_bytes = 2 * g;
+        tree.swap.swap_total_bytes = 8 * g;
+        tree.swap.swap_used_bytes = 2 * g;
         let (mem, bar_w) = mem_header_line(&tree, 120);
         let rows = [
             cpu_header_line(&tree, 120, bar_w).to_string(),
@@ -2837,8 +2837,8 @@ mod tests {
     fn swap_is_never_a_segment_of_the_mem_bar() {
         let g = 1024 * 1024 * 1024;
         let mut tree = tree_with_gpu(&mem::GpuPool::default());
-        tree.swap_total_bytes = 8 * g;
-        tree.swap_used_bytes = 2 * g;
+        tree.swap.swap_total_bytes = 8 * g;
+        tree.swap.swap_used_bytes = 2 * g;
         let mem = mem_header_line(&tree, 100).0.to_string();
         assert!(mem.contains("8.0G/32.0G"), "RAM only: {mem}");
         assert!(!mem.contains("SWAP"), "{mem}");
@@ -2854,8 +2854,8 @@ mod tests {
         let g = 1024 * 1024 * 1024;
         let mut swapped = tree_with_gpu(&mem::GpuPool::default());
         let plain = mem_header_line(&swapped, 120).1;
-        swapped.swap_total_bytes = 8 * g;
-        swapped.swap_used_bytes = 2 * g;
+        swapped.swap.swap_total_bytes = 8 * g;
+        swapped.swap.swap_used_bytes = 2 * g;
         let with_swap = mem_header_line(&swapped, 120).1;
         // One column, and that one is the label pad that lines `[` up with
         // SWAP's -- not a share of the row. The even split made it 24.

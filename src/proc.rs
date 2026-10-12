@@ -1017,7 +1017,7 @@ impl Sampler {
         psi::host_avg10(&mut header);
         let curr = self
             .pool
-            .collect(want_pss, header.swap_total_bytes > 0, Some(&self.prev));
+            .collect(want_pss, header.swap.swap_total_bytes > 0, Some(&self.prev));
         if want_pss {
             self.last_pss = Some(t1);
         }

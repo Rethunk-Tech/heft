@@ -198,6 +198,8 @@ process node carrying `cmdline`. The document is `{ "host": …, "interval_secs"
 plus `pss_interval_secs` on `--json --follow`, plus a
 top-level `warnings` array (the `--once` coverage sentence) when seen threads
 are under 90% of the kernel count; the key is omitted otherwise.
+Host `swap_used_bytes` and `swap_total_bytes` are omitted when `swap_total_bytes`
+is 0, and both stay when the host has swap, including a used count of zero.
 `--filter` prunes the tree to matching processes and their ancestors before
 that serialize. `kernel_threads` and `walked_threads` stay `#[serde(skip)]`.
 

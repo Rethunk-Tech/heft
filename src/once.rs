@@ -774,9 +774,8 @@ fn render_table(
         tree.nproc,
         crate::psi::header_tail(&tree)
     )?;
-    let coverage = coverage_tail(&tree);
-    if !coverage.is_empty() {
-        writeln!(out, "WARN {}", coverage.trim_start())?;
+    if let Some(wording) = coverage_warning(&tree) {
+        writeln!(out, "WARN {wording}")?;
     }
     write_header(out, cols)?;
     write_rows(out, cols, &rows)?;
@@ -948,6 +947,18 @@ pub(crate) fn coverage_tail(tree: &HostTree) -> String {
     format!("  seeing {:.0}% of {total} threads", share * 100.0)
 }
 
+/// The coverage sentence the `--once` `WARN` line prints, or nothing when
+/// heft can account for the machine. `--json` uses the same sentence.
+fn coverage_warning(tree: &HostTree) -> Option<String> {
+    let coverage = coverage_tail(tree);
+    let wording = coverage.trim_start();
+    if wording.is_empty() {
+        None
+    } else {
+        Some(wording.to_string())
+    }
+}
+
 /// `  swap used / total`, or nothing at all on a machine with no swap: an
 /// unconditional ` swap 0 / 0` would be a field about a device that is not
 /// there.
@@ -994,8 +1005,12 @@ fn json_text(tree: &HostTree, view: &View, pretty: bool) -> Result<String, Error
     keep_users(&mut tree, &view.users);
     sort_tree(&mut tree, Sort::from_label(&view.sort), view.desc);
     // The `Value` detour is what sorts every key alphabetically, which is the
-    // byte shape `--json` publishes.
-    let doc = serde_json::json!({ "host": tree });
+    // byte shape `--json` publishes. `warnings` is omitted when empty: the
+    // other optional arrays in the tree do the same.
+    let doc = match coverage_warning(&tree) {
+        Some(wording) => serde_json::json!({ "host": tree, "warnings": [wording] }),
+        None => serde_json::json!({ "host": tree }),
+    };
     // `println!` panics when the reader closes, and the release profile is
     // `panic = abort`, so `heft --json | head` would abort. Serialize first,
     // then write through `io::Write`: serializing into the stream instead
@@ -1697,6 +1712,51 @@ mod tests {
         // dividing by zero or inventing a share.
         assert_eq!(coverage_tail(&tree(None)), "");
         assert_eq!(coverage_tail(&tree(Some(0))), "");
+    }
+
+    /// `--json` and `--json --follow` both go through `json_text`. The warning
+    /// is the sentence the table prints, and it is absent once coverage is fine.
+    /// The kernel and walked counters stay off the host object.
+    #[test]
+    fn json_warns_with_the_table_coverage_sentence() {
+        let tree = |kernel: u64| HostTree {
+            kernel_threads: Some(kernel),
+            users: vec![UserNode {
+                uid: 1000,
+                name: "u".into(),
+                applications: vec![sample_ident(1.0)],
+                ..UserNode::default()
+            }],
+            ..HostTree::default()
+        };
+        let short = tree(1900);
+        let mut table = Vec::new();
+        render_table(
+            &mut table,
+            &short,
+            &View::default(),
+            &Columns::from_view(&View::default()),
+        )
+        .unwrap();
+        let table = String::from_utf8(table).unwrap();
+        let wording = table
+            .lines()
+            .find_map(|line| line.strip_prefix("WARN "))
+            .expect("table prints the coverage warning");
+        assert_eq!(wording, "seeing 1% of 1900 threads");
+
+        for pretty in [true, false] {
+            let text = json_text(&short, &View::default(), pretty).unwrap();
+            let doc: serde_json::Value = serde_json::from_str(&text).unwrap();
+            assert_eq!(doc["warnings"], serde_json::json!([wording]));
+            assert!(doc["host"].get("kernel_threads").is_none());
+            assert!(doc["host"].get("walked_threads").is_none());
+        }
+
+        let fine = json_text(&tree(20), &View::default(), true).unwrap();
+        let fine: serde_json::Value = serde_json::from_str(&fine).unwrap();
+        assert!(fine.get("warnings").is_none());
+        assert!(fine["host"].get("kernel_threads").is_none());
     }
 
     /// Visibility belongs to the walk, not to the rows `--user` kept: cutting

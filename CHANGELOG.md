@@ -4,6 +4,10 @@
 
 ### Added
 
+- `--json` and `--json --follow` include a top-level `warnings` array when
+  thread coverage is under 90%, holding the same `seeing N% of M threads`
+  sentence the `--once` `WARN` line prints. The array is omitted when coverage
+  is fine.
 - An `FD` column (`fds` in `--json`) sums open file descriptors. Blank on
   kernel threads and until the first fd scan.
 - `/` and `--filter` match a process's working directory as well as its name

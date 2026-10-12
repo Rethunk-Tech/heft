@@ -321,8 +321,10 @@ Where `/proc` hides pids (a `hidepid` mount, a PID namespace, another user's
 processes on a locked-down host) the tree is smaller than the machine. heft
 compares its summed threads, taken before `--user` removes anyone, with the
 kernel's global count in `/proc/loadavg`;
-below 90% it says so, `seeing 1% of 4557 threads`, in the TUI footer and on a
-`WARN` line under the `--once` host line. The invisible drm clients under
+below 90% it says so, `seeing 1% of 4557 threads`, in the TUI footer, on a
+`WARN` line under the `--once` host line, and as a top-level `warnings` array
+on `--json` and `--json --follow`. That array is omitted when the share is at
+least 90%. The invisible drm clients under
 [What the tree means](#what-the-tree-means) are the same blind spot.
 
 ## SWAP

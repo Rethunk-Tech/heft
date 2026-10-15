@@ -1791,13 +1791,8 @@ mod tests {
         assert!(!Filter::new("^python3 /home").unwrap().0.is_match(&hay));
     }
 
-    /// Silent when heft can account for the machine; a figure when it cannot.
-    /// The warning exists for a `hidepid` mount or a PID namespace, where the
-    /// tree is quietly smaller than the machine and nothing else says so.
-    #[test]
-    fn coverage_speaks_only_when_the_tree_is_short() {
-        // sample_ident carries threads: Some(19), so one app is 19 threads.
-        let tree = |kernel: Option<u64>| HostTree {
+    fn kernel_tree(kernel: Option<u64>) -> HostTree {
+        HostTree {
             kernel_threads: kernel,
             users: vec![UserNode {
                 uid: 1000,
@@ -1806,19 +1801,27 @@ mod tests {
                 ..UserNode::default()
             }],
             ..HostTree::default()
-        };
+        }
+    }
+
+    /// Silent when heft can account for the machine; a figure when it cannot.
+    /// The warning exists for a `hidepid` mount or a PID namespace, where the
+    /// tree is quietly smaller than the machine and nothing else says so.
+    #[test]
+    fn coverage_speaks_only_when_the_tree_is_short() {
+        // sample_ident carries threads: Some(19), so one app is 19 threads.
         // Seeing 19 of 20 is ordinary skew, not a blind spot.
-        assert_eq!(coverage_tail(&tree(Some(20))), "");
-        assert_eq!(coverage_tail(&tree(Some(19))), "");
+        assert_eq!(coverage_tail(&kernel_tree(Some(20))), "");
+        assert_eq!(coverage_tail(&kernel_tree(Some(19))), "");
         // Seeing 19 of 1900 is the case the warning is for.
         assert_eq!(
-            coverage_tail(&tree(Some(1900))),
+            coverage_tail(&kernel_tree(Some(1900))),
             "  seeing 1% of 1900 threads"
         );
         // No kernel figure, or a nonsense one, says nothing rather than
         // dividing by zero or inventing a share.
-        assert_eq!(coverage_tail(&tree(None)), "");
-        assert_eq!(coverage_tail(&tree(Some(0))), "");
+        assert_eq!(coverage_tail(&kernel_tree(None)), "");
+        assert_eq!(coverage_tail(&kernel_tree(Some(0))), "");
     }
 
     /// `--json` and `--json --follow` both go through `json_text`. The warning
@@ -1826,17 +1829,7 @@ mod tests {
     /// The kernel and walked counters stay off the host object.
     #[test]
     fn json_warns_with_the_table_coverage_sentence() {
-        let tree = |kernel: u64| HostTree {
-            kernel_threads: Some(kernel),
-            users: vec![UserNode {
-                uid: 1000,
-                name: "u".into(),
-                applications: vec![sample_ident(1.0)],
-                ..UserNode::default()
-            }],
-            ..HostTree::default()
-        };
-        let short = tree(1900);
+        let short = kernel_tree(Some(1900));
         let mut table = Vec::new();
         render_table(
             &mut table,
@@ -1868,7 +1861,7 @@ mod tests {
         }
 
         let fine = json_text(
-            &tree(20),
+            &kernel_tree(Some(20)),
             &View::default(),
             true,
             Duration::from_secs(1),
@@ -2159,6 +2152,17 @@ mod tests {
         assert_eq!(coverage_tail(&short), "  seeing 1% of 3800 threads");
     }
 
+    fn table_row(depth: u16, name: &str, trimmable: bool) -> TableRow {
+        TableRow {
+            search: None,
+            depth,
+            name: name.into(),
+            nproc: 1,
+            metrics: Metrics::default(),
+            trimmable,
+        }
+    }
+
     /// `--top` counts per parent, not per depth: two folders each keep their
     /// own N. Structural rows never count and are never cut, since Users and
     /// the host-level folders are not ordered by the sort at all, so "the top
@@ -2167,27 +2171,19 @@ mod tests {
     /// to have two users.
     #[test]
     fn top_counts_siblings_under_each_parent_and_spares_the_shape() {
-        let row = |depth: u16, name: &str, trimmable: bool| TableRow {
-            search: None,
-            depth,
-            name: name.into(),
-            nproc: 1,
-            metrics: Metrics::default(),
-            trimmable,
-        };
         let mut rows = vec![
-            row(0, "Host", false),
-            row(1, "alice", false),
-            row(2, "Applications", false),
-            row(3, "a1", true),
-            row(3, "a2", true),
-            row(3, "a3", true),
-            row(2, "User Services", false),
-            row(3, "s1", true),
-            row(3, "s2", true),
-            row(1, "System", false),
-            row(2, "k1", true),
-            row(2, "k2", true),
+            table_row(0, "Host", false),
+            table_row(1, "alice", false),
+            table_row(2, "Applications", false),
+            table_row(3, "a1", true),
+            table_row(3, "a2", true),
+            table_row(3, "a3", true),
+            table_row(2, "User Services", false),
+            table_row(3, "s1", true),
+            table_row(3, "s2", true),
+            table_row(1, "System", false),
+            table_row(2, "k1", true),
+            table_row(2, "k2", true),
         ];
         keep_top(&mut rows, 2, |r| (r.depth, r.trimmable));
         assert_eq!(
@@ -2211,21 +2207,13 @@ mod tests {
     /// A child of a row nobody can see is not a row.
     #[test]
     fn top_drops_the_subtree_of_a_row_it_cut() {
-        let row = |depth: u16, name: &str, trimmable: bool| TableRow {
-            search: None,
-            depth,
-            name: name.into(),
-            nproc: 1,
-            metrics: Metrics::default(),
-            trimmable,
-        };
         let mut rows = vec![
-            row(0, "Host", false),
-            row(1, "kept", true),
-            row(2, "kept-child", true),
-            row(1, "cut", true),
-            row(2, "cut-child", true),
-            row(3, "cut-grandchild", true),
+            table_row(0, "Host", false),
+            table_row(1, "kept", true),
+            table_row(2, "kept-child", true),
+            table_row(1, "cut", true),
+            table_row(2, "cut-child", true),
+            table_row(3, "cut-grandchild", true),
         ];
         keep_top(&mut rows, 1, |r| (r.depth, r.trimmable));
         assert_eq!(

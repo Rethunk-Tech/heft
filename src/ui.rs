@@ -318,6 +318,7 @@ fn run_loop(
         {
             app.tree = tree;
             keep_users(&mut app.tree, &app.view.users);
+            prune_expand(&app.tree, &mut app.expand);
             fresh = true;
         }
     }
@@ -811,6 +812,13 @@ fn jump_match(app: &mut App, rows: &[Flat], back: bool) {
     };
     app.cursor = next;
     app.want_id = Some(rows[next].id.clone());
+}
+
+fn prune_expand(tree: &HostTree, expand: &mut HashSet<String>) {
+    let mut live = HashSet::new();
+    expand_tree(tree, &mut live);
+    live.extend(default_expand());
+    expand.retain(|id| live.contains(id));
 }
 
 fn expand_tree(tree: &HostTree, expand: &mut HashSet<String>) {
@@ -3279,6 +3287,18 @@ mod tests {
             }],
             ..IdentNode::default()
         }])
+    }
+
+    #[test]
+    fn prune_expand_drops_a_pid_the_tree_no_longer_has() {
+        let tree = proc_tree(10, 11);
+        let me = cpu::euid();
+        let live = format!("user:{me}/apps/firefox/i/firefox/1/p/10");
+        let dead = format!("user:{me}/apps/firefox/i/firefox/1/p/99");
+        let mut expand = HashSet::from([live.clone(), dead.clone()]);
+        prune_expand(&tree, &mut expand);
+        assert!(expand.contains(&live));
+        assert!(!expand.contains(&dead));
     }
 
     #[test]

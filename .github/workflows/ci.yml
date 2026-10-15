@@ -23,12 +23,12 @@ jobs:
         with:
           toolchain: stable
           components: rustfmt, clippy
+          run-clippy: "true"
       - uses: cargo-bins/cargo-binstall@3be4ad2b146f3302f92e5956c54fedbb6ae8cccc # v1.25.3
         with:
           version: "1.23.0"
       - run: cargo binstall --no-confirm cargo-deny cargo-machete
       - run: cargo fmt --check
-      - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo test --locked
       - run: cargo deny --locked check
       - run: cargo machete

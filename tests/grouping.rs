@@ -1095,20 +1095,7 @@ fn a_lying_scope_bills_helpers_to_the_owning_app_not_a_sibling() {
             ),
         ),
     ]);
-    let header = HostHeader {
-        nproc: 1,
-        clk_tck: 100,
-        page_size: 4096,
-    };
-    let tree = build_tree(
-        &curr,
-        &curr,
-        Duration::from_secs(1),
-        &header,
-        HostTree::default(),
-        &ContainerIndex::default(),
-        &Rules::builtin(),
-    );
+    let tree = tree_from(curr.into_values().collect());
     let user = user_of(&tree, 1000);
     assert!(
         !has(&user.applications, "bun"),
@@ -1145,20 +1132,7 @@ fn an_idle_shell_folds_into_a_terminal_the_class_list_names() {
         (3, row(3, 0, "xterm", &["xterm"])),
         (4, row(4, 3, "zsh", &["zsh"])),
     ]);
-    let header = HostHeader {
-        nproc: 1,
-        clk_tck: 100,
-        page_size: 4096,
-    };
-    let tree = build_tree(
-        &curr,
-        &curr,
-        Duration::from_secs(1),
-        &header,
-        HostTree::default(),
-        &ContainerIndex::default(),
-        &Rules::builtin(),
-    );
+    let tree = tree_from(curr.into_values().collect());
     let user = user_of(&tree, 1000);
     assert!(
         has(&user.applications, "cosmic-term") && has(&user.applications, "xterm"),
@@ -1210,20 +1184,7 @@ fn a_utility_shell_bills_to_the_launching_app_or_terminal() {
         (21, row(21, 20, "bash", "/usr/bin/bash", &["bash"])),
         (22, row(22, 21, "dstat", "/usr/bin/dstat", &["dstat"])),
     ]);
-    let header = HostHeader {
-        nproc: 1,
-        clk_tck: 100,
-        page_size: 4096,
-    };
-    let tree = build_tree(
-        &curr,
-        &curr,
-        Duration::from_secs(1),
-        &header,
-        HostTree::default(),
-        &ContainerIndex::default(),
-        &Rules::builtin(),
-    );
+    let tree = tree_from(curr.into_values().collect());
     let user = user_of(&tree, 1000);
     assert!(
         !has(&user.applications, "bash")
@@ -1288,20 +1249,7 @@ fn a_spawned_command_bills_to_the_app_that_spawned_it() {
         (31, row(31, 30, "gate", "/usr/bin/gate")),
         (32, row(32, 31, "turbo", "/usr/bin/turbo")),
     ]);
-    let header = HostHeader {
-        nproc: 1,
-        clk_tck: 100,
-        page_size: 4096,
-    };
-    let tree = build_tree(
-        &curr,
-        &curr,
-        Duration::from_secs(1),
-        &header,
-        HostTree::default(),
-        &ContainerIndex::default(),
-        &Rules::builtin(),
-    );
+    let tree = tree_from(curr.into_values().collect());
     let user = user_of(&tree, 1000);
     assert!(
         has(&user.applications, "claude")
@@ -1371,20 +1319,7 @@ fn noise_orphaned_to_systemd_in_a_lying_scope_bills_to_the_terminal() {
         (10, row(10, 1, "gpg-agent", scope)),
         (11, row(11, 1, "gopls", scope)),
     ]);
-    let header = HostHeader {
-        nproc: 1,
-        clk_tck: 100,
-        page_size: 4096,
-    };
-    let tree = build_tree(
-        &curr,
-        &curr,
-        Duration::from_secs(1),
-        &header,
-        HostTree::default(),
-        &ContainerIndex::default(),
-        &Rules::builtin(),
-    );
+    let tree = tree_from(curr.into_values().collect());
     let user = user_of(&tree, 1000);
     assert!(
         !has(&user.applications, "gpg-agent") && !has(&user.applications, "gopls"),
@@ -1455,20 +1390,7 @@ fn a_service_row_takes_its_unit_stem_not_the_comm() {
             },
         ),
     ]);
-    let header = HostHeader {
-        nproc: 1,
-        clk_tck: 100,
-        page_size: 4096,
-    };
-    let tree = build_tree(
-        &curr,
-        &curr,
-        Duration::from_secs(1),
-        &header,
-        HostTree::default(),
-        &ContainerIndex::default(),
-        &Rules::builtin(),
-    );
+    let tree = tree_from(curr.into_values().collect());
     assert!(
         has(&tree.system, "kernel")
             && has(&tree.system, "dbus-broker")
@@ -1528,20 +1450,7 @@ fn the_anydesk_system_service_joins_the_user_anydesk_application() {
             },
         ),
     ]);
-    let header = HostHeader {
-        nproc: 1,
-        clk_tck: 100,
-        page_size: 4096,
-    };
-    let tree = build_tree(
-        &curr,
-        &curr,
-        Duration::from_secs(1),
-        &header,
-        HostTree::default(),
-        &ContainerIndex::default(),
-        &Rules::builtin(),
-    );
+    let tree = tree_from(curr.into_values().collect());
     assert!(
         !has(&tree.system, "anydesk"),
         "anydesk --service must not stay on System when the tray exists: {:?}",

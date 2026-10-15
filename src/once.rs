@@ -503,7 +503,7 @@ impl Filter {
             .map(Filter)
     }
 
-    fn matches(&self, text: &str) -> bool {
+    pub(crate) fn matches(&self, text: &str) -> bool {
         self.0.is_match(text)
     }
 }

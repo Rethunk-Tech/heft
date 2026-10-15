@@ -779,12 +779,6 @@ fn pid_in_procs(
     None
 }
 
-fn haystack_matches(filter: &Filter, hay: &str) -> bool {
-    let mut rows = vec![hay];
-    keep_matches(&mut rows, filter, |s| (0, *s));
-    !rows.is_empty()
-}
-
 fn jump_match(app: &mut App, rows: &[Flat], back: bool) {
     if app.view.filter.is_empty() {
         return;
@@ -796,7 +790,7 @@ fn jump_match(app: &mut App, rows: &[Flat], back: bool) {
         .iter()
         .enumerate()
         .filter(|(_, r)| {
-            r.trimmable && haystack_matches(filter, r.search.as_deref().unwrap_or(r.name.as_str()))
+            r.trimmable && filter.matches(r.search.as_deref().unwrap_or(r.name.as_str()))
         })
         .map(|(i, _)| i)
         .collect();

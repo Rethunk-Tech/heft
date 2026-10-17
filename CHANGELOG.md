@@ -26,9 +26,13 @@
   keeps both keys, including a used count of zero.
 - Sway's compositor, bar and background are three User Services rows (`sway`,
   `swaybar`, `swaybg`). A terminal sway started stays an application.
+- The AUR `heft` package builds from the release tag through git
+  (`makedepends` gains `git`) instead of GitHub's archive tarball.
 
 ### Fixed
 
+- A row expanded in the TUI no longer stays expanded in memory after its
+  process exits, so a reused pid does not come back already open.
 - A process never bills to another user's row. A shell under `su` or `sudo`
   was folded into the row of the user who ran `su`; it is now its own row under
   its real uid, which is also what `--json` reports.

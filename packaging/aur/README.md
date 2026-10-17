@@ -1,7 +1,7 @@
 # AUR packaging
 
-This directory is the source of truth for `heft` (release tarball), `heft-bin`
-(release musl binaries, no `depends`) and `heft-git` (main). The AUR
+This directory is the source of truth for `heft` (built from the release tag),
+`heft-bin` (release musl binaries, no `depends`) and `heft-git` (main). The AUR
 repositories are push targets, never edited in place.
 
 `LICENSE` here is 0BSD and covers the packaging sources only, not heft: the
@@ -10,33 +10,35 @@ repository, and one that is not 0BSD makes the package ineligible for
 promotion to the official repositories. Every push copies it in beside
 `PKGBUILD` and `.SRCINFO`.
 
-## After editing a PKGBUILD
-
-Re-run `update.sh`: a `.SRCINFO` is generated metadata, and a stale one
-publishes the wrong dependencies and version to every AUR consumer while the
-PKGBUILD beside it looks right. `update.sh <version>` sets `pkgver`, refreshes
-the checksums and regenerates every `.SRCINFO`; its header says why the sums
-come from the release's `.sha256` files. It needs makepkg, so it runs inside
-`archlinux:base-devel`.
+The AUR account these packages live in also maintains packages that are not
+heft's. `release.sh` pushes `heft` and `heft-bin` by name and nothing else;
+keep it that way.
 
 ## Release
 
-The `aur` job in `.github/workflows/release.yml` runs `update.sh` once the
-release exists (the checksums are of assets that did not exist before), commits
-the refresh back to main, and pushes `heft` and `heft-bin` to the AUR only when
-the `AUR_SSH_KEY` secret is set. The secret is deliberately unset, so that step
-skips with a notice and exits green, and the push is by hand:
+Move the changes into `## Unreleased` in `CHANGELOG.md`, then:
 
 ```sh
-git pull                                  # the job's refresh commit
-git clone ssh://aur@aur.archlinux.org/heft.git /tmp/aur-heft
-cp packaging/aur/LICENSE packaging/aur/heft/PKGBUILD packaging/aur/heft/.SRCINFO /tmp/aur-heft/
-git -C /tmp/aur-heft add PKGBUILD .SRCINFO LICENSE
-git -C /tmp/aur-heft commit -m "heft <version>"
-git -C /tmp/aur-heft push origin master   # the AUR accepts pushes to master only
+packaging/aur/release.sh tag 0.12.3       # local only
+packaging/aur/release.sh publish 0.12.3   # pushes
 ```
 
-Repeat for `heft-bin`. `heft-git` is also pushed by hand, on its own cadence: a
-tag changes nothing in a package whose `pkgver()` is `git describe`.
+`tag` dates the changelog section, bumps `Cargo.toml` and `Cargo.lock`,
+commits, tags, and points `heft` at the tag in a second commit. That checksum
+cannot be in the tagged commit: makepkg checksums a git source over the tagged
+tree, which contains the PKGBUILD. It is taken from the local tag and matches a
+GitHub clone.
+
+`publish` pushes the tag, pushes `heft` to the AUR, waits for the release run,
+fills `heft-bin` from the release's `.sha256` files, commits that, pushes main,
+then pushes `heft-bin`. Re-run it after a failed release run: each step is a
+no-op once done.
+
+Both need Docker (makepkg runs in `archlinux:base-devel`), `gh`, and an SSH key
+the AUR account accepts. No AUR key is kept in GitHub.
+
+`heft-git` is pushed by hand on its own cadence: a tag changes nothing in a
+package whose `pkgver()` is `git describe`. Regenerate its `.SRCINFO` with
+`makepkg --printsrcinfo` before pushing.
 
 Check the result with a fresh clone, not the RPC or cgit, which lag by minutes.

@@ -46,7 +46,7 @@ tests/reconcile.rs   heft against /proc read independently, not against itself
 tests/tty_restore.rs SIGTERM and SIGHUP on a real pty: terminal restored, exit 128+signal
 tests/common/mod.rs  heft(), arr() and pids() for the two that drive the built binary
 tests/fixtures/      grouping worlds: gui/ desktop snapshot, zygote/ fallback case
-packaging/aur/       PKGBUILD + .SRCINFO for heft, heft-bin, heft-git; update.sh
+packaging/aur/       PKGBUILD + .SRCINFO for heft, heft-bin, heft-git; release.sh
 ```
 
 No `sysinfo` crate. No `nix` unless rustix cannot do it; heft uses `std` + `libc`,
@@ -206,11 +206,10 @@ that serialize. `kernel_threads` and `walked_threads` stay `#[serde(skip)]`.
 ## Packaging
 
 `packaging/aur/` is the source of truth for the three AUR packages; the AUR
-repositories are push targets, never edited in place. Editing a PKGBUILD means
-re-running `update.sh`, or the generated `.SRCINFO` publishes stale metadata
-while the PKGBUILD beside it looks right. Release procedure, the 0BSD
-packaging licence and why `AUR_SSH_KEY` stays unset:
-[packaging/aur/README.md](packaging/aur/README.md).
+repositories are push targets, never edited in place. A release is
+`packaging/aur/release.sh tag <version>` then `publish <version>`, which
+regenerates every `.SRCINFO` it pushes. Procedure, the 0BSD packaging licence
+and the shared AUR account: [packaging/aur/README.md](packaging/aur/README.md).
 
 ## Gates
 

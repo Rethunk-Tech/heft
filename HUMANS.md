@@ -37,7 +37,7 @@ On Arch, three AUR packages carry the same binary three ways:
 
 ```sh
 paru -S heft-bin   # the release musl binary, no toolchain
-paru -S heft       # built from the release tarball
+paru -S heft       # built from the release tag
 paru -S heft-git   # built from main
 ```
 

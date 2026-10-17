@@ -28,6 +28,7 @@
   `swaybar`, `swaybg`). A terminal sway started stays an application.
 - The AUR `heft` package builds from the release tag through git
   (`makedepends` gains `git`) instead of GitHub's archive tarball.
+- Refreshed Rust lockfiles.
 
 ### Fixed
 

@@ -27,6 +27,12 @@
 - Sway's compositor, bar and background are three User Services rows (`sway`,
   `swaybar`, `swaybg`). A terminal sway started stays an application.
 
+### Fixed
+
+- A process never bills to another user's row. A shell under `su` or `sudo`
+  was folded into the row of the user who ran `su`; it is now its own row under
+  its real uid, which is also what `--json` reports.
+
 ## 0.12.2 - 2026-10-09
 
 ### Added

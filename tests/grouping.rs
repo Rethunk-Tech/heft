@@ -1147,6 +1147,47 @@ fn an_idle_shell_folds_into_a_terminal_the_class_list_names() {
 }
 
 #[test]
+fn a_shell_under_su_bills_to_its_own_uid() {
+    let row = |pid: u32, ppid: u32, uid: u32, name: &str, cgroup: &str| Process {
+        pid,
+        ppid,
+        pgrp: i32::try_from(pid).expect("fixture pid fits i32"),
+        uid,
+        comm: name.into(),
+        exe: Some(format!("/usr/bin/{name}")),
+        cmdline: vec![name.to_string()].into(),
+        cgroup: cgroup.into(),
+        ..Process::default()
+    };
+    let session = "0::/user.slice/user-1000.slice/session-2.scope";
+    let curr = PidMap::from_iter([
+        // `su -` from a terminal: su keeps the caller's real uid, the shell is root's.
+        (1, row(1, 0, 1000, "xterm", session)),
+        (2, row(2, 1, 1000, "su", session)),
+        (3, row(3, 2, 0, "bash", session)),
+        // `su b` inside a container, the makechrootpkg shape: root su, b's shell.
+        (10, row(10, 0, 0, "su", "0::/")),
+        (11, row(11, 10, 1000, "zsh", "0::/")),
+    ]);
+    let tree = tree_from(curr.into_values().collect());
+    assert!(
+        has(&user_of(&tree, 0).applications, "bash"),
+        "root's shell is root's row: {:?}",
+        titles(&user_of(&tree, 0).applications)
+    );
+    let user = user_of(&tree, 1000);
+    assert!(
+        has(&user.applications, "zsh"),
+        "b's shell is b's row: {:?}",
+        titles(&user.applications)
+    );
+    assert!(
+        !proc_names(ident(&user.applications, "xterm")).contains(&"bash".to_string()),
+        "the terminal does not hold another user's shell"
+    );
+}
+
+#[test]
 fn a_utility_shell_bills_to_the_launching_app_or_terminal() {
     let row = |pid: u32, ppid: u32, name: &str, exe: &str, args: &[&str]| Process {
         pid,

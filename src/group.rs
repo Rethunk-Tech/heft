@@ -248,6 +248,10 @@ fn resolve_one(
 /// - A command bills to the app that spawned it (`spawned_app`) before
 ///   `user_place`.
 ///
+/// - A fold never crosses users: the tree bills by real uid, so a process
+///   whose fold lands on another uid's row (a shell under setuid `su` or
+///   `sudo`) takes its own `user_place`.
+///
 /// The placement walks (`resolve_one`, `compute_place`, `owning_app_ancestor`,
 /// `unique_descendant_ident`) share the depth budget `MAX_WALK`.
 fn compute_place(
@@ -261,7 +265,21 @@ fn compute_place(
     if let Some(place) = direct_place(p, ctx) {
         return place;
     }
+    let place = fold_place(p, curr, ctx, memo, walking, depth);
+    if place.uid.is_some_and(|uid| uid != p.uid) {
+        return user_place(p, ctx);
+    }
+    place
+}
 
+fn fold_place(
+    p: &Process,
+    curr: &Procs,
+    ctx: &Ctx<'_>,
+    memo: &mut PidMap<Place>,
+    walking: &mut PidSet,
+    depth: usize,
+) -> Place {
     let classes = ctx.classes(p);
     if classes.intersects(Classes::WORKER) {
         if let Some(parent) = resolve_one(p.ppid, curr, ctx, memo, walking, depth + 1)

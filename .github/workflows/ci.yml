@@ -23,15 +23,81 @@ jobs:
         with:
           toolchain: stable
           components: rustfmt, clippy
-          run-clippy: "true"
       - uses: cargo-bins/cargo-binstall@3be4ad2b146f3302f92e5956c54fedbb6ae8cccc # v1.25.3
         with:
           version: "1.23.0"
       - run: cargo binstall --no-confirm cargo-deny cargo-machete
-      - run: cargo fmt --check
-      - run: cargo test --locked
-      - run: cargo deny --locked check
-      - run: cargo machete
+      # setup-rust's run-clippy continues on error then fails the composite
+      # action, which would skip every step below. Each check records its own
+      # outcome; the Gate step fails the job once.
+      - id: fmt
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: cargo fmt --check
+      - id: clippy
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - id: build
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: cargo build --locked
+      - id: test
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: cargo test --locked
+      - id: deny
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: cargo deny --locked check bans licenses sources
+      - id: vuln
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: cargo deny --locked check advisories
+      - id: machete
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: cargo machete
+      - id: actionlint
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: |
+          bash <(curl --fail --silent --show-error --location \
+            https://raw.githubusercontent.com/rhysd/actionlint/011a6d15e749bb3f2d771eed9c7aa0e7e3e10ee7/scripts/download-actionlint.bash) \
+            1.7.12 "$RUNNER_TEMP"
+          "$RUNNER_TEMP/actionlint" .github/workflows/*.yml
+      - id: shellcheck
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends shellcheck
+          shellcheck packaging/aur/release.sh
+      - name: Gate on every check
+        if: ${{ !cancelled() }}
+        env:
+          OUTCOMES: |
+            fmt=${{ steps.fmt.outcome }}
+            clippy=${{ steps.clippy.outcome }}
+            build=${{ steps.build.outcome }}
+            test=${{ steps.test.outcome }}
+            deny=${{ steps.deny.outcome }}
+            vuln=${{ steps.vuln.outcome }}
+            machete=${{ steps.machete.outcome }}
+            actionlint=${{ steps.actionlint.outcome }}
+            shellcheck=${{ steps.shellcheck.outcome }}
+        run: |
+          failed=0
+          while IFS='=' read -r check outcome; do
+            [ -z "$check" ] && continue
+            echo "$check: $outcome"
+            if [ "$outcome" != "success" ]; then
+              failed=1
+            fi
+          done <<EOF
+          $OUTCOMES
+          EOF
+          exit "$failed"
 
   # /proc and DRM fdinfo are architecture-neutral, so an x86 assumption is a
   # bug heft should not need an aarch64 runner to find. Check only: nothing

@@ -385,7 +385,6 @@ fn read_pid_held(
         .map_or(0, |p| p.walks.wrapping_add(1));
     let mut cgroup_id = None;
     let mut fd_count = None;
-    let mut fd_skips = 0;
     let (uid, exe, cmdline, cgroup, cwd, rss_pages) = if parsed.kthread {
         (
             0,
@@ -488,26 +487,15 @@ fn read_pid_held(
             .filter(|p| !want_pss && p.starttime_ticks.is_some())
             .filter(|p| p.starttime_ticks == parsed.starttime_ticks)
             .map(|p| p.drm_fds.as_slice());
-        // A table that kept its size and held no drm fd is not relinked, up
-        // to `FD_SKIPS_MAX` scans in a row.
-        let unchanged_at = prev
-            .filter(|p| p.starttime_ticks == parsed.starttime_ticks && p.drm_fds.is_empty())
-            .filter(|p| p.fd_skips < FD_SKIPS_MAX)
-            .and_then(|p| p.fd_count);
         // A carried empty list reads nothing, so it needs no `/proc/<pid>`.
         let (g, d, n) = match carried {
             Some([]) => (GpuCounters::default(), Vec::new(), None),
             _ => lazy_dir(&mut dir, pid)
                 .map_or((GpuCounters::default(), Vec::new(), None), |dir| {
-                    gpu::read_pid(dir, want_pss, carried, unchanged_at, buf)
+                    gpu::read_pid(dir, want_pss, carried, buf)
                 }),
         };
         fd_count = n.or(prev.and_then(|p| p.fd_count));
-        fd_skips = match (n, unchanged_at) {
-            (Some(n), Some(u)) if n == u => prev.map_or(0, |p| p.fd_skips + 1),
-            (Some(_), _) => 0,
-            _ => prev.map_or(0, |p| p.fd_skips),
-        };
         (r, w, (g, d))
     };
     // Held from a pid's second walk, so a short-lived one takes no slot.
@@ -551,7 +539,6 @@ fn read_pid_held(
         walks,
         cgroup_id,
         fd_count,
-        fd_skips,
         exec_mark: parsed.exec_mark,
         read_bytes,
         write_bytes,
@@ -674,8 +661,6 @@ fn pidfd_info(pid: u32) -> Option<(u32, u64)> {
 fn is_v2_only(cgroup: &str) -> bool {
     cgroup.starts_with("0::") && !cgroup.contains('\n')
 }
-
-const FD_SKIPS_MAX: u32 = 6;
 
 /// Every `IDENTITY_EVERY`th walk of a process rereads its uid, argv, working
 /// directory and cgroup; the rest carry them.

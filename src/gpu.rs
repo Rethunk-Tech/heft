@@ -24,12 +24,11 @@ pub(crate) fn read_pid(
     dir: impl AsFd,
     full_scan: bool,
     carried: Option<&[u32]>,
-    unchanged_at: Option<u32>,
     buf: &mut Vec<u8>,
 ) -> (GpuCounters, Vec<u32>, Option<u32>) {
     let (scanned, count) = match carried {
         Some(v) => (Ok(v.to_vec()), None),
-        None => match drm_fd_nums(&dir, unchanged_at) {
+        None => match drm_fd_nums(&dir) {
             Ok((v, n)) => (Ok(v), Some(n)),
             Err(e) => (Err(e), None),
         },
@@ -75,25 +74,20 @@ fn fd_num(name: &CStr) -> Option<u32> {
     u32::try_from(atoi(name.to_bytes())?).ok()
 }
 
-/// The drm fds and how many fds the table holds. `unchanged_at` is the count
-/// from a prior empty prefilter: a replacement of a non-drm fd with a drm fd
-/// keeps that count, so the table is still relinked.
-fn drm_fd_nums(dir: impl AsFd, _unchanged_at: Option<u32>) -> rustix::io::Result<(Vec<u32>, u32)> {
+/// The drm fds and how many fds the table holds. Count is every numeric name,
+/// including those whose link cannot be read: the FD column is the table size,
+/// not the readable subset.
+fn drm_fd_nums(dir: impl AsFd) -> rustix::io::Result<(Vec<u32>, u32)> {
     let mut fds = subdir(dir, c"fd")?;
-    let mut count = 0u32;
-    while let Some(ent) = fds.read() {
-        if fd_num(ent?.file_name()).is_some() {
-            count += 1;
-        }
-    }
-    fds.rewind();
     let mut link = [0; 4096];
     let mut nums = Vec::new();
+    let mut count = 0u32;
     while let Some(ent) = fds.read() {
         let ent = ent?;
         let Some(n) = fd_num(ent.file_name()) else {
             continue;
         };
+        count += 1;
         let Some(target) = read_link_at(fds.fd()?, ent.file_name(), &mut link) else {
             continue;
         };
@@ -331,10 +325,10 @@ mod tests {
         let _ = std::fs::remove_file(&slot);
         std::os::unix::fs::symlink("/dev/null", &slot).unwrap();
         let dir = rustix::fs::open(&root, OFlags::PATH | OFlags::DIRECTORY, Mode::empty()).unwrap();
-        assert_eq!(drm_fd_nums(&dir, None).unwrap(), (Vec::new(), 1));
+        assert_eq!(drm_fd_nums(&dir).unwrap(), (Vec::new(), 1));
         let _ = std::fs::remove_file(&slot);
         std::os::unix::fs::symlink("/dev/dri/renderD128", &slot).unwrap();
-        assert_eq!(drm_fd_nums(&dir, Some(1)).unwrap(), (vec![3], 1));
+        assert_eq!(drm_fd_nums(&dir).unwrap(), (vec![3], 1));
         std::fs::remove_dir_all(root).unwrap();
     }
 

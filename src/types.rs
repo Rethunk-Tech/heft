@@ -73,8 +73,6 @@ pub struct Process {
     pub cgroup_id: Option<u64>,
     /// fds in the table at the last fd scan.
     pub fd_count: Option<u32>,
-    /// Fd scans in a row that skipped the relink because the count held.
-    pub fd_skips: u32,
     /// `start_code`, `end_code`, `start_stack` from `stat`: new on every exec.
     pub exec_mark: (u64, u64, u64),
     pub read_bytes: Option<u64>,

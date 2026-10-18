@@ -676,8 +676,16 @@ mod tests {
         let listener = std::os::unix::net::UnixListener::bind(&sock).unwrap();
         std::thread::spawn(move || {
             while let Ok((mut s, _)) = listener.accept() {
+                // Read the whole request head first: answering after a partial
+                // read and closing resets a client still writing its request.
+                let mut req = Vec::new();
                 let mut buf = [0; 256];
-                let _ = s.read(&mut buf);
+                while !req.windows(4).any(|w| w == b"\r\n\r\n") {
+                    match s.read(&mut buf) {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => req.extend_from_slice(&buf[..n]),
+                    }
+                }
                 let _ = s.write_all(response);
             }
         });

@@ -265,7 +265,7 @@ pub(crate) fn process_metrics(
         // No per-process network counter exists to fill these. `/proc/<pid>/net/dev`
         // is the namespace total, socket fdinfo has no byte counter, `/proc/net/tcp`
         // queues are depths rather than totals, and `rchar`/`wchar` miss send/recv.
-        // `net::Rates` bills the container rows afterwards.
+        // `net::Rates` bills container rows and host-ns process rows afterwards.
         net_rx_bps: None,
         net_tx_bps: None,
         // Pressure is accounted per cgroup, never per process, so nothing here

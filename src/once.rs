@@ -208,11 +208,11 @@ pub(crate) const COLUMNS: &[Column] = &[
         stall: false,
         key: Some(|_, m| m.disk_w_bps),
     },
-    // NETNS, not NET: the counter belongs to a network namespace, and a
-    // container is the only thing in this tree that owns one. Naming the
-    // column after the resource would make a blank process cell read as "this
-    // process moved no bytes" when it means "no namespace of its own, so no
-    // figure exists" — the blank contract every other column already uses.
+    // NETNS, not NET: the counter belongs to a network namespace. Naming the
+    // column after the resource would make a blank cell read as "this process
+    // moved no bytes" when it means no figure exists (EACCES, or a process
+    // that shares a container netns already billed on the container row) —
+    // the blank contract every other column already uses.
     // Stall, not PSI: the column says what the number means to someone who has
     // never heard of pressure stall information. It is a percentage of the
     // interval the cgroup had at least one task waiting, so it answers what

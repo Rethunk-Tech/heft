@@ -30,48 +30,6 @@ Measure whether the NPU publishes unprivileged fdinfo or sysfs utilization. Add 
 - A column ships together with the key that read returned, a HUMANS.md sentence for it, and a fixture taken from that read.
 - When the open fails for permissions, or the node is absent, this section is the measured-not-worth note and the tree has no new column.
 
-## Network rates exist only on container rows
-
-Per-netns rx/tx comes from `/proc/<pid>/net/dev` and is applied to container rows only. Host and application rows therefore have no network numbers. `AGENTS.md:23` states that layout.
-
-Show rx/tx on non-container rows from that same read. EACCES blanks the metric, the same rule as other unreadable `/proc` fields. Do not add `docker exec` or any POST. Do not change container attribution.
-
-### Read
-
-- `AGENTS.md:23` — `src/net.rs` is per-netns rx/tx from `/proc/pid/net/dev`, container rows only.
-- `AGENTS.md:165` — NETNS RX/TX is the delta of non-`lo` bytes from `/proc/<container-scope-pid>/net/dev`.
-- `src/net.rs:33-36` — one `net/dev` read per container and none for anything else. The file is the namespace, so an ordinary pid returns the host namespace's total.
-- `src/net.rs:45-60` — `Sampler::tick` keeps a delta only for those container pids, keyed by identity and member.
-- `src/net.rs:73-85` — `netns_pids` is the lowest pid in a container's own cgroup scope, and only when `own_netns`.
-- `src/net.rs:88-109` — `apply` bills `tree.users[].containers` and `tree.containers`, and nothing else.
-- `src/net.rs:113-115` — `set` writes `None` when there is no rate.
-- `src/net.rs:124-132` — a missing previous sample, a new pid, or a counter that went backwards discards the interval.
-- `src/net.rs:135-138` — `read_pid` turns a failed read into `None`.
-- `src/net.rs:141-144` — every interface but `lo`; the host-side veth is unread because `/proc/<pid>/ns/net` is EACCES for a root-owned pid.
-- `src/net.rs:272-297` — `only_container_rows_are_billed` locks an application row that shares the container's key at `None`.
-- `src/types.rs:158-165` and `src/types.rs:195-196` — the pair is documented as container-only, and `accumulate` does not sum it.
-- `src/once.rs:209-213` — the column is named NETNS so a blank process cell means no figure, not zero bytes.
-- `HUMANS.md:288-291` — a blank is not a zero.
-- `HUMANS.md:386-397` — only a container row carries the columns; a `--network=host` container is blank.
-- `src/io.rs:6-7` and `src/proc.rs:301-315` — an unreadable `/proc` file is `None`, not zero.
-- `src/containers.rs:329-341` and `src/containers.rs:396-403` — GET only.
-
-### Traps
-
-- A process and its container must not double-count the same netns. `net/dev` is one counter for the namespace (`src/net.rs:33-36`), and the container row already holds it (`src/net.rs:96-109`). Writing that total again onto a process in the namespace counts the bytes twice on any row that sums both. `accumulate` currently refuses the sum (`src/types.rs:195-196`).
-- Processes in the host namespace each read that same host total (`src/net.rs:33-36`). A `--network=host` container is that namespace and is not read (`src/net.rs:79-80`); its container row stays blank.
-- A blank stays blank rather than zero. EACCES is `None` from `read_pid` (`src/net.rs:136`) and stays `None` through `set` (`src/net.rs:113-115`). A `0.0` rate is a counter that did not move. A discarded interval (`src/net.rs:124-132`) stays unpublished.
-- A readable file whose only interface is `lo` parses as `(0, 0)` (`src/net.rs:152-153`). That is a read, not an EACCES blank.
-- No `docker exec` and no POST. `unix_get` writes a GET, and `docker_get_path` allows two paths (`src/containers.rs:396-403`, `src/containers.rs:329-341`).
-
-### Acceptance
-
-- A non-container row with a readable `net/dev` shows rx/tx from that read.
-- EACCES on that file leaves `net_rx_bps` and `net_tx_bps` blank, not zero.
-- Container rows stay as they are: the same scope pid, the same identity and member keys, a `--network=host` container still blank, a project row still the sum of its containers.
-- A process that shares a container's netns does not add that namespace's bytes on top of the container row.
-- `docker_get_path` still allows only the two GET paths.
-
 ## NVIDIA and nouveau fdinfo keys are unread
 
 The GPU columns accept a client whose `drm-driver` is `amdgpu`, `i915`, or `xe`, or whose fdinfo has both `drm-client-id` and a `drm-resident-*` key. Memory and engine counters are still only the names those three drivers print. A nouveau or nvidia client can therefore appear as a row with blank VRAM/GTT/GFX/CMP, or not appear, depending on whether it publishes `drm-resident-*`. This host is an amdgpu APU; the names another driver prints have not been read here.

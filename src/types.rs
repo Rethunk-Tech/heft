@@ -153,10 +153,10 @@ pub(crate) struct Metrics {
     pub(crate) gfx_pct: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) compute_pct: Option<f64>,
-    /// `/proc/<pid>/net/dev` is per network namespace, not per process, so
-    /// these carry a container's traffic and are blank on every other row.
-    /// `accumulate` deliberately leaves them out: summing a namespace total
-    /// into a folder, User or Host row would present it as that row's own.
+    /// `/proc/<pid>/net/dev` is per network namespace, not per process.
+    /// Container rows carry that container's netns; other process rows carry
+    /// the host namespace. `accumulate` leaves them out: summing a namespace
+    /// total into a folder, User or Host row would present it as that row's own.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) net_rx_bps: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]

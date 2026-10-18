@@ -4,7 +4,7 @@ use std::fs;
 use crate::containers::ContainerIndex;
 use crate::identity::docker_scope_id;
 use crate::num::f64_of;
-use crate::types::{HostTree, IdentNode, PidMap, Process};
+use crate::types::{HostTree, IdentNode, PidMap, ProcNode, Process};
 
 /// Cumulative rx/tx bytes for one network namespace, tagged with the pid they
 /// were read through so a restart cannot be mistaken for a counter jump.
@@ -17,23 +17,25 @@ pub(crate) struct Sample {
 
 /// Per-namespace rates keyed the two ways a container reaches the tree: the
 /// identity row (a compose or supabase project sums its containers) and the
-/// member row under it.
+/// member row under it. `host` is the same `net/dev` read for a pid that is
+/// not in a container's own netns — every such process sees that one total.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Rates {
     by_ident: HashMap<String, (f64, f64)>,
     by_member: HashMap<String, (f64, f64)>,
+    host: Option<(f64, f64)>,
 }
 
 #[derive(Debug, Default)]
 pub(crate) struct Sampler {
     prev: HashMap<String, Sample>,
+    host: Option<Sample>,
 }
 
 impl Sampler {
-    /// One `net/dev` read per container and none for anything else. The file is
-    /// per network namespace, so reading it for an ordinary pid returns the
-    /// host namespace's total, not that process's traffic, so reading it for
-    /// every pid costs a walk's worth of reads to learn nothing.
+    /// One `net/dev` read per container netns, plus one for a pid that is not
+    /// in those namespaces. The file is per network namespace, so every host
+    /// process would return the same total; one read is that figure.
     pub(crate) fn tick(
         &mut self,
         idx: &ContainerIndex,
@@ -60,7 +62,21 @@ impl Sampler {
             }
         }
         self.prev = curr;
+        rates.host = self.tick_host(idx, procs, secs);
         rates
+    }
+
+    fn tick_host(
+        &mut self,
+        idx: &ContainerIndex,
+        procs: &PidMap<Process>,
+        secs: f64,
+    ) -> Option<(f64, f64)> {
+        let pid = host_ns_pid(idx, procs)?;
+        let sample = read_pid(pid)?;
+        let rate = delta(self.host.as_ref(), sample, secs);
+        self.host = Some(sample);
+        rate
     }
 }
 
@@ -85,19 +101,44 @@ fn netns_pids(idx: &ContainerIndex, procs: &PidMap<Process>) -> HashMap<String, 
     out
 }
 
+/// Lowest pid whose cgroup is not a container with its own netns. That pid's
+/// `net/dev` is the host namespace; pids inside a namespaced container would
+/// return that container's total instead.
+fn host_ns_pid(idx: &ContainerIndex, procs: &PidMap<Process>) -> Option<u32> {
+    procs
+        .values()
+        .filter(|p| {
+            docker_scope_id(&p.cgroup)
+                .and_then(|id| idx.get(&id))
+                .is_none_or(|info| !info.own_netns)
+        })
+        .map(|p| p.pid)
+        .min()
+}
+
 impl Rates {
-    /// Bills network I/O to container rows and to nothing else. A folder, User
-    /// or Host row that summed these would be presenting one namespace's
-    /// traffic as its own while its real total stays unknowable: every
-    /// per-process route (libpcap plus an inode-to-pid map, eBPF, taskstats)
-    /// needs `CAP_NET_RAW`, `CAP_BPF` or ptrace, socket fdinfo carries no byte
-    /// counter, and `rchar`/`wchar` miss send/recv entirely. htop and btop
-    /// decline the column for the same reason.
+    /// Container rows keep the per-container netns figure. Process rows that
+    /// are not under a Containers folder carry the host-namespace read; a
+    /// process inside a container netns must not also hold that total, or a
+    /// parent that summed both would count the bytes twice. `accumulate` still
+    /// refuses the sum, so folder, User and Host stay blank.
     pub(crate) fn apply(&self, tree: &mut HostTree) {
         for user in &mut tree.users {
             self.bill(&mut user.containers);
+            self.bill_host_folder(&mut user.applications);
+            self.bill_host_folder(&mut user.user_services);
         }
         self.bill(&mut tree.containers);
+        self.bill_host_folder(&mut tree.system);
+    }
+
+    fn bill_host_folder(&self, idents: &mut [IdentNode]) {
+        let rate = self.host.as_ref();
+        for ident in idents {
+            for inst in &mut ident.instances {
+                bill_procs(&mut inst.processes, rate);
+            }
+        }
     }
 
     fn bill(&self, idents: &mut [IdentNode]) {
@@ -113,6 +154,13 @@ impl Rates {
 fn set(m: &mut crate::types::Metrics, rate: Option<&(f64, f64)>) {
     m.net_rx_bps = rate.map(|r| r.0);
     m.net_tx_bps = rate.map(|r| r.1);
+}
+
+fn bill_procs(procs: &mut [ProcNode], rate: Option<&(f64, f64)>) {
+    for p in procs {
+        set(&mut p.metrics, rate);
+        bill_procs(&mut p.children, rate);
+    }
 }
 
 fn add(map: &mut HashMap<String, (f64, f64)>, key: &str, rx: f64, tx: f64) {
@@ -166,7 +214,7 @@ fn parse_dev(text: &str) -> (u64, u64) {
 mod tests {
     use super::*;
     use crate::containers::{HostConfig, Inspect, ListItem};
-    use crate::types::{MemberContainer, Metrics, UserNode};
+    use crate::types::{InstanceNode, MemberContainer, Metrics, ProcNode, UserNode};
 
     const DEV: &str = "Inter-|   Receive                    |  Transmit
  face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
@@ -253,6 +301,8 @@ mod tests {
         );
         // --network=host shares the root namespace; nothing is read.
         assert!(netns_pids(&index("host"), &procs).is_empty());
+        assert_eq!(host_ns_pid(&index("bridge"), &procs), Some(9));
+        assert_eq!(host_ns_pid(&index("host"), &procs), Some(9));
     }
 
     fn ident(id: &str, member: &str) -> IdentNode {
@@ -295,6 +345,76 @@ mod tests {
         let app = &user.applications[0];
         assert_eq!(app.metrics.net_rx_bps, None);
         assert_eq!(app.containers[0].metrics.net_rx_bps, None);
+    }
+
+    fn proc_row(pid: u32) -> ProcNode {
+        ProcNode {
+            pid,
+            ..ProcNode::default()
+        }
+    }
+
+    /// Host-namespace traffic lands on a process that is not under Containers.
+    /// A process billed to a container row stays blank so the namespace is
+    /// not counted twice; EACCES (no host sample) stays blank, not zero.
+    #[test]
+    fn a_host_namespace_process_carries_the_host_rate() {
+        let mut rates = Rates {
+            host: Some((3.0, 4.0)),
+            ..Rates::default()
+        };
+        rates.by_ident.insert("ctr".into(), (10.0, 20.0));
+        let mut tree = HostTree {
+            users: vec![UserNode {
+                applications: vec![IdentNode {
+                    id: "app".into(),
+                    instances: vec![InstanceNode {
+                        processes: vec![proc_row(1)],
+                        ..InstanceNode::default()
+                    }],
+                    ..IdentNode::default()
+                }],
+                containers: vec![IdentNode {
+                    id: "ctr".into(),
+                    instances: vec![InstanceNode {
+                        processes: vec![proc_row(12)],
+                        ..InstanceNode::default()
+                    }],
+                    ..IdentNode::default()
+                }],
+                ..UserNode::default()
+            }],
+            ..HostTree::default()
+        };
+        rates.apply(&mut tree);
+        let user = &tree.users[0];
+        assert_eq!(
+            user.applications[0].instances[0].processes[0]
+                .metrics
+                .net_rx_bps,
+            Some(3.0)
+        );
+        assert_eq!(
+            user.applications[0].instances[0].processes[0]
+                .metrics
+                .net_tx_bps,
+            Some(4.0)
+        );
+        assert_eq!(user.containers[0].metrics.net_rx_bps, Some(10.0));
+        assert_eq!(
+            user.containers[0].instances[0].processes[0]
+                .metrics
+                .net_rx_bps,
+            None
+        );
+        rates.host = None;
+        rates.apply(&mut tree);
+        assert_eq!(
+            tree.users[0].applications[0].instances[0].processes[0]
+                .metrics
+                .net_rx_bps,
+            None
+        );
     }
 
     #[test]

@@ -21,7 +21,7 @@ src/proc.rs          every visible PID; blank metrics on EACCES
 src/cpu.rs           /proc/stat usr/sys/wait + per-pid utime/stime rates
 src/mem.rs           meminfo used/Shmem/kernel/cache/Swap, zram, unified APU clip, host VRAM
 src/io.rs            /proc/pid/io rates and smaps_rollup PSS + SwapPss
-src/net.rs           per-netns rx/tx; container rows only
+src/net.rs           per-netns rx/tx; container rows plus host-ns process rows
 src/psi.rs           cgroup pressure; max of member `some` on multi-cgroup rows
 src/gpu.rs           amdgpu/i915/xe fdinfo; dri/drm prefilter; oversized skip; drm-client-id dedupe; fd scan on PSS ticks; amdgpu remainder on Host → Containers
 src/classify.rs      crash-helper owner, launcher payload hint, interactive shell
@@ -139,7 +139,7 @@ grouping starts reading one.
 | AGE | `now - (btime + starttime / CLK_TCK)`; field 22; aggregates in `Metrics::age_secs` |
 | Disk R/W | Δ `read_bytes` / `write_bytes` from `/proc/pid/io` |
 | GPU mem | first published of `gpu::MEM_PREFIXES`; `vram`/`gtt` (amdgpu), `local0`/`system0` (i915), `vram0`/`gtt` (xe). amdgpu `mem_info_*_used` minus that sum, once, on Host → Containers (`gpu::apply_unattributed`) |
-| NETNS RX/TX | Δ non-`lo` from `/proc/<container-scope-pid>/net/dev`; new pid or backward counter discards the interval |
+| NETNS RX/TX | Δ non-`lo` from `/proc/<pid>/net/dev`; container scope pid on container rows, one host-ns pid on other process rows; new pid or backward counter discards the interval |
 | CPU/IO/MEM ST | Δ `some ... total=` µs over wall clock; several cgroups: max of members' `some`. Backward counter discards the interval |
 | Host `psi` | `some avg10` from `/proc/pressure/{cpu,io,memory}`; `--once`/`--json` host line (`psi::header_tail`) |
 | gfx% / compute% | `drm-engine-gfx`/`-render` and `-compute` ns deltas. xe: `drm-cycles-rcs`/`-ccs` over `drm-total-cycles-*`, each / `drm-engine-capacity-*` (`cpu::cycles_pct`). Two formulas, not unified |

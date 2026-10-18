@@ -237,10 +237,13 @@ cgroup (that pressure is the machine's); on a process that shares its cgroup.
 
 ## NETNS RX / NETNS TX
 
-Per network namespace, so only container rows. Linux has no per-process byte
-counter heft can read without CAP_NET_RAW, CAP_BPF or ptrace. Sums non-`lo`
-interfaces. `--network=host` is blank. A compose/Supabase project sums its
-containers. A restart drops that interval. No Docker/Podman socket: blank.
+Per network namespace. Container rows use the container's `net/dev`; other
+process rows use the host namespace's (every host process sees the same
+total). Linux has no per-process byte counter heft can read without
+CAP_NET_RAW, CAP_BPF or ptrace. Sums non-`lo` interfaces. `--network=host` is
+blank on the container row. A compose/Supabase project sums its containers.
+A restart drops that interval. Unreadable `net/dev`: blank, not zero. No
+Docker/Podman socket: container rows blank.
 
 ## Docker / Podman
 

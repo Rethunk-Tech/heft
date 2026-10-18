@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Rule `match` keys `exe`, `arg` and `cgroup` test the whole executable path,
+  one argv element, and the cgroup line. `arg_suffix`, `cgroup_prefix` and
+  `cgroup_suffix` sit beside the existing prefix/suffix/contains forms.
+
+### Fixed
+
+- A failed `s` (save view) leaves the TUI running; the footer shows the error.
+- Relative `$XDG_CONFIG_HOME` and `$HOME` are ignored rather than creating
+  `heft/` under cwd, and an unreadable `view.json` warns instead of going
+  silent.
+- `--proc-root` reads `CLK_TCK` and page size from that tree's auxv, so a dump
+  from another kernel's `USER_HZ` still rates correctly.
+- GPU fdinfo is relinked when a drm fd replaces a non-drm one without growing
+  the table.
+- A failed container list GET keeps the last index; inspects that failed are
+  retried on the next relist.
+
 ## 0.12.3 - 2026-10-17
 
 ### Added

@@ -96,6 +96,7 @@ pub enum Match {
     ArgPrefix(Pat),
     ArgSuffix(Pat),
     ArgContains(Pat),
+    Cgroup(Pat),
     CgroupPrefix(Pat),
     CgroupSuffix(Pat),
     CgroupContains(Pat),
@@ -478,6 +479,7 @@ fn compile_match(m: Match, ctx: &mut CompileCtx) -> Result<Test, String> {
         Match::ArgPrefix(p) => Test::Str(Arg, Prefix, pat(p)?),
         Match::ArgSuffix(p) => Test::Str(Arg, Suffix, pat(p)?),
         Match::ArgContains(p) => Test::Str(Arg, Contains, pat(p)?),
+        Match::Cgroup(p) => Test::Eq(Cgroup, bucket(pat(p)?)),
         Match::CgroupPrefix(p) => Test::Str(Cgroup, Prefix, pat(p)?),
         Match::CgroupSuffix(p) => Test::Str(Cgroup, Suffix, pat(p)?),
         Match::CgroupContains(p) => Test::Str(Cgroup, Contains, pat(p)?),
@@ -1134,8 +1136,7 @@ fn eval(t: &Test, f: &Facts) -> bool {
                 Field::Script => f.script.is_some_and(one),
                 Field::Identity => f.identity.is_some_and(one),
                 Field::Container => f.container.is_some_and(one),
-                // `compile_match` builds Eq only for the seven fields above.
-                Field::Cgroup => false,
+                Field::Cgroup => one(f.cgroup),
             }
         }
         Test::All(v) => v.iter().all(|t| eval(t, f)),
@@ -1374,7 +1375,7 @@ mod tests {
 
     #[test]
     fn every_string_test_folds_ascii_case_on_both_sides() {
-        const TESTS: [&str; 22] = [
+        const TESTS: [&str; 23] = [
             "name",
             "name_prefix",
             "name_suffix",
@@ -1387,6 +1388,7 @@ mod tests {
             "arg_prefix",
             "arg_suffix",
             "arg_contains",
+            "cgroup",
             "cgroup_prefix",
             "cgroup_suffix",
             "cgroup_contains",
@@ -1518,6 +1520,28 @@ mod tests {
             names("0::/system.slice/sshd.service").is_empty(),
             "neither prefix nor suffix"
         );
+    }
+
+    #[test]
+    fn cgroup_equals_the_whole_line() {
+        let r = Rules::from_files(&[file(
+            "10-x.json",
+            r#"{"stage":"class","rules":[{"id":"t","match":{"cgroup":"0::/init.scope"},"classes":["noise"]}]}"#,
+        )]);
+        assert!(r.problems.is_empty(), "{:?}", r.problems);
+        let hit = |cgroup: &str| {
+            r.classes(&Facts {
+                comm: "init",
+                name: "init",
+                cgroup,
+                ..Facts::default()
+            })
+            .names()
+        };
+        assert_eq!(hit("0::/init.scope"), ["noise"]);
+        assert_eq!(hit("0::/INIT.SCOPE"), ["noise"]);
+        assert!(hit("0::/init.scope/").is_empty());
+        assert!(hit("0::/user.slice").is_empty());
     }
 
     #[test]

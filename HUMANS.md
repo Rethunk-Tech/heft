@@ -509,7 +509,7 @@ are allowed.
 A `match` holds one test. `name`, `name_prefix`, `name_suffix` and
 `name_contains` look at both `comm` and the display name; `exe`, `exe_prefix`,
 `exe_suffix` and `exe_contains` at the executable path; `arg`, `arg_prefix`,
-`arg_suffix` and `arg_contains` at each argument; `cgroup_prefix`, `cgroup_suffix`
+`arg_suffix` and `arg_contains` at each argument; `cgroup`, `cgroup_prefix`, `cgroup_suffix`
 and `cgroup_contains` at the cgroup; `unit`,
 `unit_prefix`, `unit_suffix` and `unit_contains` at the systemd user unit.
 `identity` and `container` are for `placement` rules, and `script` only for a

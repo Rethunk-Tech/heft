@@ -4,58 +4,64 @@ Read-only Linux process monitor. Binary name `heft`.
 
 ## Start here
 
-[HUMANS.md](HUMANS.md) — install, keys, XDG, sample cadence, rules file format, live verify. Read it before touching a flag, column, key or rule.
+[HUMANS.md](HUMANS.md) — install, keys, XDG, cadence, rules file format, live
+verify. Read it before touching a flag, column, key or rule.
 
 ## Layout
 
 ```text
-src/cli.rs           clap Cli and the one definition of the --trend and --glyphs choices; a library module, and build.rs includes it so completions/man cannot drift
-src/main.rs          dispatch: TUI default, --once, --json, --follow, --explain, --fixture, --check-rules
+src/cli.rs           clap Cli; the one --trend / --glyphs choice list; build.rs includes it for completions/man
+src/main.rs          dispatch
 src/lib.rs           modules
-build.rs             clap_complete + clap_mangen → OUT_DIR/assets (build-deps only); HEFT_VERSION = version~sha; rules.d → OUT_DIR/builtin_rules.rs
-rules.d/             built-in rule files, one stage each, embedded by build.rs
-.git-sha             export-subst commit for tag tarballs, which have no .git for build.rs to ask
+build.rs             clap_complete + clap_mangen → OUT_DIR/assets; HEFT_VERSION; rules.d → builtin_rules.rs
+rules.d/             built-in rule files, one stage each
+.git-sha             export-subst commit for tag tarballs (no .git for build.rs)
 src/types.rs         Process, Metrics, HostTree, JSON shape
 src/proc.rs          every visible PID; blank metrics on EACCES
-src/cpu.rs           /proc/stat split (usr/sys/wait) + per-pid utime/stime rates
-src/mem.rs           meminfo used/Shmem/kernel/cache/Swap, zram mm_stat, unified APU clip, host VRAM
+src/cpu.rs           /proc/stat usr/sys/wait + per-pid utime/stime rates
+src/mem.rs           meminfo used/Shmem/kernel/cache/Swap, zram, unified APU clip, host VRAM
 src/io.rs            /proc/pid/io rates and smaps_rollup PSS + SwapPss
-src/net.rs           per-netns rx/tx from /proc/pid/net/dev; container rows only
-src/psi.rs           cgroup cpu/io/memory.pressure; max of member `some` on multi-cgroup identity/instance rows
-src/gpu.rs           amdgpu/i915/xe fdinfo; dri/drm prefilter; no empty-prefilter walk; oversized fdinfo skipped; drm-client-id dedupe; fd table rescanned only on PSS ticks
-src/classify.rs      procedures over the rule classes: crash-helper owner, launcher payload hint, interactive shell
+src/net.rs           per-netns rx/tx; container rows only
+src/psi.rs           cgroup pressure; max of member `some` on multi-cgroup rows
+src/gpu.rs           amdgpu/i915/xe fdinfo; dri/drm prefilter; oversized skip; drm-client-id dedupe; fd scan on PSS ticks
+src/classify.rs      crash-helper owner, launcher payload hint, interactive shell
 src/identity.rs      cgroup parse, merge key + display name
 src/containers.rs    GET-only docker/podman; project vs per-container
 src/group.rs         Host → User → Applications | User Services | Containers, System
-src/rules.rs         rules.d engine: load, compile, evaluate, examples, --check-rules
-src/config.rs        XDG view.json (sort, filter, hide_columns, column_order; write on save); strip_comments for it and rules.d
+src/rules.rs         rules.d engine
+src/config.rs        XDG view.json; strip_comments for it and rules.d
 src/once.rs          columns, tree ordering, table and JSON
-src/explain.rs       --explain PID: resolved placement, the placement key, the rule each stage matched
+src/explain.rs       --explain PID
 src/ui.rs            ratatui header + tree table
 src/tty.rs           panic hook + signal handler; restores the terminal
-src/num.rs           numeric conversions (f64_of, sat_*) so no cast is silenced
-src/glyph.rs         unicode, legacy or ascii bar/rule/marker characters; resolved once
-src/keys.rs          the one TUI key list; build.rs includes it for the man page
-src/root.rs          the /proc and /sys prefix behind --proc-root, resolved once; tests/live_proc.rs:a_proc_root_is_the_only_proc_heft_reads guards it
-src/caps.rs          --trend auto: one round trip asking the terminal what it draws
-src/kgp.rs           --trend kitty: TREND as one graphics-protocol image; shm or inline
-src/sixel.rs         --trend sixel: the same image, RLE sixel, positioned from the frame
-tests/grouping.rs    integration tests over tests/fixtures/; links the library
-tests/live_proc.rs   invariants over the real /proc; must hold in a bare container
-tests/reconcile.rs   heft against /proc read independently, not against itself
-tests/tty_restore.rs SIGTERM and SIGHUP on a real pty: terminal restored, exit 128+signal
-tests/common/mod.rs  heft(), arr() and pids() for the two that drive the built binary
-tests/fixtures/      grouping worlds: gui/ desktop snapshot, zygote/ fallback case
-packaging/aur/       PKGBUILD + .SRCINFO for heft, heft-bin, heft-git; release.sh
+src/num.rs           f64_of, sat_* — no silenced cast
+src/glyph.rs         unicode, legacy or ascii; resolved once
+src/keys.rs          the one TUI key list (man page too)
+src/root.rs          --proc-root prefix; tests/live_proc.rs:a_proc_root_is_the_only_proc_heft_reads
+src/caps.rs          --trend auto
+src/kgp.rs           --trend kitty
+src/sixel.rs         --trend sixel
+tests/grouping.rs    tests/fixtures/; links the library
+tests/live_proc.rs   real /proc; must hold in a bare container
+tests/reconcile.rs   heft against /proc read independently
+tests/tty_restore.rs SIGTERM/SIGHUP on a pty: terminal restored, exit 128+signal
+tests/common/mod.rs  heft(), arr(), pids()
+tests/fixtures/      gui/ desktop snapshot, zygote/ fallback
+packaging/aur/       three PKGBUILDs + release.sh
 ```
 
-No `sysinfo` crate. No `nix` unless rustix cannot do it; heft uses `std` + `libc`,
-plus `rustix` (already built for crossterm) for the dirfd-relative `/proc/<pid>` reads.
-Never read `/proc/pid/mem`. Never ptrace.
+No `sysinfo` crate. No `nix` unless rustix cannot do it. `std` + `libc`, plus
+`rustix` for dirfd-relative `/proc/<pid>` reads. Never `/proc/pid/mem`. Never
+ptrace.
 
 ## Grouping invariants
 
-The invariants live as doc comments on the functions they constrain: `group::compute_place` (worker, noise, launcher, shell, generic and orphan folding), `direct_place`, `container_place`, `system_place`, `user_place`, `spawned_app`, `owning_app_ancestor`, `unique_descendant_ident`, `lying_scope_place`, `worker_leaf_place`, `MAX_WALK`; `identity::app_scope_names`, `unit_line`, `generic_fallback`; `classify::name_ref`, `crash_helper_app`; and the `rules.rs` module doc for what the `rules.d` files encode.
+Doc comments on the functions they constrain: `group::compute_place`,
+`direct_place`, `container_place`, `system_place`, `user_place`, `spawned_app`,
+`owning_app_ancestor`, `unique_descendant_ident`, `lying_scope_place`,
+`worker_leaf_place`, `MAX_WALK`; `identity::app_scope_names`, `unit_line`,
+`generic_fallback`; `classify::name_ref`, `crash_helper_app`; `rules.rs`
+module doc.
 
 ## Surfaces, flags and columns
 
@@ -64,89 +70,59 @@ Each of these has one home; a second copy is the defect.
 | what | where | rule |
 | --- | --- | --- |
 | `--follow` loop | `proc::sample_stream` | honours `--pss-interval`; `once::follow_table` / `follow_json` share `render_table` and `json_text` with the one-shot pair |
-| flag over `view.json` precedence | `main::resolve_view` | `--hide` adds to the saved list, every other flag overwrites; only `sort`, `desc`, `filter`, `hide_columns`, `column_order` are read back (`users`, `top` are `#[serde(skip)]`). `--once` starts from `config::load_view()`, `--json` from `View::default()` and never the file. `--top`, `--hide`, `--order` are `conflicts_with = "json"` because the JSON shape is a contract. `--filter` is not: `once::keep_filtered` prunes that tree to matching processes and their ancestors |
-| unknown `--sort` label | clap `InvalidValue` via `once::sort_labels` | not `Sort::from_label`'s fallback: a stale `view.json` must not stop the monitor, an argument just typed can be corrected. `src/cli.rs` cannot reach `COLUMNS` because `build.rs` includes it standalone for the completions and man page |
-| bad regex | `once::Filter::new` returns `None` (`regex-lite`) | each caller decides: clap `InvalidValue`, a `view.json` warning, the TUI's `?` footer |
-| escaping process text for stdout | `once::printable` | the tree and `--json` keep raw strings; the TUI relies on ratatui dropping control characters |
-| `--filter` and `/` haystack | `TableRow::search` / `Flat::search` (`once::haystack`) when built, else `name` | `keep_matches` (table and TUI rows), `keep_filtered` (the `--json` tree), `keep_top` and `Filter` carry the rest; `ProcNode::cmdline` is the argv and `ProcNode::cwd` the working directory `proc` already read. `cmdline` is serialized in `types.rs`; `cwd` is too when it is non-empty |
-| `Set::Legacy` vs `Set::Unicode` | `glyph::spark_ramp`, nowhere else | `glyph.rs` says why, and why `detect` never returns it |
-| `--trend kitty` / `sixel` / `auto` | `src/kgp.rs` / `src/sixel.rs` / `src/caps.rs` | each module doc carries its protocol decisions; `ui::resolve_trend` the kitty-versus-sixel choice; `tty::hold_shm` the signal-safe shm cleanup |
-| `i` and `?` overlays | `ui::popup`, `ui::Overlay` | `i` is `ui::draw_detail`, `ui::metric_grid`, `proc::detail`, plus `explain::placement_lines` / `explain::identity_placement` for the row; `Overlay` holds which is open, so only one draws |
-| TREND scale | `ui::trend_scale`, one per frame | says why it is not each row's own peak; `ui::spark` and `kgp::paint` both draw against it |
-| `spark` column | `Column::fmt` returns empty; `ui::draw` substitutes `ui::spark` from `App::history`, `App::trend_w` deep | the one column not a function of the current sample: only `Columns::for_tui` includes it, `Sort::step` skips it (`key: None`), and `--order` validates against `column_labels()` rather than `sort_labels()` since not everything movable is sortable |
-| column model | `once::COLUMNS`; `once::Columns` is it with `view.hide_columns` and `view.column_order` applied | resolved at start, rebuilt on `H` / `u`, so no render site branches on visibility and nothing reaches sampling; `Sort::step` cycles the visible list; `config::default_hidden` hides `rss` and the stall trio when `hide_columns` is absent. Visibility is a view preference: `view.json`, never `rules.d`, and `--json` ignores it |
+| flag over `view.json` | `main::resolve_view` | `--hide` adds; every other flag overwrites. Only `sort`, `desc`, `filter`, `hide_columns`, `column_order` are read back (`users`, `top` are `#[serde(skip)]`). `--once` from `config::load_view()`; `--json` from `View::default()`. `--top`/`--hide`/`--order` `conflicts_with = "json"`. `--filter` is not: `once::keep_filtered` |
+| unknown `--sort` | clap `InvalidValue` via `once::sort_labels` | not `Sort::from_label`'s fallback (stale `view.json` must not stop the monitor). `src/cli.rs` cannot reach `COLUMNS`: `build.rs` includes it standalone |
+| bad regex | `once::Filter::new` → `None` | clap `InvalidValue`, a `view.json` warning, or the TUI `?` footer |
+| escaping process text | `once::printable` | tree and `--json` keep raw strings; TUI relies on ratatui dropping controls |
+| `--filter` / `/` haystack | `TableRow::search` / `Flat::search` (`once::haystack`) | `ProcNode::cmdline` is argv; `cwd` when non-empty. `cmdline` always serialized; `cwd` when non-empty |
+| `Set::Legacy` vs `Set::Unicode` | `glyph::spark_ramp` only | `glyph.rs` says why `detect` never returns Legacy |
+| `--trend kitty` / `sixel` / `auto` | `kgp.rs` / `sixel.rs` / `caps.rs` | module docs; `ui::resolve_trend`; `tty::hold_shm` |
+| `i` and `?` | `ui::popup`, `ui::Overlay` | one overlay at a time |
+| TREND scale | `ui::trend_scale`, one per frame | `ui::spark` and `kgp::paint` both draw against it |
+| `spark` column | `Column::fmt` empty; `ui::draw` substitutes | only `Columns::for_tui` includes it; `Sort::step` skips it (`key: None`); `--order` validates `column_labels()` not `sort_labels()` |
+| column model | `once::COLUMNS` via `once::Columns` | rebuilt on `H`/`u`; `config::default_hidden` hides `rss` and the stall trio when `hide_columns` is absent. `--json` ignores visibility |
 
 ## Rules
 
-`rules.d/*.json` holds every table-shaped grouping decision and `src/rules.rs`
-evaluates it. Procedures stay Rust: the ancestor walks in `group.rs`,
-`classify::crash_helper_app`, `classify::launcher_payload_hint`,
-`identity::generic_fallback`, and container,
-machine and System bucketing. `build.rs` embeds the directory through a
-generated `include_str!` table, sorted because `read_dir` order is
-machine-dependent, so a file added there cannot be left out of the binary.
+Table-shaped decisions live in `rules.d/*.json`; procedures stay Rust
+(ancestor walks, `crash_helper_app`, `launcher_payload_hint`,
+`generic_fallback`, container/machine/System bucketing). `build.rs` embeds
+the directory sorted (`read_dir` order is machine-dependent).
 
-The contract, which a change may extend but not alter:
+User-facing format: [HUMANS.md](HUMANS.md#rules). Engine contract a change
+may extend but not alter:
 
-- Stages run `unit`, `class`, `session`, `app`, `placement`; the first two
-  union every match, the rest take the first. `session` runs before
-  `classify::crash_helper_app` and `app` after it, both in
-  `group::direct_place`; no built-in example can prove that order, so
-  `tests/grouping.rs:a_user_session_rule_runs_before_the_crash_helper_and_an_app_rule_after_it`
-  holds it.
-- ASCII case folds on both sides: patterns are lowercased once at compile,
-  haystacks never. Unicode case is not folded.
+- Stages `unit`, `class`, `session`, `app`, `placement`. First two union;
+  the rest take the first. `session` before `classify::crash_helper_app`,
+  `app` after, both in `group::direct_place` —
+  `tests/grouping.rs:a_user_session_rule_runs_before_the_crash_helper_and_an_app_rule_after_it`.
+- ASCII case folds on both sides at compile; haystacks are never lowercased.
 - Source order (XDG, `/etc`, built-ins; `HEFT_RULES_PATH` in place of the
-  first two) outranks file name, so moving a table into a built-in file
-  cannot outrank a user rule.
-- `disable` entries are collected from every file that compiled before any
-  rule is kept, applied to that file name in every source, and never undone,
-  so the result is order independent.
-- Ids are `[a-z0-9-]+`, unique per file. An empty list, `all`, `any` or
-  string pattern fails the file (`name_prefix ""` matches every process), as does `script` outside a class rule whose
-  classes are exactly `[anonymous_script]`: `judged` never sets
-  `Facts::script`, so it would be a silent miss. Half a file loaded is a rule
-  set nobody wrote.
-- Placement is two lists by output kind (`Rules::deciding`): a container
-  subject sees `owner_uid` rules, an identity sees `fold_to` and `folder`
-  rules. `group::override_place` runs only on Applications and User Services.
-  `owner_uid` is consulted before workdir and bind-mount inference in
-  `containers::insert_resolved`.
+  first two) outranks file name.
+- `disable` is collected from every compiled file before any rule is kept,
+  applied to that file name in every source, never undone.
+- Ids `[a-z0-9-]+`, unique per file. Empty list, `all`, `any` or string
+  pattern fails the file; `script` outside a class rule whose classes are
+  exactly `[anonymous_script]` is a silent miss (`judged` never sets
+  `Facts::script`). Half a file loaded is a set nobody wrote.
+- Placement is two lists (`Rules::deciding`): containers see `owner_uid`;
+  identities see `fold_to`/`folder`. `override_place` only on Applications
+  and User Services. `owner_uid` before workdir/bind-mount inference.
 
-`group::Ctx::new` builds `judged` once per pid per tick (unit, flags, class
-set, and the positional-argv launcher test in `group::judge`); every class and
-unit question in `group.rs`, `identity::instance_key` and
-`identity::generic_fallback` reads it. It is keyed on pid and valid for one
-`Ctx`, which lives one `build_tree`, so `exec` needs no invalidation. Session
-and app rules evaluate on a borrowed `Facts` in `direct_place` and allocate
-nothing (`rules::tests::evaluation_allocates_nothing`, counted per thread
-because other tests allocate on other threads). `build_tree_timing` in
-`tests/grouping.rs` and `rules_timing` in `src/rules.rs` are `--ignored` timing
-harnesses; `HEFT_BENCH_FIXTURE` names a `--fixture` dump and
-`HEFT_BENCH_ITERS` how many times each pass runs.
+`group::Ctx::new` builds `judged` once per pid per tick; keyed on pid, valid
+for one `Ctx` (one `build_tree`). Session and app rules allocate nothing
+(`rules::tests::evaluation_allocates_nothing`, counted per thread).
+`HEFT_BENCH_FIXTURE` / `HEFT_BENCH_ITERS` drive the `--ignored` timing
+harnesses.
 
-`Rules::load`, `rules::load_dir` and `Rules::builtin` carry the load contract.
-`tests/common::heft` points
-`HEFT_RULES_PATH` at a missing directory so a developer's `/etc/heft/rules.d`
-cannot reach a binary-driven test.
+`tests/common::heft` points `HEFT_RULES_PATH` at a missing directory so a
+developer `/etc/heft/rules.d` cannot reach a binary-driven test.
 
-`--check-rules` (`rules::print_check`, judged in `Rules::report`) never
-samples, so it runs in the bare container. An example tests one process's
-facts against the merged set, so anything an ancestor walk decides stays a
-fixture test.
-
-`--explain <PID>` is `src/explain.rs`, whose module doc carries the design.
-`proc::sample_placement` is one walk and grouping, not `sample_world`'s
-sleep-and-second-tick: the report never prints rates. `locate` recurses
-through `ProcNode::children`, since the pid asked about is usually a folded
-worker, and offers no key for a container or System row because
-`override_place` cannot move one.
-
-`--fixture` (`proc::print_fixture`) is the other half: a grouping report from
-a desktop heft has never run on arrives as the `tests/grouping.rs` fixture
-shape, so the fix lands with that machine as its test.
-`a_fixture_dump_loads_as_a_fixture` holds the output to that loader. Add a
-field there when grouping starts reading one, or reports stop reproducing.
+`--check-rules` never samples. `--explain` is `sample_placement` (one walk,
+no rates); `locate` recurses `ProcNode::children` and offers no key for a
+container or System row. `--fixture` dumps the `tests/grouping.rs` loader
+shape; `a_fixture_dump_loads_as_a_fixture` holds it. Add a field there when
+grouping starts reading one.
 
 ## Sampler
 
@@ -155,80 +131,62 @@ field there when grouping starts reading one, or reports stop reproducing.
 | `%core` | `100 * Δ(utime+stime) / (CLK_TCK * dt)` (can exceed 100) |
 | `%machine` | `%core / nproc` |
 | RSS | `/proc/pid/statm` |
-| PSS | `/proc/pid/smaps_rollup` — cadence in [HUMANS.md](HUMANS.md) |
-| SWAP | `SwapPss:` from the PSS rollup read (`Metrics::swap_bytes`) |
-| Host swap | `SwapTotal` − `SwapFree` from `/proc/meminfo` (`SwapCached` is neither, so it is not subtracted) |
-| THR | `num_threads`, field 20 of the `/proc/pid/stat` already parsed for utime/stime |
-| FD | fds in the table at the last fd scan (`Process::fd_count`); blank on kernel threads and until that scan, then held between scans the way PSS is; sums like THR |
-| AGE | `now - (btime + starttime / CLK_TCK)`; `starttime` is field 22 of that `stat`, `btime` read once per run; aggregates in `Metrics::age_secs` |
+| PSS | `/proc/pid/smaps_rollup` — cadence in [HUMANS.md](HUMANS.md#run) |
+| SWAP | `SwapPss:` from that rollup (`Metrics::swap_bytes`) |
+| Host swap | `SwapTotal` − `SwapFree` (`SwapCached` is neither) |
+| THR | `num_threads`, field 20 of the already-parsed `stat` |
+| FD | last fd scan (`Process::fd_count`); blank on kernel threads and until that scan, then held like PSS |
+| AGE | `now - (btime + starttime / CLK_TCK)`; field 22; aggregates in `Metrics::age_secs` |
 | Disk R/W | Δ `read_bytes` / `write_bytes` from `/proc/pid/io` |
-| GPU mem | first tier the client publishes of `gpu::MEM_PREFIXES`; regions `vram`/`gtt` (amdgpu), `local0`/`system0` (i915), `vram0`/`gtt` (xe) |
-| NETNS RX/TX | Δ non-`lo` bytes from `/proc/<container-scope-pid>/net/dev`; a new pid or a counter that went backwards discards the interval |
-| CPU/IO/MEM ST | Δ `some ... total=` microseconds from that cgroup's `{cpu,io,memory}.pressure` over wall clock; several cgroups on a row: max of members' `some`, per resource (`psi.rs` says why `some` and why max). A counter that went backwards discards the interval |
-| Host `psi` | `some avg10` from `/proc/pressure/{cpu,io,memory}`, `--once` and `--json` host line only (`psi::header_tail`) |
-| gfx% / compute% | `drm-engine-gfx`/`-render` and `-compute` ns deltas over wall clock. xe: `drm-cycles-rcs`/`-ccs` delta over the `drm-total-cycles-*` delta, each divided by `drm-engine-capacity-*` (`cpu::cycles_pct`). Two formulas, deliberately not unified |
+| GPU mem | first published of `gpu::MEM_PREFIXES`; `vram`/`gtt` (amdgpu), `local0`/`system0` (i915), `vram0`/`gtt` (xe) |
+| NETNS RX/TX | Δ non-`lo` from `/proc/<container-scope-pid>/net/dev`; new pid or backward counter discards the interval |
+| CPU/IO/MEM ST | Δ `some ... total=` µs over wall clock; several cgroups: max of members' `some`. Backward counter discards the interval |
+| Host `psi` | `some avg10` from `/proc/pressure/{cpu,io,memory}`; `--once`/`--json` host line (`psi::header_tail`) |
+| gfx% / compute% | `drm-engine-gfx`/`-render` and `-compute` ns deltas. xe: `drm-cycles-rcs`/`-ccs` over `drm-total-cycles-*`, each / `drm-engine-capacity-*` (`cpu::cycles_pct`). Two formulas, not unified |
 
 | surface | rule |
 | --- | --- |
 | CPU bar | `/proc/stat` Δ user+nice / system+irq+softirq / iowait; idle+steal unfilled |
-| MEM bar | one MemTotal width when APU VRAM is unified; segment order `ui::mem_key`, contents and clipping `mem::clip_used` (reclaimable cache sits beyond `used`, never inside it), swatches `ui::bar_key` |
-| Discrete VRAM | own tank against `mem_info_vram_total` on the MEMORY row; only `vram` leaves the MEM segments, GTT being pinned system RAM |
-| Swap | own row against `SwapTotal`, never a MEM segment (`ui::header_rows`) |
-| Layout | CPU and MEMORY, unbordered, plus a SWAP row where there is swap. Discrete VRAM shares the MEMORY row (`ui::tank_widths`). `ui::bar_prefix` aligns the labels and every row draws its bar to `mem_header_line`'s width so the brackets stack; persistent rules header↔tree and tree↔footer |
-| Disk R/W | table columns only (formatted rates change width every tick); after compute, before the stall trio |
-| THR / FD / AGE | beside `N`, before the metric columns: all four say what the row *is* rather than what it is currently costing |
-| CPU/IO/MEM ST | max rather than sum or average across a row's cgroups: sum exceeds 100% on overlap, average hides a fully-stalled member. Folder, User and Host rows are blank because `user-<uid>.slice` is not the User row (a rootful container bills to its owner from `system.slice`) nor `system.slice` the System row (kernel threads are in the root cgroup); root-cgroup pressure is the machine's, the same rule as a `--network=host` container |
-| Ordering | one comparator in `once.rs` for every level; a `None` metric sorts last in either direction, name breaks ties, stable over `group::proc_forest` pid order |
+| MEM bar | one MemTotal width when APU VRAM is unified; order `ui::mem_key`, clip `mem::clip_used` (reclaimable cache beyond `used`) |
+| Discrete VRAM | own tank against `mem_info_vram_total`; only `vram` leaves MEM; GTT stays |
+| Swap | own row against `SwapTotal` (`ui::header_rows`) |
+| Layout | unbordered CPU + MEMORY, SWAP where present; discrete VRAM shares MEMORY (`ui::tank_widths`); `ui::bar_prefix` + `mem_header_line` width so brackets stack |
+| Disk R/W | table columns only, after compute, before the stall trio |
+| THR / FD / AGE | beside `N`, before metric columns |
+| CPU/IO/MEM ST | max, not sum or average. Folder/User/Host blank (`user-<uid>.slice` is not the User row; `system.slice` is not System; root-cgroup pressure is the machine's) |
+| Ordering | one comparator in `once.rs`; `None` last in either direction; name breaks ties |
 
-TUI sampling runs on a background thread; the ratatui loop only swaps in the
-last complete tree and never blocks on `/proc` I/O. `proc::WalkPool` says
-why the walk is a pool; `gpu.rs` carries the oversized-fdinfo skip and the
-empty-prefilter rule.
+TUI sampling is a background thread; the ratatui loop never blocks on `/proc`.
+`proc::WalkPool` is why the walk is a pool.
 
-`ui::alarming` marks the cells that say a row is in trouble — a stall column at or over `STALL_ALARM` — with `ui::alarm_style`: red
-where there is colour, `REVERSED` where there is not, which is the fallback
-`sort_header` already uses. Reverse rather than a marker character because
-`CPU ST` is six columns wide and `100.0` is five, so a marker would overflow
-into the clipping `columns_that_fit` exists to prevent. Nothing else is marked:
-a large `%CORE` is work, not trouble.
+`ui::alarming` marks a stall column ≥ `STALL_ALARM` with `ui::alarm_style`
+(red, else `REVERSED`). Reverse rather than a marker: `CPU ST` is six columns
+and `100.0` is five. A large `%CORE` is work, not trouble.
 
-JSON shape (`src/types.rs` `HostTree`): `host.sampled_at`,
-`host.users[].applications|user_services|containers`, `host.containers`,
-`host.system`. Project identities include `containers[].processes[]`, each
-process node carrying `cmdline`. The document is `{ "host": …, "interval_secs": … }`,
-plus `pss_interval_secs` on `--json --follow`, plus a
-top-level `warnings` array (the `--once` coverage sentence) when seen threads
-are under 90% of the kernel count; the key is omitted otherwise.
-Host `swap_used_bytes` and `swap_total_bytes` are omitted when `swap_total_bytes`
-is 0, and both stay when the host has swap, including a used count of zero.
-`--filter` prunes the tree to matching processes and their ancestors before
-that serialize. `kernel_threads` and `walked_threads` stay `#[serde(skip)]`.
+JSON (`types.rs` `HostTree`): `{ "host": …, "interval_secs": … }` plus
+`pss_interval_secs` on `--json --follow`, plus `warnings` when seen threads
+are under 90% of the kernel count. `swap_*_bytes` omitted when total is 0,
+kept (including used 0) when the host has swap. `kernel_threads` /
+`walked_threads` are `#[serde(skip)]`.
 
 ## Packaging
 
-`packaging/aur/` is the source of truth for the three AUR packages; the AUR
-repositories are push targets, never edited in place. A release is
-`packaging/aur/release.sh tag <version>` then `publish <version>`, which
-regenerates every `.SRCINFO` it pushes. Procedure, the 0BSD packaging licence
-and the shared AUR account: [packaging/aur/README.md](packaging/aur/README.md).
+[packaging/aur/README.md](packaging/aur/README.md).
 
 ## Gates
 
-Contributor commands:
-[CONTRIBUTING.md](CONTRIBUTING.md) (same as CI / lefthook). Docker sock is
-optional in CI; grouping tests use `tests/fixtures/` via `tests/grouping.rs`.
+[CONTRIBUTING.md](CONTRIBUTING.md). Docker sock is optional in CI; grouping
+uses `tests/fixtures/`.
 
 `live_proc::heft_does_not_grow_while_it_follows` watches heft's own RSS
-growth across a `--follow` window with several PSS ticks, not a ceiling: one
-tight enough to catch a leak in seconds is below what heft legitimately uses
-on a busy host. It guards the walk pool: a fresh thread per walk leaves glibc
-arenas climbing.
+across a `--follow` window with several PSS ticks — not a ceiling, because
+one tight enough to catch a leak in seconds is below a busy host. It guards
+the walk pool: a fresh thread per walk leaves glibc arenas climbing.
 
-The four cast lints denied in `Cargo.toml` are at zero, and no cast is silenced: a conversion either has a
-`From`/`try_from`, or goes through `src/num.rs` (`f64_of` for u64 to f64 with the `as` rounding, `sat_*` for float to
-integer with `as` saturation), so the type system carries the bound a comment would.
+Cast lints in `Cargo.toml` are denied and none are silenced: `From`/`try_from`
+or `src/num.rs`.
 
 ## Git
 
-Remote is `Rethunk-Tech/heft`, public, Apache-2.0. `publish = false` is a
-decision (HUMANS.md, Install); do not drop it without asking.
+Remote `Rethunk-Tech/heft`, public, Apache-2.0. `publish = false` is a
+decision ([HUMANS.md](HUMANS.md#install)); do not drop it without asking.

@@ -75,19 +75,16 @@ fn fd_num(name: &CStr) -> Option<u32> {
     u32::try_from(atoi(name.to_bytes())?).ok()
 }
 
-/// The drm fds and how many fds the table holds. A table still holding
-/// `unchanged_at` fds is taken to hold no drm fd, skipping a `readlinkat` per
-/// fd: opening a drm device grows the table.
-fn drm_fd_nums(dir: impl AsFd, unchanged_at: Option<u32>) -> rustix::io::Result<(Vec<u32>, u32)> {
+/// The drm fds and how many fds the table holds. `unchanged_at` is the count
+/// from a prior empty prefilter: a replacement of a non-drm fd with a drm fd
+/// keeps that count, so the table is still relinked.
+fn drm_fd_nums(dir: impl AsFd, _unchanged_at: Option<u32>) -> rustix::io::Result<(Vec<u32>, u32)> {
     let mut fds = subdir(dir, c"fd")?;
     let mut count = 0u32;
     while let Some(ent) = fds.read() {
         if fd_num(ent?.file_name()).is_some() {
             count += 1;
         }
-    }
-    if unchanged_at == Some(count) {
-        return Ok((Vec::new(), count));
     }
     fds.rewind();
     let mut link = [0; 4096];
@@ -324,22 +321,20 @@ fn parse_capacity(v: &str) -> u64 {
 mod tests {
     use super::*;
 
-    /// A table that still holds the count it held last scan is not relinked;
-    /// any other count is.
+    /// Replacing a non-drm fd with a drm fd leaves the table the same size,
+    /// so an unchanged count must not be treated as still having no drm fd.
     #[test]
-    fn an_fd_table_of_unchanged_size_is_not_relinked() {
+    fn an_empty_prefilter_is_relinked_when_the_fd_count_is_unchanged() {
         let root = std::env::temp_dir().join(format!("heft-fd-{}", std::process::id()));
         std::fs::create_dir_all(root.join("fd")).unwrap();
-        for n in ["3", "4"] {
-            let _ = std::fs::remove_file(root.join("fd").join(n));
-            std::os::unix::fs::symlink("/dev/dri/renderD128", root.join("fd").join(n)).unwrap();
-        }
+        let slot = root.join("fd").join("3");
+        let _ = std::fs::remove_file(&slot);
+        std::os::unix::fs::symlink("/dev/null", &slot).unwrap();
         let dir = rustix::fs::open(&root, OFlags::PATH | OFlags::DIRECTORY, Mode::empty()).unwrap();
-        let (mut fds, n) = drm_fd_nums(&dir, None).unwrap();
-        fds.sort_unstable();
-        assert_eq!((fds, n), (vec![3, 4], 2));
-        assert_eq!(drm_fd_nums(&dir, Some(2)).unwrap(), (Vec::new(), 2));
-        assert_eq!(drm_fd_nums(&dir, Some(1)).unwrap().0.len(), 2);
+        assert_eq!(drm_fd_nums(&dir, None).unwrap(), (Vec::new(), 1));
+        let _ = std::fs::remove_file(&slot);
+        std::os::unix::fs::symlink("/dev/dri/renderD128", &slot).unwrap();
+        assert_eq!(drm_fd_nums(&dir, Some(1)).unwrap(), (vec![3], 1));
         std::fs::remove_dir_all(root).unwrap();
     }
 

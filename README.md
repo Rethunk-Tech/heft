@@ -10,53 +10,24 @@
 
 ---
 
-`heft` walks `/proc` and DRM fdinfo (amdgpu, i915, xe), then draws a tree:
-**Host → each User (Applications, User Services, Containers) → System**.
-Docker and Podman workloads are never billed to `dockerd`, `containerd`, or
-the starter daemon.
-
-## Quick start
-
-Grab a binary from the
-[latest release](https://github.com/Rethunk-Tech/heft/releases/latest) — the
-musl build is static and needs no toolchain — or build it:
+Linux process tree from `/proc` and DRM fdinfo: **Host → User (Applications,
+User Services, Containers) → System**. Observe-only; blank metrics on
+`EACCES`. Docker/Podman workloads never bill to `dockerd`.
 
 ```sh
 cargo run --release -- --once
 ```
 
-`heft --help` lists every flag. See [HUMANS.md](HUMANS.md) for install,
-keybindings, and how a saved view is written.
-
-## Highlights
-
-- **Application weight** — a terminal, an idle shell, and `claude` are sibling
-  identities; workers and launchers fold into the app they serve.
-- **Containers as workloads** — `docker-*.scope` never lands in System or on
-  `dockerd`.
-- **No root** — every visible PID is listed; `EACCES` blanks that metric and
-  keeps the row. Heft does not kill, nice, or write `/proc`.
-- **One row, every dimension** — CPU, PSS/RSS/swap, disk, GPU memory and
-  engine percent, per-container network, threads and age. Hide the columns you
-  do not want; a metric heft cannot read stays blank rather than reading zero.
-- **Slow, not just busy** — per-cgroup CPU/IO/memory stall percentages, so a
-  row that is blocked on the disk stops looking the same as one that is idle.
-- **TUI plus scripts** — fullscreen table by default; `--once` and `--json`
-  for one sample, `--follow` to keep sampling (NDJSON, or a repeating table),
-  and `--sort`, `--asc`/`--desc`, `--filter` (a regex), `--top` and `--user`
-  for the shape you want.
-
-## Documentation
+Musl binaries: [latest release](https://github.com/Rethunk-Tech/heft/releases/latest).
+Flags: `heft --help`. Install, keys, XDG, rules: [HUMANS.md](HUMANS.md).
 
 | Doc | Purpose |
 | --- | --- |
-| [HUMANS.md](HUMANS.md) | Install, run, keys, XDG paths, verification |
+| [HUMANS.md](HUMANS.md) | Install, run, keys, XDG, verification |
 | [AGENTS.md](AGENTS.md) | Layout, grouping invariants, gates |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Commits, tests, review bar |
-| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | Expected conduct and enforcement |
+| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | Expected conduct |
 | [SECURITY.md](SECURITY.md) | Observe-only boundary and disclosure |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes |
-
-## License
 
 Apache-2.0. See [LICENSE](LICENSE).

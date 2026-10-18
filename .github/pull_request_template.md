@@ -4,7 +4,5 @@
 
 ## Checks
 
-- [ ] `cargo fmt --check`
-- [ ] `cargo clippy --locked --all-targets -- -D warnings`
-- [ ] `cargo test --locked`
+- [ ] `gate`
 - [ ] CHANGELOG.md updated, if this changes behaviour, a flag, or output shape

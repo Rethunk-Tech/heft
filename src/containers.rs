@@ -110,6 +110,13 @@ impl InspectCache {
             .any(|id| !self.inspects.contains_key(id) && !self.failed.contains(id))
     }
 
+    /// Drop one-shot inspect failures so the next refresh asks again. Called
+    /// when `CONTAINER_RELIST` fires: a connect/HTTP/serde error against a
+    /// static id set would otherwise stick until a container came or went.
+    pub(crate) fn clear_failed(&mut self) {
+        self.failed.clear();
+    }
+
     fn refresh(&mut self, ids: Vec<String>, mut fetch: impl FnMut(&str) -> Result<Inspect, Miss>) {
         // Replace the map when the id set changes so vanished ids cannot
         // linger; otherwise fetch only what is missing and has not failed,
@@ -143,22 +150,25 @@ pub struct ContainerIndex {
 }
 
 impl ContainerIndex {
-    pub(crate) fn load(cache: &mut InspectCache, rules: &Rules) -> Self {
+    /// `None` when the list GET fails. The caller keeps the last index and
+    /// does not stamp `listed`, so the next sample retries instead of every
+    /// container falling back to `docker-<12hex>` until `CONTAINER_RELIST`.
+    pub(crate) fn load(cache: &mut InspectCache, rules: &Rules) -> Option<Self> {
         let Some(sock) = docker_sock() else {
             cache.refresh(Vec::new(), |_| Err(Miss::Deadline));
-            return Self::default();
+            return Some(Self::default());
         };
+        Self::load_from_sock(&sock, cache, rules)
+    }
+
+    fn load_from_sock(sock: &Path, cache: &mut InspectCache, rules: &Rules) -> Option<Self> {
         let deadline = Instant::now() + DAEMON_BUDGET;
-        let Ok(body) = unix_get(&sock, "/containers/json", deadline) else {
-            return Self::default();
-        };
-        let Ok(list) = serde_json::from_slice::<Vec<ListItem>>(&body) else {
-            return Self::default();
-        };
+        let body = unix_get(sock, "/containers/json", deadline).ok()?;
+        let list = serde_json::from_slice::<Vec<ListItem>>(&body).ok()?;
         // Inspect is IPs/running; names/labels come from the list GET. An
         // inspect past the deadline is skipped and fetched on a later sample.
         cache.refresh(live_hex_ids(&list), |id| {
-            unix_get(&sock, &format!("/containers/{id}/json"), deadline)
+            unix_get(sock, &format!("/containers/{id}/json"), deadline)
                 .ok()
                 .and_then(|b| serde_json::from_slice(&b).ok())
                 .ok_or_else(|| {
@@ -169,7 +179,7 @@ impl ContainerIndex {
                     }
                 })
         });
-        Self::from_list(&list, &cache.inspects, path_owner, rules)
+        Some(Self::from_list(&list, &cache.inspects, path_owner, rules))
     }
 
     /// The index over a container list. `owner_of` is a path's owning uid:
@@ -642,6 +652,44 @@ mod tests {
         assert!(took < Duration::from_millis(1500), "{took:?}");
     }
 
+    fn serve_get(name: &str, response: &'static [u8]) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("heft-{name}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let sock = dir.join("s");
+        let _ = std::fs::remove_file(&sock);
+        let listener = std::os::unix::net::UnixListener::bind(&sock).unwrap();
+        std::thread::spawn(move || {
+            let (mut s, _) = listener.accept().unwrap();
+            let mut buf = [0; 256];
+            let _ = s.read(&mut buf);
+            let _ = s.write_all(response);
+        });
+        sock
+    }
+
+    #[test]
+    fn a_failed_list_get_is_not_an_empty_index() {
+        let sock = serve_get("list-fail", b"HTTP/1.0 500 Internal Server Error\r\n\r\n");
+        let mut cache = InspectCache::default();
+        let rules = crate::rules::Rules::builtin();
+        assert!(
+            ContainerIndex::load_from_sock(&sock, &mut cache, &rules).is_none(),
+            "a failed list GET must not replace the last index with empty"
+        );
+        let _ = std::fs::remove_dir_all(sock.parent().unwrap());
+    }
+
+    #[test]
+    fn an_empty_list_body_is_an_empty_index() {
+        let sock = serve_get("list-empty", b"HTTP/1.0 200 OK\r\n\r\n[]");
+        let mut cache = InspectCache::default();
+        let rules = crate::rules::Rules::builtin();
+        let idx = ContainerIndex::load_from_sock(&sock, &mut cache, &rules)
+            .expect("HTTP 200 with [] is a successful empty host");
+        assert!(idx.get("0123456789ab").is_none());
+        let _ = std::fs::remove_dir_all(sock.parent().unwrap());
+    }
+
     #[test]
     fn a_daemon_that_drips_costs_one_deadline() {
         let took = timed_get("drip", |mut s| {
@@ -732,5 +780,11 @@ mod tests {
         asked.clear();
         fetch(&[&a], &mut cache, &mut asked);
         assert_eq!(asked, [a.as_str()], "a new id set asks again");
+        asked.clear();
+        fetch(&[&a], &mut cache, &mut asked);
+        assert!(asked.is_empty(), "a repeated failure is not retried yet");
+        cache.clear_failed();
+        fetch(&[&a], &mut cache, &mut asked);
+        assert_eq!(asked, [a.as_str()], "relist asks a failed id again");
     }
 }

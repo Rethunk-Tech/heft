@@ -977,7 +977,7 @@ impl Sampler {
         // Netns counters are levels, so the first published tick needs a
         // baseline here or `--once` and `--json` would always print a blank
         // rate. The inspect cache makes the tick's own load a no-op.
-        let containers = ContainerIndex::load(&mut inspect_cache, rules);
+        let containers = ContainerIndex::load(&mut inspect_cache, rules).unwrap_or_default();
         net.tick(&containers, &prev, 1.0);
         let scopes = container_scopes(&prev);
         // Pressure totals are levels too, for the same reason: without a
@@ -1024,13 +1024,16 @@ impl Sampler {
         // The list is asked for only when a container scope came or went, so
         // an idle host costs the daemon nothing per tick.
         let scopes = container_scopes(&curr);
-        if scopes != self.scopes
-            || self.inspect_cache.pending()
-            || t1.duration_since(self.listed) >= CONTAINER_RELIST
-        {
-            self.containers = ContainerIndex::load(&mut self.inspect_cache, self.rules);
-            self.scopes = scopes;
-            self.listed = t1;
+        let relist = t1.duration_since(self.listed) >= CONTAINER_RELIST;
+        if scopes != self.scopes || self.inspect_cache.pending() || relist {
+            if relist {
+                self.inspect_cache.clear_failed();
+            }
+            if let Some(idx) = ContainerIndex::load(&mut self.inspect_cache, self.rules) {
+                self.containers = idx;
+                self.scopes = scopes;
+                self.listed = t1;
+            }
         }
         let containers = &self.containers;
         let elapsed = t1.duration_since(self.t0);
@@ -1110,7 +1113,7 @@ pub(crate) fn sample_placement() -> HostTree {
     let rules = crate::rules::Rules::load();
     let curr = WalkPool::new(usize::MAX).collect(false, false, None);
     let mut inspect_cache = InspectCache::default();
-    let containers = ContainerIndex::load(&mut inspect_cache, rules);
+    let containers = ContainerIndex::load(&mut inspect_cache, rules).unwrap_or_default();
     let consts = cpu::host_consts();
     group::build_tree(
         &PidMap::default(),

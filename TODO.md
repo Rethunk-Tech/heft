@@ -10,34 +10,11 @@ Unprivileged (uid 1000) on this Strix Halo host, 2026-10-18. PCI `0000:c3:00.1` 
 
 No column. `mem_key` / `drm-driver` unchanged. A root debugfs read is a different program.
 
-## NVIDIA and nouveau fdinfo keys are unread
+## NVIDIA and nouveau fdinfo — measured, not worth new keys
 
-The GPU columns accept a client whose `drm-driver` is `amdgpu`, `i915`, or `xe`, or whose fdinfo has both `drm-client-id` and a `drm-resident-*` key. Memory and engine counters are still only the names those three drivers print. A nouveau or nvidia client can therefore appear as a row with blank VRAM/GTT/GFX/CMP, or not appear, depending on whether it publishes `drm-resident-*`. This host is an amdgpu APU; the names another driver prints have not been read here.
+Unprivileged (uid 1000) on this amdgpu APU host, 2026-10-18. `/sys/module/nvidia` and `/sys/module/nouveau` are absent. `open("/dev/nvidia0")`, `open("/dev/nvidiactl")`, and `open("/proc/driver/nvidia")` each returned `ENOENT` (2). A scan of `/proc/<pid>/fdinfo` found no `drm-driver: nvidia` or `drm-driver: nouveau` line, so the resident fallback is not holding a blank NVIDIA/nouveau client either.
 
-Measure an unprivileged open of that driver's fdinfo. Add region and engine names only when that read returns them. When the node is absent or EACCES, the outcome is a measured-not-worth note in this section. Do not guess keys from a kernel tree.
-
-### Read
-
-- `HUMANS.md:272-279` — the three drivers, the resident fallback, and the refusal to guess other region names.
-- `AGENTS.md:25` — `gpu.rs` is amdgpu, i915, and xe.
-- `src/gpu.rs:174-191` — `MEM_PREFIXES` and `mem_key` region names.
-- `src/gpu.rs:222` — `drm-driver` is those three strings.
-- `src/gpu.rs:244-246` — a client with `drm-client-id` and `drm-resident` still counts.
-- `CONTRIBUTING.md:98-101` — observe-only; no guessed fdinfo keys.
-
-### Traps
-
-- The resident fallback may already be counting the client's memory under a name `mem_key` does not map, so the client is present and the cells stay blank. Measure that before adding a driver arm.
-- nvidia proprietary fdinfo is not the DRM usage-stats document. A key from that blob that this user cannot open is a different program.
-- `mem_key` returning `None` skips the line. Adding a region that is pinned system RAM to VRAM repeats the GTT-vs-VRAM split `HUMANS.md` already documents for amdgpu.
-- A fixture taken as root is not the unprivileged read the columns may use.
-
-### Acceptance
-
-- The measurement is a non-root open of that driver's fdinfo, recorded as the bytes or the error.
-- A column or mapped region ships together with the key that read returned, a HUMANS.md sentence, and a fixture from that read.
-- When the open fails or the node is absent, this section is the measured-not-worth note and `mem_key` / `drm-driver` stay as they are.
-- i915, xe, and amdgpu mappings do not change.
+No region or engine names to map. `mem_key` and `drm-driver` stay amdgpu/i915/xe. Guessed keys from a kernel tree stay unread.
 
 ## `--explain --json` is a conflict, not a document
 

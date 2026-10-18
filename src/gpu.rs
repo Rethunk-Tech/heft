@@ -7,7 +7,7 @@ use rustix::fs::{Dir, Mode, OFlags};
 use rustix::io::Errno;
 
 use crate::proc::{atoi, read_at, read_link_at};
-use crate::types::{GpuCounters, sum_opt};
+use crate::types::{GpuCounters, HostTree, host_metrics, sum_opt};
 
 /// Dri/drm symlink names select which fdinfo to read on every tick. When
 /// that prefilter is empty, `full_scan` (PSS / `--once`) does not walk every
@@ -311,6 +311,32 @@ fn parse_capacity(v: &str) -> u64 {
     parse_count(v).unwrap_or(1).max(1)
 }
 
+/// Kernel `mem_info_*_used` minus the drm clients heft could read. amdgpu
+/// publishes those counters; i915 and xe leave them unset, so there is no
+/// remainder. A zero gap leaves the row as the readable clients left it.
+fn unused_of(kernel: Option<u64>, readable: Option<u64>) -> Option<u64> {
+    let gap = kernel?.saturating_sub(readable.unwrap_or(0));
+    (gap > 0).then_some(gap)
+}
+
+/// The fdinfo gap on a root-owned pid has no process row. Bill it once onto
+/// Host → Containers, the way `net::Rates::apply` attaches a figure the
+/// processes themselves do not hold. A second container row would multiply it
+/// in `host_metrics`; with no Host → Containers identity it stays off the tree.
+pub(crate) fn apply_unattributed(tree: &mut HostTree) {
+    let host = host_metrics(tree);
+    let vram = unused_of(tree.vram_used_bytes, host.vram_bytes);
+    let gtt = unused_of(tree.gtt_used_bytes, host.gtt_bytes);
+    if vram.is_none() && gtt.is_none() {
+        return;
+    }
+    let Some(ident) = tree.containers.iter_mut().min_by(|a, b| a.id.cmp(&b.id)) else {
+        return;
+    };
+    ident.metrics.vram_bytes = sum_opt(ident.metrics.vram_bytes, vram);
+    ident.metrics.gtt_bytes = sum_opt(ident.metrics.gtt_bytes, gtt);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -537,5 +563,75 @@ mod tests {
         for k in ["drm-memory-cpu", "drm-shared-vram", "drm-engine-gfx"] {
             assert!(mem_key(k).is_none(), "{k}");
         }
+    }
+
+    fn ident(id: &str, vram: Option<u64>, gtt: Option<u64>) -> crate::types::IdentNode {
+        crate::types::IdentNode {
+            id: id.into(),
+            metrics: crate::types::Metrics {
+                vram_bytes: vram,
+                gtt_bytes: gtt,
+                ..crate::types::Metrics::default()
+            },
+            ..crate::types::IdentNode::default()
+        }
+    }
+
+    /// amdgpu's driver totals minus the clients heft could read belong on one
+    /// Host → Containers row. A second row, a user container, and i915/xe
+    /// (no kernel used count) must not also carry it; a zero gap is a no-op.
+    #[test]
+    fn unattributed_remainder_bills_one_host_container() {
+        let mut tree = HostTree {
+            vram_used_bytes: Some(100),
+            gtt_used_bytes: Some(50),
+            users: vec![crate::types::UserNode {
+                uid: 1000,
+                name: "u".into(),
+                containers: vec![ident("user-ctr", Some(20), Some(10))],
+                ..crate::types::UserNode::default()
+            }],
+            containers: vec![
+                ident("zeta", Some(5), None),
+                ident("alpha", Some(15), Some(10)),
+            ],
+            ..HostTree::default()
+        };
+        apply_unattributed(&mut tree);
+        let alpha = tree.containers.iter().find(|c| c.id == "alpha").unwrap();
+        let zeta = tree.containers.iter().find(|c| c.id == "zeta").unwrap();
+        // Readable VRAM 20+5+15 = 40, GTT 10+10 = 20. Remainder 60 / 30 on
+        // `alpha` (lowest id), not on `zeta` and not on the user container.
+        assert_eq!(alpha.metrics.vram_bytes, Some(75));
+        assert_eq!(alpha.metrics.gtt_bytes, Some(40));
+        assert_eq!(zeta.metrics.vram_bytes, Some(5));
+        assert_eq!(zeta.metrics.gtt_bytes, None);
+        assert_eq!(tree.users[0].containers[0].metrics.vram_bytes, Some(20));
+        assert_eq!(host_metrics(&tree).vram_bytes, tree.vram_used_bytes);
+        assert_eq!(host_metrics(&tree).gtt_bytes, tree.gtt_used_bytes);
+
+        let mut i915 = HostTree {
+            vram_used_bytes: None,
+            gtt_used_bytes: None,
+            containers: vec![ident("ctr", Some(8), Some(4))],
+            ..HostTree::default()
+        };
+        apply_unattributed(&mut i915);
+        assert_eq!(i915.containers[0].metrics.vram_bytes, Some(8));
+        assert_eq!(i915.containers[0].metrics.gtt_bytes, Some(4));
+
+        let mut even = HostTree {
+            vram_used_bytes: Some(20),
+            gtt_used_bytes: Some(10),
+            containers: vec![ident("ctr", None, Some(10))],
+            users: vec![crate::types::UserNode {
+                containers: vec![ident("user-ctr", Some(20), None)],
+                ..crate::types::UserNode::default()
+            }],
+            ..HostTree::default()
+        };
+        apply_unattributed(&mut even);
+        assert_eq!(even.containers[0].metrics.vram_bytes, None);
+        assert_eq!(even.containers[0].metrics.gtt_bytes, Some(10));
     }
 }

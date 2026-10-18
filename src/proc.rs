@@ -1042,6 +1042,7 @@ impl Sampler {
             self.rules,
         );
         net.apply(&mut tree);
+        gpu::apply_unattributed(&mut tree);
         // Applied after the tree exists, because a row's cgroup is only
         // knowable from the processes the grouping put under it.
         stalls.apply(&mut tree, &curr);

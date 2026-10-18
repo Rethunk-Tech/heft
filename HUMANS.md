@@ -160,7 +160,9 @@ Formulas and bar layout: [AGENTS.md](AGENTS.md#sampler).
 - Host VRAM/GTT come from the driver totals where present, else from visible
   drm clients. An unprivileged reader cannot open another uid's fdinfo, so
   drm clients in a root-owned container are invisible (`docker exec` would be
-  a POST heft never sends).
+  a POST heft never sends). When amdgpu's `mem_info_*_used` exceeds the
+  readable clients, that remainder sits once on Host → Containers. i915 and
+  xe publish no such total.
 - **User** is a unix uid. An idle interactive shell folds into its terminal; a
   shell that launched an app bills to the app.
 - Folder headings carry identity count, including zero, not `N` (processes).

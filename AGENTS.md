@@ -23,7 +23,7 @@ src/mem.rs           meminfo used/Shmem/kernel/cache/Swap, zram, unified APU cli
 src/io.rs            /proc/pid/io rates and smaps_rollup PSS + SwapPss
 src/net.rs           per-netns rx/tx; container rows only
 src/psi.rs           cgroup pressure; max of member `some` on multi-cgroup rows
-src/gpu.rs           amdgpu/i915/xe fdinfo; dri/drm prefilter; oversized skip; drm-client-id dedupe; fd scan on PSS ticks
+src/gpu.rs           amdgpu/i915/xe fdinfo; dri/drm prefilter; oversized skip; drm-client-id dedupe; fd scan on PSS ticks; amdgpu remainder on Host → Containers
 src/classify.rs      crash-helper owner, launcher payload hint, interactive shell
 src/identity.rs      cgroup parse, merge key + display name
 src/containers.rs    GET-only docker/podman; project vs per-container
@@ -138,7 +138,7 @@ grouping starts reading one.
 | FD | last fd scan (`Process::fd_count`); blank on kernel threads and until that scan, then held like PSS |
 | AGE | `now - (btime + starttime / CLK_TCK)`; field 22; aggregates in `Metrics::age_secs` |
 | Disk R/W | Δ `read_bytes` / `write_bytes` from `/proc/pid/io` |
-| GPU mem | first published of `gpu::MEM_PREFIXES`; `vram`/`gtt` (amdgpu), `local0`/`system0` (i915), `vram0`/`gtt` (xe) |
+| GPU mem | first published of `gpu::MEM_PREFIXES`; `vram`/`gtt` (amdgpu), `local0`/`system0` (i915), `vram0`/`gtt` (xe). amdgpu `mem_info_*_used` minus that sum, once, on Host → Containers (`gpu::apply_unattributed`) |
 | NETNS RX/TX | Δ non-`lo` from `/proc/<container-scope-pid>/net/dev`; new pid or backward counter discards the interval |
 | CPU/IO/MEM ST | Δ `some ... total=` µs over wall clock; several cgroups: max of members' `some`. Backward counter discards the interval |
 | Host `psi` | `some avg10` from `/proc/pressure/{cpu,io,memory}`; `--once`/`--json` host line (`psi::header_tail`) |

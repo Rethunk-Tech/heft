@@ -235,9 +235,20 @@ fn a_rows_totals_are_its_processes_totals() {
             ident["nproc"]
         );
         for key in COUNTERS {
+            let inst = sum_u64(arr(ident, "instances"), key);
+            let row = ident.get(key).and_then(Value::as_u64);
+            if matches!(key, "vram_bytes" | "gtt_bytes") {
+                // Unreadable drm clients have no pid, so the identity can hold
+                // GPU memory its instances do not.
+                assert!(
+                    row.unwrap_or(0) >= inst.unwrap_or(0) && (row.is_some() || inst.is_none()),
+                    "{folder}/{} {key} is below its instances' sum ({row:?} vs {inst:?})",
+                    ident["id"]
+                );
+                continue;
+            }
             assert_eq!(
-                sum_u64(arr(ident, "instances"), key),
-                ident.get(key).and_then(Value::as_u64),
+                inst, row,
                 "{folder}/{} {key} is not its instances' sum",
                 ident["id"]
             );

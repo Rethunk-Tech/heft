@@ -1413,6 +1413,48 @@ mod tests {
         assert_eq!(field_u64("Rss: 9 kB", "Pss:"), None);
     }
 
+    /// Grouping bills the real uid. `/proc/<pid>` inode uid is euid; they
+    /// diverge on setuid (fusermount3), so taking the first `Uid:` field is
+    /// the whole point of this parser.
+    #[test]
+    fn parse_uid_takes_ruid_and_blanks_on_failure() {
+        for (status, want) in [
+            (&b"Name:\tbash\nUid:\t1000\t0\t0\t0\n"[..], Some(1000)),
+            (b"Uid:\t0\t1\t1\t1\n", Some(0)),
+            (b"Name:\tbash\nGid:\t1000\n", None),
+            (b"Uid:\t4294967296\t0\t0\t0\n", None),
+            (b"", None),
+        ] {
+            assert_eq!(parse_uid(status), want, "{}", status.escape_ascii());
+        }
+    }
+
+    /// Field 2 of `/proc/<pid>/statm` is resident pages. Field 1 is virtual
+    /// size; taking that would print RSS as the whole address space.
+    #[test]
+    fn parse_rss_pages_is_the_second_statm_field() {
+        for (statm, want) in [
+            (&b"100 42 7 1 0 30 0\n"[..], Some(42)),
+            (b"0 0 0 0 0 0 0\n", Some(0)),
+            (b"100\n", None),
+            (b"", None),
+        ] {
+            assert_eq!(parse_rss_pages(statm), want, "{}", statm.escape_ascii());
+        }
+    }
+
+    #[test]
+    fn strip_deleted_only_cuts_the_kernel_suffix() {
+        for (path, want) in [
+            ("/usr/bin/bash (deleted)", "/usr/bin/bash"),
+            ("/usr/bin/bash", "/usr/bin/bash"),
+            ("/tmp/a (deleted) b", "/tmp/a (deleted) b"),
+            (" (deleted)", ""),
+        ] {
+            assert_eq!(strip_deleted(path), want);
+        }
+    }
+
     #[test]
     fn carried_pss_skips_kthread_and_new_pids() {
         let carried = Process {

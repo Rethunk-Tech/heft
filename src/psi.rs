@@ -435,4 +435,17 @@ mod tests {
         t.set_row(&mut solo, &[1]);
         assert_eq!(solo.cpu_stall_pct, Some(10.0));
     }
+
+    /// Empty when the kernel publishes no pressure at all. A single resource
+    /// it does not account shows `-` rather than shifting the other two.
+    #[test]
+    fn header_tail_dashes_a_missing_resource_and_is_empty_when_none() {
+        let mut tree = HostTree::default();
+        assert_eq!(header_tail(&tree), "");
+        tree.psi_cpu_avg10 = Some(1.25);
+        assert_eq!(header_tail(&tree), "  psi 1.2/-/-");
+        tree.psi_io_avg10 = Some(0.4);
+        tree.psi_mem_avg10 = Some(0.0);
+        assert_eq!(header_tail(&tree), "  psi 1.2/0.4/0.0");
+    }
 }

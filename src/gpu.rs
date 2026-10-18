@@ -496,4 +496,52 @@ mod tests {
         assert_eq!(g.vram_bytes, Some(48596 * 1024));
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    /// The spec forbids a zero capacity and treats an absent tag as one. An
+    /// unparsable or zero value must not divide the busy cycles away.
+    #[test]
+    fn parse_capacity_never_divides_by_zero() {
+        for (v, want) in [("4", 4), ("4 ns", 4), ("0", 1), ("x", 1), ("", 1)] {
+            assert_eq!(parse_capacity(v), want, "{v:?}");
+        }
+    }
+
+    #[test]
+    fn parse_size_scales_named_units_and_defaults_the_rest() {
+        for (v, want) in [
+            ("48596 KiB", 48596 * 1024),
+            ("1 MiB", 1024 * 1024),
+            ("1 MB", 1024 * 1024),
+            ("1 GiB", 1024 * 1024 * 1024),
+            ("10 B", 10),
+            ("5", 5),
+            ("1 kB", 1024),
+        ] {
+            assert_eq!(parse_size(v), Some(want), "{v}");
+        }
+        assert_eq!(parse_size(""), None);
+    }
+
+    /// Regions that are neither VRAM nor GTT (cpu, gds, shared-*) must not
+    /// land in either tank; `drm-shared-*` is a subset of the region, not a
+    /// tier of its own.
+    #[test]
+    fn mem_key_maps_driver_regions_and_skips_the_rest() {
+        for (k, tier, vram) in [
+            ("drm-resident-vram", 0, true),
+            ("drm-total-vram0", 1, true),
+            ("drm-memory-local0", 2, true),
+            ("drm-resident-gtt", 0, false),
+            ("drm-total-system0", 1, false),
+        ] {
+            match mem_key(k) {
+                Some((t, Region::Vram)) if vram => assert_eq!(t, tier, "{k}"),
+                Some((t, Region::Gtt)) if !vram => assert_eq!(t, tier, "{k}"),
+                _ => panic!("{k} mapped to the wrong region"),
+            }
+        }
+        for k in ["drm-memory-cpu", "drm-shared-vram", "drm-engine-gfx"] {
+            assert!(mem_key(k).is_none(), "{k}");
+        }
+    }
 }

@@ -584,4 +584,34 @@ mod tests {
             None
         );
     }
+
+    #[test]
+    fn cmdline_flag_value_takes_the_next_arg_or_an_equals() {
+        let cmd = |args: &[&str]| args.iter().map(|s| (*s).to_string()).collect::<Vec<_>>();
+        for (args, flag, want) in [
+            (&["runc", "-id", "abc"][..], "-id", Some("abc")),
+            (&["runc", "-id=abc"], "-id", Some("abc")),
+            (&["runc", "-id"], "-id", None),
+            (&["runc", "-identity", "x"], "-id", None),
+            (&["runc", "--id", "abc"], "-id", None),
+        ] {
+            assert_eq!(cmdline_flag_value(&cmd(args), flag), want, "{args:?}");
+        }
+    }
+
+    /// Flags are skipped; a path's basename wins over a later extension match,
+    /// and a bare name only counts when its suffix is a known script.
+    #[test]
+    fn script_basename_skips_flags_and_takes_a_path_or_extension() {
+        let cmd = |args: &[&str]| args.iter().map(|s| (*s).to_string()).collect::<Vec<_>>();
+        for (args, want) in [
+            (&["python3", "/home/u/app.py"][..], Some("app.py")),
+            (&["python3", "-m", "http.server"], None),
+            (&["node", "-e", "1", "foo.js"], Some("foo.js")),
+            (&["python3"], None),
+            (&["ruby", "serve.rb"], Some("serve.rb")),
+        ] {
+            assert_eq!(script_basename(&cmd(args)).as_deref(), want, "{args:?}");
+        }
+    }
 }

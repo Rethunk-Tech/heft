@@ -296,4 +296,26 @@ mod tests {
             "app-gnome-vivaldi-stable-1.scope"
         );
     }
+
+    /// The two spellings `app[-<launcher>]-<AppID>[-<random>]` allows, decided
+    /// here so grouping can match them against a live process rather than a
+    /// table of launcher names. A trailing all-digit component is the launch
+    /// counter, not part of the app.
+    #[test]
+    fn app_scope_names_strips_the_launch_counter() {
+        for (unit, want) in [
+            ("app-cursor-1181606.scope", Some(("cursor", None))),
+            (
+                "app-gnome-vivaldi-stable-1.scope",
+                Some(("gnome-vivaldi-stable", Some("vivaldi-stable"))),
+            ),
+            ("app-firefox.scope", Some(("firefox", None))),
+            ("app-foo-bar.service", Some(("foo-bar", Some("bar")))),
+            ("firefox.service", None),
+            ("app-.scope", None),
+            ("app.scope", None),
+        ] {
+            assert_eq!(app_scope_names(unit), want, "{unit}");
+        }
+    }
 }

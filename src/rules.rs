@@ -92,6 +92,7 @@ pub enum Match {
     ExeSuffix(Pat),
     ExeContains(Pat),
     ArgPrefix(Pat),
+    ArgSuffix(Pat),
     ArgContains(Pat),
     CgroupContains(Pat),
     Unit(Pat),
@@ -469,6 +470,7 @@ fn compile_match(m: Match, ctx: &mut CompileCtx) -> Result<Test, String> {
         Match::ExeSuffix(p) => Test::Str(Exe, Suffix, pat(p)?),
         Match::ExeContains(p) => Test::Str(Exe, Contains, pat(p)?),
         Match::ArgPrefix(p) => Test::Str(Arg, Prefix, pat(p)?),
+        Match::ArgSuffix(p) => Test::Str(Arg, Suffix, pat(p)?),
         Match::ArgContains(p) => Test::Str(Arg, Contains, pat(p)?),
         Match::CgroupContains(p) => Test::Str(Cgroup, Contains, pat(p)?),
         Match::Unit(p) => Test::Eq(Unit, bucket(pat(p)?)),
@@ -1362,7 +1364,7 @@ mod tests {
 
     #[test]
     fn every_string_test_folds_ascii_case_on_both_sides() {
-        const TESTS: [&str; 17] = [
+        const TESTS: [&str; 18] = [
             "name",
             "name_prefix",
             "name_suffix",
@@ -1371,6 +1373,7 @@ mod tests {
             "exe_suffix",
             "exe_contains",
             "arg_prefix",
+            "arg_suffix",
             "arg_contains",
             "cgroup_contains",
             "unit",
@@ -1417,6 +1420,31 @@ mod tests {
                 assert_eq!(r.deciding(stage, &f).len() == 1, hit, "{key} on {hay}");
             }
         }
+    }
+
+    #[test]
+    fn arg_suffix_matches_the_end_of_an_argument() {
+        let r = Rules::from_files(&[file(
+            "10-x.json",
+            r#"{"stage":"class","rules":[{"id":"t","match":{"arg_suffix":".desktop"},"classes":["noise"]}]}"#,
+        )]);
+        assert!(r.problems.is_empty(), "{:?}", r.problems);
+        let hit = |argv: &[String]| {
+            r.classes(&Facts {
+                comm: "app",
+                name: "app",
+                argv,
+                ..Facts::default()
+            })
+            .names()
+        };
+        assert_eq!(hit(&["app.desktop".into()]), ["noise"]);
+        assert_eq!(hit(&["APP.DESKTOP".into()]), ["noise"], "ASCII case folds");
+        assert!(
+            hit(&[".desktop-id".into()]).is_empty(),
+            "a prefix that shares the letters is not a suffix"
+        );
+        assert!(hit(&["app".into()]).is_empty());
     }
 
     #[test]

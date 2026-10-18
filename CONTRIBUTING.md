@@ -4,24 +4,19 @@ Issues and pull requests are welcome. By contributing you agree your work is
 licensed under [Apache-2.0](LICENSE) and to the
 [Code of Conduct](CODE_OF_CONDUCT.md).
 
-Open an issue before a large change. heft is deliberately narrow, and the
-[Scope](#scope) rules below rule some ideas out entirely.
-
-Read [AGENTS.md](AGENTS.md) first — grouping invariants live there, not here.
+Open an issue before a large change. Grouping invariants:
+[AGENTS.md](AGENTS.md). Runbook: [HUMANS.md](HUMANS.md).
 
 ## Setup
 
-[HUMANS.md](HUMANS.md) is the runbook. Toolchain: stable Rust (CI uses current
-stable). MSRV is `rust-version` in [Cargo.toml](Cargo.toml), and CI checks it.
+Stable Rust. MSRV is `rust-version` in [Cargo.toml](Cargo.toml); CI checks it.
+`rust-toolchain.toml` outranks a `rustup override`, so name the toolchain on
+the cargo invocation when you need MSRV.
 
 ```sh
 lefthook install     # per clone; hooks are not committed by git
 cargo binstall cargo-deny cargo-machete   # pre-push; do not sudo
 ```
-
-Pre-commit runs `cargo fmt --check` and `cargo clippy --locked --all-targets -- -D warnings`
-when Rust or Cargo.toml is staged. Pre-push runs `gate`, which is every command below plus
-`cargo build --locked`, actionlint and shellcheck.
 
 A local build writes completions and the man page under a hashed `OUT_DIR`.
 Take the newest `heft.1`: an older build leaves stale directories in `target/`.
@@ -37,48 +32,29 @@ install -Dm644 "$assets/heft.1"    ~/.local/share/man/man1/heft.1
 
 ## Gates
 
-Run `gate` from the repository root before a commit that touches code. Pre-push
-runs the same command. `.gate.toml` is the list, including `cargo build --locked`.
+`gate` from the repository root (same as pre-push / `.gate.toml`). The suite
+must stay under 30 seconds. Do not add live-GPU or live-docker requirements
+to `cargo test`; those walks belong in fixtures.
 
-The suite must stay under 30 seconds. Do not add live-GPU or live-docker
-requirements to `cargo test`; put those walks in fixtures.
+Clippy is the default level plus `[lints.clippy]` in `Cargo.toml`. `pedantic`,
+`nursery` and `cargo` stay off. Cast convention: [AGENTS.md](AGENTS.md#gates).
 
-Two CI jobs check what a stable toolchain on a full runner cannot. Neither is
-a pre-push hook, but both are worth running by hand when you touch what they
-cover:
-
-```sh
-cargo +1.98 check --locked --all-targets   # the MSRV in Cargo.toml, not stable
-```
-
-`rust-toolchain.toml` outranks a `rustup override`, so the toolchain has to be
-named on the cargo invocation. The other job runs `tests/live_proc.rs` as a
-static musl binary inside an image with nothing installed, because those
-invariants are documented to hold in a bare container -- no `/etc/passwd`
-entry, no docker socket, no DRM, and a `/proc` with one process in it. The
-job bind-mounts the musl `heft` binary at `CARGO_BIN_EXE_heft`, the path the
-tests already use to spawn it.
-
+CI also runs `cargo +1.98 check --locked --all-targets` (the MSRV) and
+`tests/live_proc.rs` as a static musl binary in an image with nothing
+installed — no `/etc/passwd`, no docker socket, no DRM, one process in
+`/proc` — with the musl `heft` bind-mounted at `CARGO_BIN_EXE_heft`.
 `heft --once` on this machine is the product check, not a CI job.
-
-### Clippy
-
-The gate is `cargo clippy --locked --all-targets -- -D warnings` at the default
-level plus `[lints.clippy]` in `Cargo.toml`. The `pedantic`, `nursery` and
-`cargo` groups stay off. The cast lints are denied and no cast is silenced;
-the convention is in [AGENTS.md](AGENTS.md#gates).
 
 ## Commits
 
-Conventional commits: `type(scope): subject`. Subject imperative, ≤72
-characters. Body explains why. One logical unit. No AI trailers. Stage
-explicit paths only.
+Conventional: `type(scope): subject`. Imperative, ≤72 characters. Body
+explains why. One logical unit. No AI trailers. Stage explicit paths only.
 
 ## Changelog
 
-[CHANGELOG.md](CHANGELOG.md) is Keep a Changelog, newest first. Behaviour
-changes, flags, and output-shape changes belong under Unreleased in the same
-commit. Refactors, tests, and docs do not.
+[CHANGELOG.md](CHANGELOG.md) is Keep a Changelog. Behaviour, flags, and
+output-shape changes belong under Unreleased in the same commit. Refactors,
+tests, and docs do not.
 
 ## Tests
 
@@ -87,14 +63,12 @@ No snapshot libraries. A new test must hit a branch nothing else hits.
 
 ## Scope
 
-Heft stays observe-only toward the OS. Do not add kill, nice, ptrace, `/proc`
-writes, or mutating Docker/Podman calls. Do not read another GPU driver's
-fdinfo keys by guessing their names; the supported set is in
-[HUMANS.md](HUMANS.md#what-the-tree-means).
+Observe-only. Do not add kill, nice, ptrace, `/proc` writes, or mutating
+Docker/Podman calls. Do not guess another GPU driver's fdinfo keys; the
+supported set is in [HUMANS.md](HUMANS.md#what-the-tree-means).
 
-Per-process network I/O is not a missing feature, it is unavailable:
-`/proc/<pid>/net/dev` is per network namespace and byte-identical across
-unrelated pids, socket `fdinfo` carries no byte counter, `/proc/net/tcp`
-queues are depths rather than totals, `rchar`/`wchar` miss `send`/`recv`, and
-cgroup v2 has no network controller. Every remaining route needs CAP_NET_RAW,
-CAP_BPF or ptrace.
+Per-process network I/O is unavailable: `/proc/<pid>/net/dev` is per netns
+and byte-identical across unrelated pids, socket `fdinfo` has no byte
+counter, `/proc/net/tcp` queues are depths, `rchar`/`wchar` miss
+`send`/`recv`, and cgroup v2 has no network controller. Remaining routes
+need CAP_NET_RAW, CAP_BPF or ptrace.

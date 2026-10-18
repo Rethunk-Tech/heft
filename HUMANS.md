@@ -273,7 +273,7 @@ what `--fixture` rewrites as `~`. Also read: `NO_COLOR`, `DOCKER_HOST`
 ### Columns
 
 A column is drawn whole or not at all. Labels: `name`, `spark`, `nproc`,
-`threads`, `fds`, `age`, `core`, `machine`, `pss`, `rss`, `swap`, `vram`,
+`threads`, `fds`, `age`, `state`, `core`, `machine`, `pss`, `rss`, `swap`, `vram`,
 `gtt`, `gfx`, `compute`, `diskr`, `diskw`, `cpustall`, `iostall`, `memstall`,
 `netns_rx`, `netns_tx`. `--sort` / Shift-arrows take all except `spark`;
 `--hide` all except `name`; `--order` all of them. Default hidden (no file or

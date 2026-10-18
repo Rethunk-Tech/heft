@@ -44,6 +44,9 @@ pub struct Process {
     /// reads a kernel thread has no files for.
     pub kthread: bool,
     pub comm: String,
+    /// Field 3 of `/proc/pid/stat`. The file is already parsed for
+    /// utime/stime, so this costs no extra read. Blank on aggregate rows.
+    pub state: Option<char>,
     pub exe: Option<String>,
     /// Shared, so a tick that carries the identity copies no strings.
     pub cmdline: Arc<[String]>,
@@ -141,6 +144,10 @@ pub(crate) struct Metrics {
     /// can read it as a total.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) age_secs: Option<u64>,
+    /// Kernel state letter, only on a process row. `accumulate` leaves it
+    /// out: a folder has no single letter.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) state: Option<char>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) disk_r_bps: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -184,6 +191,7 @@ impl Metrics {
         self.threads = sum_opt(self.threads, other.threads);
         self.fds = sum_opt(self.fds, other.fds);
         self.age_secs = self.age_secs.max(other.age_secs);
+        // state is not summed; see its field comment.
         self.disk_r_bps = sum_opt(self.disk_r_bps, other.disk_r_bps);
         self.disk_w_bps = sum_opt(self.disk_w_bps, other.disk_w_bps);
         self.vram_bytes = sum_opt(self.vram_bytes, other.vram_bytes);

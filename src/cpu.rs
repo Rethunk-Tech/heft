@@ -256,6 +256,7 @@ pub(crate) fn process_metrics(
         // already hold the last count on `Process::fd_count`.
         fds: cur.fd_count.map(u64::from),
         age_secs: age_secs(cur.starttime_ticks, consts.clk_tck, btime(), now_epoch()),
+        state: cur.state,
         disk_r_bps: read_bps,
         disk_w_bps: write_bps,
         vram_bytes: cur.gpu.vram_bytes,

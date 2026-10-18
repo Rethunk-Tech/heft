@@ -523,6 +523,7 @@ fn read_pid_held(
         uid,
         kthread: parsed.kthread,
         comm: parsed.comm,
+        state: parsed.state,
         exe,
         cmdline,
         cwd,
@@ -692,6 +693,8 @@ fn pss_due(last: Option<Instant>, now: Instant, interval: Duration) -> bool {
 
 struct StatFields {
     comm: String,
+    /// Field 3: R, S, D, Z, T, t, X, I, or whatever the kernel published.
+    state: Option<char>,
     ppid: u32,
     pgrp: i32,
     utime: u64,
@@ -711,14 +714,17 @@ fn parse_stat(stat: &[u8]) -> Option<StatFields> {
         return None;
     }
     let comm = String::from_utf8_lossy(&stat[open + 1..close]).into_owned();
-    let mut fields = stat[close + 1..]
+    let mut tokens = stat[close + 1..]
         .split(u8::is_ascii_whitespace)
-        .filter(|f| !f.is_empty())
-        .map(atoi);
+        .filter(|f| !f.is_empty());
     // after comm: state ppid pgrp ... flags ... utime stime ...
     // num_threads ... starttime (0-based: 0,1,2,6,11,12,17,19), taken in
     // order, so each `nth` skips the fields between.
-    let ppid = u32::try_from(fields.nth(1)??).ok()?;
+    let state = tokens
+        .next()
+        .and_then(|t| (t.len() == 1 && t[0].is_ascii_alphabetic()).then_some(char::from(t[0])));
+    let mut fields = tokens.map(atoi);
+    let ppid = u32::try_from(fields.next()??).ok()?;
     let pgrp = i32::try_from(fields.next()??).ok()?;
     // PF_KTHREAD in include/linux/sched.h — no userspace smaps/io/fdinfo.
     let flags = fields.nth(3).flatten().unwrap_or(0);
@@ -735,6 +741,7 @@ fn parse_stat(stat: &[u8]) -> Option<StatFields> {
     );
     Some(StatFields {
         comm,
+        state,
         ppid,
         pgrp,
         utime,
@@ -1225,6 +1232,7 @@ mod tests {
         }
         let p = parse_stat(tail.as_bytes()).unwrap();
         assert_eq!(p.comm, "my app");
+        assert_eq!(p.state, Some('S'));
         assert_eq!(p.ppid, 1);
         assert_eq!(p.pgrp, 10);
         assert_eq!(p.utime, 30);
@@ -1240,6 +1248,7 @@ mod tests {
         let stat = "10 (bash) S 1 10 10 0 -1 4194304 91 0 0 0 30 40 0 0 25 5 17 0 221093059 236335104 474 \
              18446744073709551615 94000000000000 94000000100000 140730000000000";
         let p = parse_stat(stat.as_bytes()).unwrap();
+        assert_eq!(p.state, Some('S'));
         assert_eq!(p.utime, 30);
         assert_eq!(p.threads, Some(17));
         assert_eq!(p.starttime_ticks, Some(221_093_059));
@@ -1254,6 +1263,55 @@ mod tests {
         assert_eq!(short.starttime_ticks, None);
     }
 
+    /// Field 3 of `/proc/pid/stat`, already in the line `parse_stat` walks.
+    /// A process row keeps the letter; summing into a folder does not.
+    #[test]
+    fn a_process_state_letter_is_stat_field_three() {
+        use crate::types::{IdentNode, Metrics, ProcNode};
+        let consts = HostHeader {
+            nproc: 1,
+            clk_tck: 100,
+            page_size: 4096,
+        };
+        let col = crate::once::COLUMNS
+            .iter()
+            .find(|c| c.label == "state")
+            .expect("state column");
+        for letter in ['R', 'S', 'D', 'Z', 'T', 't', 'X', 'I'] {
+            let line = format!("10 (bash) {letter} 1 10 10 0 -1 0 0 0 0 0 30 40");
+            let parsed = parse_stat(line.as_bytes()).unwrap();
+            assert_eq!(parsed.state, Some(letter), "{letter}");
+            let m = cpu::process_metrics(
+                None,
+                &Process {
+                    state: parsed.state,
+                    ..Process::default()
+                },
+                Duration::from_secs(1),
+                &consts,
+            );
+            assert_eq!(m.state, Some(letter));
+            assert_eq!((col.fmt)("", 1, &m), letter.to_string());
+            let mut folder = Metrics::default();
+            folder.accumulate(&m);
+            assert_eq!(folder.state, None, "aggregates stay blank");
+            let node = serde_json::to_value(&ProcNode {
+                pid: 10,
+                name: "bash".into(),
+                metrics: m,
+                ..ProcNode::default()
+            })
+            .unwrap();
+            assert_eq!(node["state"], letter.to_string(), "{node}");
+            let ident = serde_json::to_value(&IdentNode {
+                metrics: folder,
+                ..IdentNode::default()
+            })
+            .unwrap();
+            assert!(ident.get("state").is_none(), "{ident}");
+        }
+    }
+
     #[test]
     fn kthread_flag_from_stat() {
         let mut tail = String::from("10 (kworker/0:0) S 2 0 0 0 0 2097152 0 0 0 0 1 2");
@@ -1262,6 +1320,7 @@ mod tests {
         }
         let p = parse_stat(tail.as_bytes()).unwrap();
         assert!(p.kthread);
+        assert_eq!(p.state, Some('S'));
         assert_eq!(p.ppid, 2);
     }
 

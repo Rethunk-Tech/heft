@@ -22,30 +22,23 @@ jobs:
       - uses: Rethunk-Tech/gh-actions/setup-rust@bc5fa5b1004205c9c9399fc941d79d5ada53c59b # v1.16
         with:
           toolchain: stable
-          components: rustfmt, clippy
+          run-fmt: true
+          run-clippy: true
+          run-test: true
+      # binstall and the checks below keep running after a rust gate failure
+      # (`if: !cancelled()`), so deny/machete/actionlint/shellcheck still report.
       - uses: cargo-bins/cargo-binstall@8a2045612414e945291083f820cd50b4d8fc2218 # v1.26.0
+        if: ${{ !cancelled() }}
         with:
           version: "1.26.0"
-      - run: cargo binstall --no-confirm cargo-deny cargo-machete
-      # setup-rust's run-clippy continues on error then fails the composite
-      # action, which would skip every step below. Each check records its own
-      # outcome; the Gate step fails the job once.
-      - id: fmt
-        if: ${{ !cancelled() }}
-        continue-on-error: true
-        run: cargo fmt --check
-      - id: clippy
-        if: ${{ !cancelled() }}
-        continue-on-error: true
-        run: cargo clippy --locked --all-targets -- -D warnings
+      - if: ${{ !cancelled() }}
+        run: cargo binstall --no-confirm cargo-deny cargo-machete
+      # setup-rust has no cargo-build gate. Each remaining check records its
+      # own outcome; the Gate step fails the job once.
       - id: build
         if: ${{ !cancelled() }}
         continue-on-error: true
         run: cargo build --locked
-      - id: test
-        if: ${{ !cancelled() }}
-        continue-on-error: true
-        run: cargo test --locked
       - id: deny
         if: ${{ !cancelled() }}
         continue-on-error: true
@@ -77,10 +70,7 @@ jobs:
         if: ${{ !cancelled() }}
         env:
           OUTCOMES: |
-            fmt=${{ steps.fmt.outcome }}
-            clippy=${{ steps.clippy.outcome }}
             build=${{ steps.build.outcome }}
-            test=${{ steps.test.outcome }}
             deny=${{ steps.deny.outcome }}
             vuln=${{ steps.vuln.outcome }}
             machete=${{ steps.machete.outcome }}

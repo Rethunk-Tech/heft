@@ -94,6 +94,8 @@ pub enum Match {
     ArgPrefix(Pat),
     ArgSuffix(Pat),
     ArgContains(Pat),
+    CgroupPrefix(Pat),
+    CgroupSuffix(Pat),
     CgroupContains(Pat),
     Unit(Pat),
     UnitPrefix(Pat),
@@ -472,6 +474,8 @@ fn compile_match(m: Match, ctx: &mut CompileCtx) -> Result<Test, String> {
         Match::ArgPrefix(p) => Test::Str(Arg, Prefix, pat(p)?),
         Match::ArgSuffix(p) => Test::Str(Arg, Suffix, pat(p)?),
         Match::ArgContains(p) => Test::Str(Arg, Contains, pat(p)?),
+        Match::CgroupPrefix(p) => Test::Str(Cgroup, Prefix, pat(p)?),
+        Match::CgroupSuffix(p) => Test::Str(Cgroup, Suffix, pat(p)?),
         Match::CgroupContains(p) => Test::Str(Cgroup, Contains, pat(p)?),
         Match::Unit(p) => Test::Eq(Unit, bucket(pat(p)?)),
         Match::UnitPrefix(p) => Test::Str(Unit, Prefix, pat(p)?),
@@ -1364,7 +1368,7 @@ mod tests {
 
     #[test]
     fn every_string_test_folds_ascii_case_on_both_sides() {
-        const TESTS: [&str; 18] = [
+        const TESTS: [&str; 20] = [
             "name",
             "name_prefix",
             "name_suffix",
@@ -1375,6 +1379,8 @@ mod tests {
             "arg_prefix",
             "arg_suffix",
             "arg_contains",
+            "cgroup_prefix",
+            "cgroup_suffix",
             "cgroup_contains",
             "unit",
             "unit_prefix",
@@ -1445,6 +1451,40 @@ mod tests {
             "a prefix that shares the letters is not a suffix"
         );
         assert!(hit(&["app".into()]).is_empty());
+    }
+
+    #[test]
+    fn cgroup_prefix_and_suffix_match_the_path_ends() {
+        let r = Rules::from_files(&[file(
+            "10-x.json",
+            r#"{"stage":"class","rules":[
+                {"id":"pre","match":{"cgroup_prefix":"0::/user.slice"},"classes":["shell"]},
+                {"id":"suf","match":{"cgroup_suffix":".scope"},"classes":["noise"]}
+            ]}"#,
+        )]);
+        assert!(r.problems.is_empty(), "{:?}", r.problems);
+        let names = |cgroup: &str| {
+            r.classes(&Facts {
+                comm: "x",
+                name: "x",
+                cgroup,
+                ..Facts::default()
+            })
+            .names()
+        };
+        assert_eq!(
+            names("0::/user.slice/user-1000.slice/app.scope"),
+            ["shell", "noise"]
+        );
+        assert_eq!(
+            names("0::/user.slice/user-1000.slice/app.service"),
+            ["shell"]
+        );
+        assert_eq!(names("0::/init.scope"), ["noise"]);
+        assert!(
+            names("0::/system.slice/sshd.service").is_empty(),
+            "neither prefix nor suffix"
+        );
     }
 
     #[test]

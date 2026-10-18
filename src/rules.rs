@@ -88,6 +88,7 @@ pub enum Match {
     NamePrefix(Pat),
     NameSuffix(Pat),
     NameContains(Pat),
+    Exe(Pat),
     ExePrefix(Pat),
     ExeSuffix(Pat),
     ExeContains(Pat),
@@ -469,6 +470,7 @@ fn compile_match(m: Match, ctx: &mut CompileCtx) -> Result<Test, String> {
         Match::NamePrefix(p) => Test::Str(Name, Prefix, pat(p)?),
         Match::NameSuffix(p) => Test::Str(Name, Suffix, pat(p)?),
         Match::NameContains(p) => Test::Str(Name, Contains, pat(p)?),
+        Match::Exe(p) => Test::Eq(Exe, bucket(pat(p)?)),
         Match::ExePrefix(p) => Test::Str(Exe, Prefix, pat(p)?),
         Match::ExeSuffix(p) => Test::Str(Exe, Suffix, pat(p)?),
         Match::ExeContains(p) => Test::Str(Exe, Contains, pat(p)?),
@@ -1127,12 +1129,13 @@ fn eval(t: &Test, f: &Facts) -> bool {
             match field {
                 Field::Name => one(f.comm) || one(f.name),
                 Field::Arg => f.argv.iter().any(|a| one(a)),
+                Field::Exe => f.exe.is_some_and(one),
                 Field::Unit => f.unit.is_some_and(one),
                 Field::Script => f.script.is_some_and(one),
                 Field::Identity => f.identity.is_some_and(one),
                 Field::Container => f.container.is_some_and(one),
-                // `compile_match` builds Eq only for the six fields above.
-                Field::Exe | Field::Cgroup => false,
+                // `compile_match` builds Eq only for the seven fields above.
+                Field::Cgroup => false,
             }
         }
         Test::All(v) => v.iter().all(|t| eval(t, f)),
@@ -1371,11 +1374,12 @@ mod tests {
 
     #[test]
     fn every_string_test_folds_ascii_case_on_both_sides() {
-        const TESTS: [&str; 21] = [
+        const TESTS: [&str; 22] = [
             "name",
             "name_prefix",
             "name_suffix",
             "name_contains",
+            "exe",
             "exe_prefix",
             "exe_suffix",
             "exe_contains",
@@ -1514,6 +1518,28 @@ mod tests {
             names("0::/system.slice/sshd.service").is_empty(),
             "neither prefix nor suffix"
         );
+    }
+
+    #[test]
+    fn exe_equals_the_whole_path() {
+        let r = Rules::from_files(&[file(
+            "10-x.json",
+            r#"{"stage":"class","rules":[{"id":"t","match":{"exe":"/usr/bin/htop"},"classes":["noise"]}]}"#,
+        )]);
+        assert!(r.problems.is_empty(), "{:?}", r.problems);
+        let hit = |exe: Option<&str>| {
+            r.classes(&Facts {
+                comm: "htop",
+                name: "htop",
+                exe,
+                ..Facts::default()
+            })
+            .names()
+        };
+        assert_eq!(hit(Some("/usr/bin/htop")), ["noise"]);
+        assert_eq!(hit(Some("/USR/BIN/HTOP")), ["noise"]);
+        assert!(hit(Some("/usr/bin/htop-dbg")).is_empty());
+        assert!(hit(None).is_empty());
     }
 
     #[test]

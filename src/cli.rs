@@ -43,7 +43,7 @@ pub struct Cli {
     /// Print one table and exit
     #[arg(long)]
     pub once: bool,
-    /// Print one JSON document and exit
+    /// Print one JSON document and exit. With --explain, the placement object, not the host tree
     #[arg(long)]
     pub json: bool,
     /// Seconds between catch-all samples (TUI tick and `--once` / `--json` gap)
@@ -64,8 +64,8 @@ pub struct Cli {
     /// Characters for bars, rules and markers
     #[arg(long, value_enum, default_value_t = Glyphs::Auto, value_name = "SET")]
     pub glyphs: Glyphs,
-    /// Say where this pid landed in the tree, the identity a placement rule keys on, and the rule per stage
-    #[arg(long, value_name = "PID", conflicts_with_all = ["once", "json", "follow"])]
+    /// Say where this pid landed in the tree, the identity a placement rule keys on, and the rule per stage. --json is a small object, not the host tree
+    #[arg(long, value_name = "PID", conflicts_with_all = ["once", "follow"])]
     pub explain: Option<u32>,
     /// Print what grouping reads about every process, as a test fixture to attach to a grouping bug report
     #[arg(long, conflicts_with_all = ["once", "json", "follow", "explain"])]

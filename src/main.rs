@@ -66,7 +66,7 @@ fn main() -> ExitCode {
         // Grouping does not use rates, so this is one walk rather than
         // `sample_world`'s sleep-and-second-tick. `--interval` is still
         // checked above so a typo on a combined command is reported.
-        heft::explain::run(pid)
+        heft::explain::run(pid, cli.json)
     } else if cli.fixture {
         heft::proc::print_fixture().map(|()| true)
     } else {
@@ -281,6 +281,19 @@ mod tests {
         assert_eq!(
             super::exit_code(Err("disk full".into())),
             std::process::ExitCode::from(128)
+        );
+    }
+
+    #[test]
+    fn explain_accepts_json() {
+        use clap::Parser;
+        let cli = heft::cli::Cli::try_parse_from(["heft", "--explain", "1", "--json"])
+            .expect("explain with json");
+        assert_eq!(cli.explain, Some(1));
+        assert!(cli.json);
+        assert!(
+            heft::cli::Cli::try_parse_from(["heft", "--explain", "1", "--once"]).is_err(),
+            "once stays a conflict"
         );
     }
 

@@ -13,11 +13,31 @@
 
 use std::io::Write;
 
+use serde::Serialize;
+
 use crate::glyph;
 use crate::once::printable;
 use crate::proc;
 use crate::rules::{Facts, Rules, Stage, folder_name};
 use crate::types::{Error, Folder, HostTree, IdentNode, ProcNode, Process};
+
+/// `--explain --json`: schema first, then the pid's placement. Not a `HostTree`.
+#[derive(Serialize)]
+struct ExplainDoc<'a> {
+    schema: u8,
+    pid: u32,
+    visible: bool,
+    place: Option<&'a str>,
+    identity: Option<&'a str>,
+    rules: Vec<MatchedRule>,
+}
+
+#[derive(Serialize)]
+struct MatchedRule {
+    stage: &'static str,
+    rule: String,
+    outputs: String,
+}
 
 /// Where in the tree a pid turned up.
 pub(crate) struct Found {
@@ -177,6 +197,51 @@ pub(crate) fn placement_lines(
 /// for a stage with no rules. It says what each stage makes of this process,
 /// not why the tree placed it: a session rule can match a process a container
 /// scope took first, and `placed` is the tree's verdict.
+fn rule_origin(r: &crate::rules::Compiled) -> String {
+    if r.source.rank == usize::MAX {
+        format!("built-in {}", r.name())
+    } else {
+        format!("{}/{}", r.source.label, r.name())
+    }
+}
+
+fn matched_rules(rules: &Rules, p: &Process, ident: &str) -> Vec<MatchedRule> {
+    let unit = crate::identity::user_unit(&p.cgroup);
+    let process = crate::group::facts_of(p, unit.as_deref());
+    let stages = [
+        (
+            Stage::Unit,
+            "unit",
+            Facts {
+                unit: unit.as_deref(),
+                ..Facts::default()
+            },
+        ),
+        (Stage::Class, "class", process),
+        (Stage::Session, "session", process),
+        (Stage::App, "app", process),
+        (
+            Stage::Placement,
+            "placement",
+            Facts {
+                identity: Some(ident),
+                ..Facts::default()
+            },
+        ),
+    ];
+    let mut out = Vec::new();
+    for (stage, label, f) in &stages {
+        for r in rules.deciding(*stage, f) {
+            out.push(MatchedRule {
+                stage: label,
+                rule: rule_origin(r),
+                outputs: r.outputs(),
+            });
+        }
+    }
+    out
+}
+
 fn trace(rules: &Rules, p: Option<&Process>, ident: &str) -> Vec<String> {
     let Some(p) = p else {
         return vec!["  rules     (process gone)".to_string()];
@@ -213,14 +278,7 @@ fn trace(rules: &Rules, p: Option<&Process>, ident: &str) -> Vec<String> {
             vec!["no match".into()]
         } else {
             hits.iter()
-                .map(|r| {
-                    let origin = if r.source.rank == usize::MAX {
-                        format!("built-in {}", r.name())
-                    } else {
-                        format!("{}/{}", r.source.label, r.name())
-                    };
-                    format!("{origin} -> {}", r.outputs())
-                })
+                .map(|r| format!("{} -> {}", rule_origin(r), r.outputs()))
                 .collect()
         };
         for (j, v) in verdicts.iter().enumerate() {
@@ -232,13 +290,33 @@ fn trace(rules: &Rules, p: Option<&Process>, ident: &str) -> Vec<String> {
     out
 }
 
+fn explain_doc<'a>(
+    pid: u32,
+    visible: bool,
+    found: Option<&'a Found>,
+    process: Option<&Process>,
+    rules: &Rules,
+) -> ExplainDoc<'a> {
+    let ident = found.map_or("", |f| f.ident.as_str());
+    ExplainDoc {
+        schema: 1,
+        pid,
+        visible,
+        place: found.map(|f| f.path.as_str()),
+        identity: found.map(|f| f.ident.as_str()),
+        rules: process
+            .map(|p| matched_rules(rules, p, ident))
+            .unwrap_or_default(),
+    }
+}
+
 /// `Ok(false)` when the pid is not visible, so a script can tell a miss from a
 /// hit by the exit code.
 ///
 /// # Errors
 ///
 /// Returns an error if stdout cannot be written.
-pub fn run(pid: u32) -> Result<bool, Error> {
+pub fn run(pid: u32, json: bool) -> Result<bool, Error> {
     let tree = proc::sample_placement();
     let found = locate(&tree, pid);
     // `proc::detail` answers with the fields it could read, so a pid that is
@@ -253,6 +331,12 @@ pub fn run(pid: u32) -> Result<bool, Error> {
     // Written, not printed: `println!` panics on a closed reader, while an
     // io error reaches `main`, which ends `--explain PID | head` quietly.
     let mut out = std::io::stdout().lock();
+    let p = proc::read_pid(pid, false, false, None, &mut Vec::new());
+    if json {
+        let doc = explain_doc(pid, visible, found.as_ref(), p.as_ref(), Rules::load());
+        writeln!(out, "{}", serde_json::to_string(&doc).expect("ExplainDoc"))?;
+        return Ok(visible || found.is_some());
+    }
 
     if !visible && found.is_none() {
         // Not an error message: the pid may simply have gone, and that is the
@@ -289,7 +373,6 @@ pub fn run(pid: u32) -> Result<bool, Error> {
 
     // Re-read rather than carried on the tree: the tree has no per-process
     // facts, and a pid that exited since the sample says so here.
-    let p = proc::read_pid(pid, false, false, None, &mut Vec::new());
     writeln!(out)?;
     for line in placement_lines(&f, p.as_ref(), Rules::load()) {
         writeln!(out, "{line}")?;
@@ -517,6 +600,101 @@ mod tests {
                 .all(|l| !l.contains("90-mine.json") && !l.contains("fold_to")),
             "{lines:#?}"
         );
+    }
+
+    #[test]
+    fn explain_json_is_a_small_object_with_schema_first() {
+        let tree = tree_with(user(vec![ident("cursor", &[10, 11])], Vec::new()), vec![]);
+        let found = locate(&tree, 11).expect("found");
+        let kicker = Process {
+            comm: "kicker".into(),
+            exe: Some("/opt/trinity/bin/tdeinit".into()),
+            ..Process::default()
+        };
+        let text = serde_json::to_string(&explain_doc(
+            11,
+            true,
+            Some(&found),
+            Some(&kicker),
+            &Rules::builtin(),
+        ))
+        .unwrap();
+        assert!(text.starts_with("{\"schema\":1,"), "{text}");
+        let v: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(v["pid"], 11);
+        assert_eq!(v["visible"], true);
+        assert!(
+            v["place"].as_str().unwrap().contains("Applications"),
+            "{v:?}"
+        );
+        assert_eq!(v["identity"], "cursor");
+        let rules = v["rules"].as_array().unwrap();
+        assert!(
+            rules.iter().any(|r| r["stage"] == "session"
+                && r["rule"].as_str().unwrap().contains("trinity-session")),
+            "{rules:?}"
+        );
+    }
+
+    #[test]
+    fn explain_json_from_the_gui_fixture() {
+        let fix: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/fixtures/gui/world.json")).unwrap();
+        let mut curr = crate::types::PidMap::default();
+        for p in fix["processes"].as_array().unwrap() {
+            let pid = u32::try_from(p["pid"].as_u64().unwrap()).unwrap();
+            curr.insert(
+                pid,
+                Process {
+                    pid,
+                    ppid: u32::try_from(p["ppid"].as_u64().unwrap()).unwrap(),
+                    pgrp: i32::try_from(p["pgrp"].as_u64().unwrap_or(u64::from(pid))).unwrap(),
+                    uid: u32::try_from(p["uid"].as_u64().unwrap()).unwrap(),
+                    comm: p["comm"].as_str().unwrap().into(),
+                    exe: p["exe"].as_str().map(str::to_string),
+                    cmdline: p["cmdline"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|a| a.as_str().unwrap().to_string())
+                        .collect::<Vec<_>>()
+                        .into(),
+                    cgroup: p["cgroup"].as_str().unwrap().into(),
+                    ..Process::default()
+                },
+            );
+        }
+        let header = crate::types::HostHeader {
+            nproc: u32::try_from(fix["nproc"].as_u64().unwrap()).unwrap(),
+            clk_tck: fix["clk_tck"].as_u64().unwrap(),
+            page_size: fix["page_size"].as_u64().unwrap(),
+        };
+        let tree = crate::group::build_tree(
+            &curr,
+            &curr,
+            std::time::Duration::from_secs(1),
+            &header,
+            HostTree::default(),
+            &crate::containers::ContainerIndex::default(),
+            &Rules::builtin(),
+        );
+        let pid = 501;
+        let found = locate(&tree, pid).expect("cursor in gui fixture");
+        let text = serde_json::to_string(&explain_doc(
+            pid,
+            true,
+            Some(&found),
+            curr.get(&pid),
+            &Rules::builtin(),
+        ))
+        .unwrap();
+        assert!(text.starts_with("{\"schema\":1,"), "{text}");
+        let v: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(v["pid"], pid);
+        assert_eq!(v["visible"], true);
+        assert!(v["identity"].as_str().unwrap().contains("cursor"), "{v:?}");
+        assert!(v.get("host").is_none(), "{v:?}");
+        assert!(v["place"].is_string(), "{v:?}");
     }
 
     #[test]

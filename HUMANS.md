@@ -67,6 +67,7 @@ heft --once               # one table on stdout
 heft --json               # one JSON tree on stdout
 heft --json --follow      # NDJSON, one document per interval
 heft --explain 1234       # placement for this pid
+heft --explain 1234 --json  # placement object, not the host tree
 heft --check-rules        # examples in every rules.d file
 heft --fixture > heft-fixture.json
 ```
@@ -89,9 +90,11 @@ is still accepted. The TUI and `--follow` keep each process's `stat`, `statm`
 and `io` open; expect about three open files per process.
 
 `--follow` needs `--once` or `--json`. Closing the reader ends any mode
-quietly (`| head` exits 0). Every JSON document carries `"schema": 1` first,
-then `interval_secs` and `host.sampled_at`; `--json --follow` also carries
-`pss_interval_secs`.
+quietly (`| head` exits 0). Every JSON document carries `"schema": 1` first.
+The host tree then has `interval_secs` and `host.sampled_at`; `--json --follow`
+also carries `pss_interval_secs`. `--explain --json` is one object with `pid`,
+`visible`, `place`, `identity`, and `rules` (the stages that matched); it is
+not a field on the host tree. `--json` without `--explain` stays the tree.
 
 Flags beat `view.json`. `--once` starts from the saved view; `--json` never
 reads it. `--top`, `--hide` and `--order` are refused with `--json`; `--trend`
@@ -347,7 +350,8 @@ or a file that did not load. A built-in example your rules decide differently
 is `overridden by` / `disabled by`, not failed.
 
 `heft --explain <PID>` prints the placement key and each stage; exit 1 if
-the pid is not visible. A wrong key is silent: an identity that matches
+the pid is not visible. `--explain <PID> --json` is that report as
+`schema`, `pid`, `visible`, `place`, `identity`, and `rules`. A wrong key is silent: an identity that matches
 nothing is never consulted. For a grouping bug, attach
 `heft --fixture > heft-fixture.json` (exe, cgroup, parent, argv; `$HOME/`
 rewritten as `~/`). Nothing is sent.

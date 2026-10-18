@@ -16,34 +16,6 @@ Unprivileged (uid 1000) on this amdgpu APU host, 2026-10-18. `/sys/module/nvidia
 
 No region or engine names to map. `mem_key` and `drm-driver` stay amdgpu/i915/xe. Guessed keys from a kernel tree stay unread.
 
-## `--explain --json` is a conflict, not a document
-
-`--explain` writes a human report. `--json` is a host-tree contract. clap refuses the pair (`conflicts_with_all` includes `json`). A script that wants the placement path, identity, and per-stage rule for one pid has to scrape the text, and `ok(false)` vs a missing pid is an exit code rather than a JSON field.
-
-A second, small JSON object for `--explain --json` is a new document shape, not a field on `HostTree`. It must not reuse the `{ "host": … }` envelope, and `--json` without `--explain` must stay the tree. That is a contract addition, so it waits for an explicit ask.
-
-### Read
-
-- `src/cli.rs:68-69` — `--explain` conflicts with `once`, `json`, and `follow`.
-- `src/main.rs:63-67` — explain is `explain::run`, never `print_json`.
-- `src/explain.rs:241-268` — text to stdout; `Ok(false)` when the pid is not visible.
-- `src/types.rs` `HostTree` — the `--json` document. Do not hang explain fields off it.
-- `HUMANS.md:87` and `:552-557` — the text report and the exit-1-when-not-visible rule.
-
-### Traps
-
-- Lifting the clap conflict without a new shape would send `--json --explain 1` down `print_json` and ignore the pid.
-- Putting the report on `HostTree` changes every `--json` consumer.
-- `Ok(false)` must remain distinguishable from a write error. A JSON miss is a document with a miss field plus exit 1, not an empty `{}` on stdout with exit 0.
-- `--explain` is one walk without rates (`AGENTS.md:143`). The JSON object must not grow rate fields the text report does not have.
-
-### Acceptance
-
-- `heft --explain PID --json` prints one object with pid, visible, placed path, identity, instance, and the per-stage rule lines (or `null` expect-equivalents). Exit 1 still means not visible.
-- `heft --json` is unchanged: `{ "host", "interval_secs" }` and no explain keys.
-- `--once --explain` stays a conflict.
-- `HUMANS.md` names the object keys in the same commit.
-
 ## Rules cannot match cwd, while `/` can
 
 `--filter` and the TUI `/` haystack search each process's working directory. Rule `Facts` has no cwd field, `facts_of` does not copy `Process::cwd`, and an example cannot name `cwd` (`deny_unknown_fields`). A rule that should pin everything in `~/src/foo` has to match name, exe, or argv instead.

@@ -12,7 +12,7 @@
 run = "cargo build --locked"
 
 [gates.test]
-run = "cargo test --locked"
+run = "cargo test --locked --all-targets"
 
 # --all-targets reaches tests and benches, and -D warnings is what makes
 # clippy a gate rather than a report.

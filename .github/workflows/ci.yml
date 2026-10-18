@@ -22,19 +22,29 @@ jobs:
       - uses: Rethunk-Tech/gh-actions/setup-rust@bc5fa5b1004205c9c9399fc941d79d5ada53c59b # v1.16
         with:
           toolchain: stable
-          run-fmt: true
-          run-clippy: true
-          run-test: true
-      # binstall and the checks below keep running after a rust gate failure
-      # (`if: !cancelled()`), so deny/machete/actionlint/shellcheck still report.
+      # This job is `gate --list` / `.gate.toml`. fmt, clippy and test used to
+      # run only in setup-rust, whose test flag is `--all-targets`, while local
+      # `gate` was `cargo test --locked`. One list now, each step the command
+      # that file names. `if: !cancelled()` keeps later gates reporting after
+      # an earlier failure.
       - uses: cargo-bins/cargo-binstall@8a2045612414e945291083f820cd50b4d8fc2218 # v1.26.0
         if: ${{ !cancelled() }}
         with:
           version: "1.26.0"
       - if: ${{ !cancelled() }}
-        run: cargo binstall --no-confirm cargo-deny cargo-machete
-      # setup-rust has no cargo-build gate. Each remaining check records its
-      # own outcome; the Gate step fails the job once.
+        run: cargo binstall --no-confirm cargo-deny@0.20.2 cargo-machete@0.9.2
+      - id: fmt
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: cargo fmt --check
+      - id: lint
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - id: test
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: cargo test --locked --all-targets
       - id: build
         if: ${{ !cancelled() }}
         continue-on-error: true
@@ -70,6 +80,9 @@ jobs:
         if: ${{ !cancelled() }}
         env:
           OUTCOMES: |
+            fmt=${{ steps.fmt.outcome }}
+            lint=${{ steps.lint.outcome }}
+            test=${{ steps.test.outcome }}
             build=${{ steps.build.outcome }}
             deny=${{ steps.deny.outcome }}
             vuln=${{ steps.vuln.outcome }}

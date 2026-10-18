@@ -604,6 +604,22 @@ mod tests {
     }
 
     #[test]
+    fn owns_netns_is_the_host_namespace_only_when_mode_is_host_or_missing() {
+        let cases: &[(&str, bool)] = &[
+            (r#"{"HostConfig":{"NetworkMode":"host"}}"#, false),
+            ("{}", false),
+            (r#"{"HostConfig":{}}"#, false),
+            (r#"{"HostConfig":{"NetworkMode":"bridge"}}"#, true),
+            (r#"{"HostConfig":{"NetworkMode":"none"}}"#, true),
+            (r#"{"HostConfig":{"NetworkMode":"container:abc"}}"#, true),
+        ];
+        for (json, own) in cases {
+            let i: Inspect = serde_json::from_str(json).unwrap();
+            assert_eq!(i.owns_netns(), *own, "{json}");
+        }
+    }
+
+    #[test]
     fn a_minimal_inspect_parses_and_yields_its_ips() {
         let bare: Inspect = serde_json::from_str("{}").unwrap();
         assert!(bare.ips().is_empty());

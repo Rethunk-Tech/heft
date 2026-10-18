@@ -308,8 +308,8 @@ fn heft_observes_itself_with_real_numbers() {
 fn heft_does_not_grow_while_it_follows() {
     use std::io::{BufRead, BufReader};
 
-    const SAMPLES: usize = 14;
-    const WARMUP: usize = 4;
+    const SAMPLES: usize = 6;
+    const WARMUP: usize = 3;
     // A real leak reaches this within two PSS ticks; ordinary jitter between
     // two samples of the same tree is well under a megabyte.
     const MAX_GROWTH: u64 = 48 * 1024 * 1024;

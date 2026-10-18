@@ -661,9 +661,9 @@ mod tests {
 
     #[test]
     fn a_daemon_that_never_answers_costs_one_deadline() {
-        let took = timed_get("silent", |s| {
-            std::thread::sleep(Duration::from_secs(5));
-            drop(s);
+        let took = timed_get("silent", |mut s| {
+            let mut b = [0; 1];
+            let _ = s.read(&mut b);
         });
         assert!(took < Duration::from_millis(1500), "{took:?}");
     }
@@ -675,10 +675,11 @@ mod tests {
         let _ = std::fs::remove_file(&sock);
         let listener = std::os::unix::net::UnixListener::bind(&sock).unwrap();
         std::thread::spawn(move || {
-            let (mut s, _) = listener.accept().unwrap();
-            let mut buf = [0; 256];
-            let _ = s.read(&mut buf);
-            let _ = s.write_all(response);
+            while let Ok((mut s, _)) = listener.accept() {
+                let mut buf = [0; 256];
+                let _ = s.read(&mut buf);
+                let _ = s.write_all(response);
+            }
         });
         sock
     }

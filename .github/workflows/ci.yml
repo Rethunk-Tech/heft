@@ -44,7 +44,7 @@ jobs:
       - id: test
         if: ${{ !cancelled() }}
         continue-on-error: true
-        run: cargo test --locked --all-targets
+        run: sh -c 'cargo test --locked --all-targets --no-run && fail=0; cargo test --locked --lib & p1=$!; cargo test --locked --test grouping & p2=$!; cargo test --locked --test live_proc & p3=$!; cargo test --locked --test reconcile & p4=$!; cargo test --locked --test tty_restore & p5=$!; cargo test --locked --bin heft & p6=$!; for p in $p1 $p2 $p3 $p4 $p5 $p6; do wait $p || fail=1; done; exit $fail'
       - id: build
         if: ${{ !cancelled() }}
         continue-on-error: true

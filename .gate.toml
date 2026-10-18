@@ -11,8 +11,10 @@
 [gates.build]
 run = "cargo build --locked"
 
+# cargo runs one integration binary at a time; fanning the targets out keeps
+# every check and overlaps the live /proc suites that dominate a sequential run.
 [gates.test]
-run = "cargo test --locked --all-targets"
+run = "sh -c 'cargo test --locked --all-targets --no-run && fail=0; cargo test --locked --lib & p1=$!; cargo test --locked --test grouping & p2=$!; cargo test --locked --test live_proc & p3=$!; cargo test --locked --test reconcile & p4=$!; cargo test --locked --test tty_restore & p5=$!; cargo test --locked --bin heft & p6=$!; for p in $p1 $p2 $p3 $p4 $p5 $p6; do wait $p || fail=1; done; exit $fail'"
 
 # --all-targets reaches tests and benches, and -D warnings is what makes
 # clippy a gate rather than a report.

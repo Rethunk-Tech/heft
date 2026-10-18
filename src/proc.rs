@@ -1058,7 +1058,9 @@ impl Sampler {
 /// continuous mode, and reading `smaps_rollup` for every process once a second
 /// forever is the exact cost `--pss-interval` exists to avoid. The first
 /// published sample forces PSS anyway, so the stream never opens with a blank
-/// memory column.
+/// memory column. `--interval` is the period of each published sample, same
+/// as the TUI sampler: a walk that already ate the interval does not sleep
+/// another full interval on top.
 ///
 /// # Errors
 ///
@@ -1077,10 +1079,11 @@ pub(crate) fn sample_stream(
     );
     let mut first = true;
     loop {
-        thread::sleep(interval);
+        let start = Instant::now();
         let tree = sampler.tick(first);
         first = false;
         emit(&tree)?;
+        thread::sleep(interval.saturating_sub(start.elapsed()));
     }
 }
 

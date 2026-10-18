@@ -125,6 +125,20 @@ jobs:
         working-directory: dist
         run: sha256sum -c ./*.sha256
 
+      # Portable musl builds under Mortar's names (heft-linux-amd64 /
+      # heft-linux-arm64). Rustc triples stay: packaging/aur/release.sh and
+      # HUMANS.md pin those. SHA256SUMS is the one file a tap reads.
+      - name: Mortar-style names and SHA256SUMS
+        working-directory: dist
+        run: |
+          set -euo pipefail
+          cp heft-x86_64-unknown-linux-musl heft-linux-amd64
+          cp heft-aarch64-unknown-linux-musl heft-linux-arm64
+          sha256sum heft-linux-amd64 > heft-linux-amd64.sha256
+          sha256sum heft-linux-arm64 > heft-linux-arm64.sha256
+          sha256sum -- * > ../SHA256SUMS
+          mv ../SHA256SUMS .
+
       # Signs a statement that these exact digests came out of this workflow at
       # this commit, so `gh attestation verify` answers the question a
       # published .sha256 cannot: the checksum proves the download was not
@@ -133,8 +147,10 @@ jobs:
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
-            dist/heft-*-linux-*
+            dist/heft-*
             !dist/*.sha256
+            !dist/SHA256SUMS
+            !dist/*.tar.gz
 
       - name: Publish the release
         env:

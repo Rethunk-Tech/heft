@@ -2,6 +2,10 @@
 
 ## Install
 
+```sh
+brew install rethunk-tech/tap/heft
+```
+
 Grab the static build. It has no libc to match, so it runs on any distro:
 
 ```sh
@@ -11,7 +15,9 @@ install -Dm755 heft-x86_64-unknown-linux-musl ~/.local/bin/heft
 
 Every release carries four binaries (`x86_64` and `aarch64`, each `musl` and
 `gnu`) with a `.sha256` beside each (`sha256sum -c heft-<target>.sha256`).
-Completions (bash, zsh, fish) and a man page are `heft-completions-man.tar.gz`:
+The musl builds are also `heft-linux-amd64` and `heft-linux-arm64`. `SHA256SUMS`
+covers every asset. Completions (bash, zsh, fish) and a man page are
+`heft-completions-man.tar.gz`:
 
 ```sh
 curl -fsSLO https://github.com/Rethunk-Tech/heft/releases/latest/download/heft-completions-man.tar.gz

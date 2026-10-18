@@ -18,6 +18,16 @@ User Services, Containers) → System**. Observe-only; blank metrics on
 cargo run --release -- --once
 ```
 
+## Installation
+
+```sh
+brew install rethunk-tech/tap/heft
+```
+
+```sh
+cargo install --git https://github.com/Rethunk-Tech/heft
+```
+
 Musl binaries: [latest release](https://github.com/Rethunk-Tech/heft/releases/latest).
 Flags: `heft --help`. Install, keys, XDG, rules: [HUMANS.md](HUMANS.md).
 

@@ -44,34 +44,6 @@ A second, small JSON object for `--explain --json` is a new document shape, not 
 - `--once --explain` stays a conflict.
 - `HUMANS.md` names the object keys in the same commit.
 
-## A failed `s` ends the TUI
-
-`s` calls `config::save_view` with `?`. `handle_key` returns `Result<bool, Error>`, and the event loop treats `Err` as fatal (`handle_key(...)?` then `break` is only the `Ok(true)` quit path; an `Err` leaves `ui::run`). A full disk or an unwritable XDG directory therefore tears down the alternate screen instead of saying so in the footer the way "name cannot be hidden" does.
-
-Keep sampling. Put the error in `app.status`. Do not change the on-disk write (temp file, rename, 0o600).
-
-### Read
-
-- `src/ui.rs:931-933` — `save_view` then `saved {path}` on success.
-- `src/ui.rs:877-882` — `handle_key` returns `Result<bool, Error>`.
-- `src/ui.rs:293-299` — `handle_key(...)?` on each press.
-- `src/ui.rs:946` — hide refusal is a status string, not an `Err`.
-- `src/config.rs:201-228` — `save_view` still returns io errors after cleaning the temp file.
-
-### Traps
-
-- Mapping every `handle_key` error to a status would swallow a panic-path or a terminal write failure that should still quit.
-- The footer already shows `status`. A multi-line io error must be one line, like other status strings.
-- `s` and `S` are the same arm. Both stay.
-- Tests that `unwrap()` `handle_key` for `s` will start seeing `Ok` on a forced save failure; they must assert `status` instead of `Err`.
-
-### Acceptance
-
-- When `save_view` fails, the TUI stays up, the previous `view.json` is untouched, and the footer names the error.
-- When it succeeds, the footer still reads `saved` plus the path.
-- `q` / `Esc` / `Ctrl-C` still quit.
-- `save_view`'s rename and mode do not change.
-
 ## Rules cannot match cwd, while `/` can
 
 `--filter` and the TUI `/` haystack search each process's working directory. Rule `Facts` has no cwd field, `facts_of` does not copy `Process::cwd`, and an example cannot name `cwd` (`deny_unknown_fields`). A rule that should pin everything in `~/src/foo` has to match name, exe, or argv instead.

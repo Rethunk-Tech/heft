@@ -2,33 +2,13 @@
 
 [HUMANS.md](HUMANS.md) and [AGENTS.md](AGENTS.md) describe what heft does.
 
-## Ryzen AI NPU, measurement first
+## Ryzen AI NPU — measured, not worth a column
 
-The GPU columns read amdgpu, i915, and xe fdinfo. This machine is a Strix Halo APU, and the NPU is a device beside that GPU. Whether it publishes utilization an unprivileged process can read is unmeasured. This entry names no sysfs path.
+Unprivileged (uid 1000) on this Strix Halo host, 2026-10-18. PCI `0000:c3:00.1` is class `0x118000`, vendor `0x1022`, device `0x17f0`, driver `amdxdna`; `vbnv` reads `NPU Strix Halo\n`.
 
-Measure whether the NPU publishes unprivileged fdinfo or sysfs utilization. Add a column only when a non-root read returns that utilization. When the node is root-only or absent, the outcome is a measured-not-worth note in this section.
+`open("/sys/class/accel/accel0/dev", O_RDONLY)` returned `261:0\n`. `open(".../uevent")` returned `MAJOR=261\nMINOR=0\nDEVNAME=accel/accel0\nDEVTYPE=accel_minor\n`. That sysfs node has no utilization, busy, or load attribute. `open("/sys/kernel/debug/amdxdna")` and `open("/sys/kernel/debug/accel")` returned `EACCES` (13). No `/proc/<pid>/fdinfo` contained `amdxdna`, `accel`, or `npu` keys, so the `drm-client-id` + `drm-resident-*` fallback is not billing this device under VRAM/GTT. `open("/dev/accel/accel0")` returned `ENOENT` (2) in this process's `/dev`.
 
-### Read
-
-- `HUMANS.md:271-278` — the drivers and fdinfo names the columns read.
-- `AGENTS.md:25` — `gpu.rs` is amdgpu, i915, and xe.
-- `src/gpu.rs:177-194` and `src/gpu.rs:225` — region names and the driver match.
-- `src/gpu.rs:247-248` — a client with `drm-client-id` and `drm-resident-*` counts even when the driver name is none of those three.
-- `CONTRIBUTING.md:98-101` — observe-only, and no guessed fdinfo keys.
-
-### Traps
-
-- A sysfs, debugfs, or accel path belongs in this file, HUMANS.md, or a column only after it has been opened as the user heft runs as.
-- A root-only node is the result of the measurement. Record it here. Reading it as root is a different program.
-- The fallback at `src/gpu.rs:247-248` may already be counting the device's memory under VRAM or GTT. The measurement says whether that is happening before any new driver arm.
-- A key name taken from a kernel tree and absent from the read is a guess. `CONTRIBUTING.md:99-101` leaves those keys unread.
-- The reading that closes this section is this host. It does not by itself define a column for every Ryzen AI part.
-
-### Acceptance
-
-- The measurement is a non-root open of the NPU node this kernel exposes, recorded as the bytes or the error it returned.
-- A column ships together with the key that read returned, a HUMANS.md sentence for it, and a fixture taken from that read.
-- When the open fails for permissions, or the node is absent, this section is the measured-not-worth note and the tree has no new column.
+No column. `mem_key` / `drm-driver` unchanged. A root debugfs read is a different program.
 
 ## NVIDIA and nouveau fdinfo keys are unread
 

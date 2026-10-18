@@ -2,11 +2,23 @@
 
 ## Unreleased
 
+## 0.12.4 - 2026-10-18
+
 ### Added
 
 - Rule `match` keys `exe`, `arg` and `cgroup` test the whole executable path,
   one argv element, and the cgroup line. `arg_suffix`, `cgroup_prefix` and
   `cgroup_suffix` sit beside the existing prefix/suffix/contains forms.
+- GitHub releases also publish Mortar-named musl archives (`heft-linux-amd64`,
+  `heft-linux-arm64`) and a `SHA256SUMS` file a tap can read.
+
+### Changed
+
+- Redirected TUI stdout is a usage error (exit 129) rather than a generic
+  failure. Usage errors print `heft:` on stderr. JSON documents lead with
+  `"schema": 1`.
+- A saved `view.json` header names `rss` among the columns hidden when
+  `hide_columns` is absent.
 
 ### Fixed
 

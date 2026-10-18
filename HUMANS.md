@@ -87,6 +87,7 @@ heft --proc-root /mnt/tree   # read /proc and /sys under here instead of /
 heft --explain 1234       # where this pid landed, and the rule each stage matched
 heft --check-rules        # run the examples in every rules.d file
 heft --fixture > heft-fixture.json  # what grouping reads, for a bug report
+heft --help               # every flag; --version prints the build
 ```
 
 The TUI needs a terminal: with stdout redirected it exits non-zero rather than
@@ -199,7 +200,7 @@ host's.
 | `u` | unhide the last hidden column |
 | `i` | detail for the row under the cursor (`i` or Esc closes) |
 | `p` | pause the table; the footer says how long it has been frozen |
-| `s` | save sort, filter, hidden columns, and column order to `$XDG_CONFIG_HOME/heft/view.json` |
+| `s` | save sort, direction, filter, hidden columns, and column order to `$XDG_CONFIG_HOME/heft/view.json` |
 | `?` / `F1` | toggle the key help overlay |
 
 Sorting applies to every level of the tree, and the sort column's header is
@@ -308,15 +309,17 @@ just appeared is blank. If TREND alone shows boxes, use `--glyphs legacy`.
 `--trend` chooses characters or an image. `auto` (the default) asks the
 terminal before the first frame, with a kitty graphics query and a
 device-attributes request, and uses the image protocol it reports: kitty when
-local, sixel over ssh. A terminal that answers neither delays the first frame
-by 400ms and gets characters. `--trend kitty`, `sixel` and `chars` force one
+local, sixel when `SSH_CONNECTION` or `SSH_TTY` is set. A terminal that
+answers neither delays the first frame by 400ms and gets characters.
+`--trend kitty`, `sixel` and `chars` force one
 and ask nothing. A terminal that does not report its cell size in pixels gets
 characters. TREND is TUI only: `--once` has no TREND column, and the JSON
 never carries it.
 
 The kitty protocol (kitty, ghostty) sends pixels through shared memory
-locally, costing tens of bytes a sample. Over ssh they go inline as base64,
-far more per sample than sixel and proportionally more for a wider TREND. It is sent once per sample, not per
+locally, costing tens of bytes a sample. When `SSH_CONNECTION` or `SSH_TTY`
+is set they go inline as base64, far more per sample than sixel and
+proportionally more for a wider TREND. It is sent once per sample, not per
 frame. On a slow link without sixel, use `--trend chars`.
 
 `--trend sixel` works in xterm (on by default since patch #359), foot,
@@ -421,7 +424,12 @@ heft creates no `$XDG_STATE_HOME/heft` or `$XDG_CACHE_HOME/heft`. The only file
 it writes is `view.json`, besides the shared-memory objects `--trend kitty`
 creates under `/dev/shm` and removes; the only other state it touches is its
 terminal (the alternate screen, and termios restored on exit). Never `/proc`, sysfs, or
-cgroup files.
+cgroup files. `$XDG_CONFIG_HOME` and `$HOME` must be absolute; a relative
+value is ignored. `$HOME` is also what `--fixture` rewrites as `~`. Other
+environment heft reads: `NO_COLOR` (any non-empty value, including `0`),
+`DOCKER_HOST` (a `unix://` socket, tried first), `HEFT_RULES_PATH`,
+`LC_ALL` / `LC_CTYPE` / `LANG` (`--glyphs auto`), and `SSH_CONNECTION` /
+`SSH_TTY` (`--trend auto` and kitty transport).
 
 ### Columns
 
@@ -441,6 +449,7 @@ the file the extra is warned and ignored. `s` writes both lists.
   // `//` and `/* */` comments are allowed here and in rules.d files
   "sort": "pss",
   "desc": true,
+  "filter": "",
   "hide_columns": ["vram", "gtt", "gfx", "compute"],
   "column_order": ["pss", "rss", "core"]
 }
@@ -543,7 +552,7 @@ $ heft --check-rules
 90-mine.json:pin-daemon#0 (/home/me/.config/heft/rules.d): expected folder user_services, got applications
 30-gnome.json:gsd#9 (built-in): overridden by 90-mine.json:my-gsd (/home/me/.config/heft/rules.d)
 40-trinity.json#3 (built-in): disabled by 40-trinity.json (90-mine.json, /home/me/.config/heft/rules.d)
-128 examples in 13 files: 1 failed, 1 overridden, 14 disabled
+165 examples in 14 files: 1 failed, 1 overridden, 14 disabled
 ```
 
 It exits 1 on a failed example or a file that did not load. A built-in example
@@ -580,8 +589,9 @@ is the tree's verdict, which also depends on the process's parents.
 If the built-in grouping is wrong, attach `heft --fixture > heft-fixture.json`
 to a bug report. It is every process's exe, cgroup, parent and command line,
 in the shape heft's grouping tests load, so your machine becomes the test for
-the fix. Nothing is sent anywhere. Your home directory is written as `~`, but
-command lines are kept whole, so read the file before you post it.
+the fix. Nothing is sent anywhere. `$HOME/` is rewritten as `~/` in `exe` and
+each argv element; arguments are not truncated, so read the file before you
+post it.
 
 ## Verify
 

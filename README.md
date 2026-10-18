@@ -25,8 +25,8 @@ musl build is static and needs no toolchain — or build it:
 cargo run --release -- --once
 ```
 
-See [HUMANS.md](HUMANS.md) for install, keybindings, and how a saved view is
-written.
+`heft --help` lists every flag. See [HUMANS.md](HUMANS.md) for install,
+keybindings, and how a saved view is written.
 
 ## Highlights
 

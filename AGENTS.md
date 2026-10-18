@@ -10,7 +10,7 @@ Read-only Linux process monitor. Binary name `heft`.
 
 ```text
 src/cli.rs           clap Cli and the one definition of the --trend and --glyphs choices; a library module, and build.rs includes it so completions/man cannot drift
-src/main.rs          dispatch: TUI default, --once, --json
+src/main.rs          dispatch: TUI default, --once, --json, --follow, --explain, --fixture, --check-rules
 src/lib.rs           modules
 build.rs             clap_complete + clap_mangen → OUT_DIR/assets (build-deps only); HEFT_VERSION = version~sha; rules.d → OUT_DIR/builtin_rules.rs
 rules.d/             built-in rule files, one stage each, embedded by build.rs
@@ -122,7 +122,8 @@ and app rules evaluate on a borrowed `Facts` in `direct_place` and allocate
 nothing (`rules::tests::evaluation_allocates_nothing`, counted per thread
 because other tests allocate on other threads). `build_tree_timing` in
 `tests/grouping.rs` and `rules_timing` in `src/rules.rs` are `--ignored` timing
-harnesses; `HEFT_BENCH_FIXTURE` names a `--fixture` dump.
+harnesses; `HEFT_BENCH_FIXTURE` names a `--fixture` dump and
+`HEFT_BENCH_ITERS` how many times each pass runs.
 
 `Rules::load`, `rules::load_dir` and `Rules::builtin` carry the load contract.
 `tests/common::heft` points

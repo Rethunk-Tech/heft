@@ -56,6 +56,15 @@ Colon\\-separated rules.d directories, earlier entries winning, read instead
 of the XDG and /etc directories. The built\\-in rules still load last. Set but
 empty means built\\-ins only.
 .TP
+\\fBHOME\\fR
+Fallback for the config directory when XDG_CONFIG_HOME is unset or relative.
+Must be absolute. \\fB\\-\\-fixture\\fR rewrites this directory as ~ in exe and argv.
+.TP
+\\fBSSH_CONNECTION\\fR, \\fBSSH_TTY\\fR
+Either one set means the session is remote: \\fB\\-\\-trend auto\\fR prefers
+sixel when the terminal offers both protocols, and kitty pixels go inline
+rather than through shared memory.
+.TP
 \\fBLC_ALL\\fR, \\fBLC_CTYPE\\fR, \\fBLANG\\fR
 Read in that order by \\fB\\-\\-glyphs auto\\fR: block characters only when one
 of them names a UTF\\-8 charmap, ASCII substitutes otherwise.

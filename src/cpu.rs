@@ -56,16 +56,81 @@ fn btime() -> u64 {
     })
 }
 
+/// ELF auxv keys from `linux/auxvec.h`. A `--proc-root` dump from another
+/// `USER_HZ` or page-size kernel publishes these in `{prefix}/proc/1/auxv`.
+const AT_PAGESZ: u64 = 6;
+const AT_CLKTCK: u64 = 17;
+
 pub(crate) fn clk_tck() -> u64 {
+    static V: OnceLock<u64> = OnceLock::new();
+    *V.get_or_init(|| auxv_at(AT_CLKTCK).unwrap_or_else(sysconf_clk_tck))
+}
+
+pub(crate) fn page_size() -> u64 {
+    static V: OnceLock<u64> = OnceLock::new();
+    *V.get_or_init(|| auxv_at(AT_PAGESZ).unwrap_or_else(sysconf_page_size))
+}
+
+fn sysconf_clk_tck() -> u64 {
     // SAFETY: sysconf is a pure query; a non-positive result is replaced.
     let v = unsafe { libc::sysconf(libc::_SC_CLK_TCK) };
     if v > 0 { v.cast_unsigned() } else { 100 }
 }
 
-pub(crate) fn page_size() -> u64 {
+fn sysconf_page_size() -> u64 {
     // SAFETY: sysconf is a pure query; a non-positive result is replaced.
     let v = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
     if v > 0 { v.cast_unsigned() } else { 4096 }
+}
+
+fn auxv_at(tag: u64) -> Option<u64> {
+    if crate::root::prefix().is_empty() {
+        return None;
+    }
+    for path in ["/proc/1/auxv", "/proc/self/auxv"] {
+        if let Some(v) = fs::read(crate::root::path(path))
+            .ok()
+            .and_then(|b| aux_val(&b, tag))
+            .filter(|v| *v > 0)
+        {
+            return Some(v);
+        }
+    }
+    None
+}
+
+fn aux_val(buf: &[u8], tag: u64) -> Option<u64> {
+    for width in [8_usize, 4] {
+        if let Some(v) = aux_val_width(buf, tag, width) {
+            return Some(v);
+        }
+    }
+    None
+}
+
+fn aux_val_width(buf: &[u8], tag: u64, width: usize) -> Option<u64> {
+    let mut found = None;
+    let mut i = 0;
+    while i + 2 * width <= buf.len() {
+        let key = aux_word(&buf[i..i + width])?;
+        let val = aux_word(&buf[i + width..i + 2 * width])?;
+        if key == 0 {
+            return found;
+        }
+        if key == tag {
+            found = Some(val);
+        }
+        i += 2 * width;
+    }
+    None
+}
+
+fn aux_word(bytes: &[u8]) -> Option<u64> {
+    match bytes.len() {
+        8 => Some(u64::from_ne_bytes(bytes.try_into().ok()?)),
+        4 => Some(u64::from(u32::from_ne_bytes(bytes.try_into().ok()?))),
+        _ => None,
+    }
 }
 
 pub(crate) fn euid() -> u32 {
@@ -434,6 +499,23 @@ mod tests {
         assert_eq!(age_secs(None, 100, boot, boot), None);
         // A clock stepped backwards makes a process 0s old, never negative.
         assert_eq!(age_secs(Some(6000), 100, boot, boot + 10), Some(0));
+    }
+
+    #[test]
+    fn auxv_clk_tck_and_page_size_come_from_the_prefix_words() {
+        let mut buf = Vec::new();
+        let push = |buf: &mut Vec<u8>, k: u64, v: u64| {
+            buf.extend_from_slice(&k.to_ne_bytes());
+            buf.extend_from_slice(&v.to_ne_bytes());
+        };
+        push(&mut buf, AT_CLKTCK, 100);
+        push(&mut buf, AT_PAGESZ, 65536);
+        push(&mut buf, 0, 0);
+        assert_eq!(aux_val(&buf, AT_CLKTCK), Some(100));
+        assert_eq!(aux_val(&buf, AT_PAGESZ), Some(65536));
+        assert_eq!(aux_val(&buf, 99), None);
+        // Without AT_NULL the buffer is not a finished auxv.
+        assert_eq!(aux_val(&buf[..32], AT_PAGESZ), None);
     }
 
     #[test]

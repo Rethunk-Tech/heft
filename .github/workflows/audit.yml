@@ -22,7 +22,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: Rethunk-Tech/gh-actions/setup-rust@bc5fa5b1004205c9c9399fc941d79d5ada53c59b # v1.16
+      - uses: Rethunk-Tech/gh-actions/setup-rust@043d9f8fb8b04b983fa8f7012b28241fd20f17b4 # v1.18
         with:
           toolchain: stable
       - uses: cargo-bins/cargo-binstall@8a2045612414e945291083f820cd50b4d8fc2218 # v1.26.0

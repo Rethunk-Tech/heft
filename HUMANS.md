@@ -174,9 +174,10 @@ JSON-escaped.
 
 `--proc-root` reads `/proc` and `/sys` under another directory, such as another
 mount namespace's procfs or a tree captured off another machine; a directory
-with no `proc` in it is a usage error. The container socket, `/etc/passwd` and
-`/etc/heft/rules.d` stay the host's, and the header still describes the host,
-because the kernel does not virtualise `meminfo` and `stat` per namespace.
+with no `proc` in it is a usage error. The header follows that prefix
+(`/proc/stat`, `/proc/meminfo`, CLK_TCK and page size from `/proc/1/auxv` when
+present). The container socket, `/etc/passwd` and `/etc/heft/rules.d` stay the
+host's.
 
 ## TUI keys
 
@@ -456,8 +457,10 @@ and `Shift-←` `Shift-→` (`[` `]`) take all of them except `spark`, `--hide` 
 them except `name`, and `--order` all of them. With no file or no `hide_columns` key, `rss`,
 `cpustall`, `iostall` and `memstall` are hidden and the rest show in compiled order. An
 unknown label in the file warns on stderr and is ignored; on `--hide` or
-`--order` it is a usage error. Hiding and order are presentation only: heft
-reads the same `/proc` files either way.
+`--order` it is a usage error. Hiding and order are presentation only except
+the stall trio: the TUI and `--once` skip cgroup `{cpu,io,memory}.pressure`
+while those columns are hidden and not the sort key. `--json` always samples
+them. Every other hidden column still reads the same `/proc` files.
 
 ## Rules
 

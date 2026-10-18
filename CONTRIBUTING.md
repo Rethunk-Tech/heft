@@ -37,16 +37,8 @@ install -Dm644 "$assets/heft.1"    ~/.local/share/man/man1/heft.1
 
 ## Gates
 
-Run before a commit that touches code:
-
-```sh
-cargo fmt --check
-cargo clippy --locked --all-targets -- -D warnings
-cargo test --locked
-cargo deny --locked check bans licenses sources
-cargo deny --locked check advisories
-cargo machete
-```
+Run `gate` from the repository root before a commit that touches code. Pre-push
+runs the same command. `.gate.toml` is the list, including `cargo build --locked`.
 
 The suite must stay under 30 seconds. Do not add live-GPU or live-docker
 requirements to `cargo test`; put those walks in fixtures.

@@ -125,10 +125,10 @@ jobs:
         working-directory: dist
         run: sha256sum -c ./*.sha256
 
-      # Portable musl builds under Mortar's names (heft-linux-amd64 /
+      # Portable musl builds as heft-linux-<arch>, the names the Homebrew tap reads (heft-linux-amd64 /
       # heft-linux-arm64). Rustc triples stay: packaging/aur/release.sh and
       # HUMANS.md pin those. SHA256SUMS is the one file a tap reads.
-      - name: Mortar-style names and SHA256SUMS
+      - name: Tap asset names and SHA256SUMS
         working-directory: dist
         run: |
           set -euo pipefail

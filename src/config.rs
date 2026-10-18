@@ -154,7 +154,7 @@ fn view_header() -> String {
          // desc:          true for high to low\n\
          // filter:        a regex, case-insensitive unless it says (?-i)\n\
          // hide_columns:  labels to leave out; `name` cannot be hidden;\n\
-         //                absent, the three stall columns\n\
+         //                absent, rss and the three stall columns\n\
          // column_order:  labels left to right; the rest keep their place\n\
          //\n\
          // labels: {labels}\n"
@@ -287,6 +287,10 @@ mod tests {
         assert!(text.starts_with("// heft view"));
         // The label list is generated, so it cannot drift from the binary.
         assert!(text.contains("labels: name spark"), "{text}");
+        assert!(
+            text.contains("absent, rss and the three stall columns"),
+            "{text}"
+        );
         let back: View = serde_json::from_str(&strip_comments(&text)).unwrap();
         assert_eq!(back.sort, "core");
         assert_eq!(back.filter, "a//b");

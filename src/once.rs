@@ -164,6 +164,15 @@ pub(crate) const COLUMNS: &[Column] = &[
         key: Some(|_, m| opt_u(m.swap_bytes)),
     },
     Column {
+        label: "cgmem",
+        header: "CG MEM",
+        width: 11,
+        fmt: |_, _, m| fmt_cg_mem(m),
+        pct: false,
+        stall: false,
+        key: Some(|_, m| opt_u(m.cgroup_mem_current_bytes)),
+    },
+    Column {
         label: "vram",
         header: "VRAM",
         width: 8,
@@ -379,6 +388,12 @@ impl Columns {
 /// sampled. `--json` samples regardless: its shape is a contract.
 pub(crate) fn shows_stalls(cols: &Columns, view: &View) -> bool {
     cols.iter().any(|c| c.stall) || COLUMNS.iter().any(|c| c.stall && c.label == view.sort)
+}
+
+/// The PSI sampler also fills `CG MEM` from that cgroup directory, so the
+/// walk runs when either the stall trio or this column is on screen / sorts.
+pub(crate) fn samples_cgroup(cols: &Columns, view: &View) -> bool {
+    shows_stalls(cols, view) || cols.iter().any(|c| c.label == "cgmem") || view.sort == "cgmem"
 }
 
 /// Index into `COLUMNS`; the saved view stores that column's label.
@@ -790,7 +805,7 @@ fn proc_matches(filter: &Filter, proc: &ProcNode) -> bool {
 /// Returns an error if writing the table to stdout fails.
 pub fn print_table(interval: Duration, view: &View) -> Result<(), Error> {
     let cols = Columns::from_view(view);
-    let tree = proc::sample_world(interval, shows_stalls(&cols, view));
+    let tree = proc::sample_world(interval, samples_cgroup(&cols, view));
     render_table(&mut io::stdout(), &tree, view, &cols)
 }
 
@@ -804,12 +819,17 @@ pub fn print_table(interval: Duration, view: &View) -> Result<(), Error> {
 pub fn follow_table(interval: Duration, pss_interval: Duration, view: &View) -> Result<(), Error> {
     let cols = Columns::from_view(view);
     let mut out = io::stdout();
-    proc::sample_stream(interval, pss_interval, shows_stalls(&cols, view), |tree| {
-        render_table(&mut out, tree, view, &cols)?;
-        writeln!(out)?;
-        out.flush()?;
-        Ok(())
-    })
+    proc::sample_stream(
+        interval,
+        pss_interval,
+        samples_cgroup(&cols, view),
+        |tree| {
+            render_table(&mut out, tree, view, &cols)?;
+            writeln!(out)?;
+            out.flush()?;
+            Ok(())
+        },
+    )
 }
 
 fn render_table(
@@ -1219,6 +1239,19 @@ pub(crate) fn fmt_bytes(n: Option<u64>) -> String {
     scale_1024(f64_of(b)).unwrap_or_else(|| b.to_string())
 }
 
+/// `current/max`; unlimited `memory.max` is `-`. Blank when current was not
+/// readable, the same contract as SWAP on a swapless host.
+fn fmt_cg_mem(m: &Metrics) -> String {
+    let Some(cur) = m.cgroup_mem_current_bytes else {
+        return String::new();
+    };
+    let max = match m.cgroup_mem_max_bytes {
+        Some(b) => fmt_bytes(Some(b)),
+        None => "-".into(),
+    };
+    format!("{}/{max}", fmt_bytes(Some(cur)))
+}
+
 fn fmt_rate(n: Option<f64>) -> String {
     n.map(|v| {
         if v <= 0.0 {
@@ -1550,7 +1583,8 @@ mod tests {
             labels(&hiding(&["gtt", "vram", "netns_rx", "netns_tx"])),
             [
                 "name", "nproc", "threads", "fds", "age", "state", "core", "machine", "pss", "rss",
-                "swap", "gfx", "compute", "diskr", "diskw", "cpustall", "iostall", "memstall"
+                "swap", "cgmem", "gfx", "compute", "diskr", "diskw", "cpustall", "iostall",
+                "memstall"
             ]
         );
         assert_eq!(labels(&hiding(&["name"])), all_labels());
@@ -1635,7 +1669,7 @@ mod tests {
     fn hiding_a_column_only_removes_its_cells() {
         let mut out = Vec::new();
         let cols = hiding(&[
-            "nproc", "threads", "fds", "age", "state", "diskr", "diskw", "gfx", "compute",
+            "nproc", "threads", "fds", "age", "state", "diskr", "diskw", "gfx", "compute", "cgmem",
             "cpustall", "iostall", "memstall", "netns_rx", "netns_tx",
         ]);
         write_header(&mut out, &cols).unwrap();
@@ -1689,6 +1723,8 @@ mod tests {
                 io_stall_pct: Some(12.0),
                 mem_stall_pct: None,
                 state: None,
+                cgroup_mem_current_bytes: None,
+                cgroup_mem_max_bytes: None,
             },
             instances: Vec::new(),
             containers: Vec::new(),
@@ -2263,14 +2299,14 @@ mod tests {
         write_rows(&mut out, &cols, &folder_rows(1536.0)).unwrap();
         assert_eq!(
             String::from_utf8(out).unwrap(),
-            "NAME                            N   THR    FD   AGE STATE   %CORE   %MACH      PSS      RSS   SWAP     VRAM      GTT   GFX   CMP   DISK R   DISK W CPU ST  IO ST MEM ST NETNS RX NETNS TX\n  Applications (1)              7    19          3h          12.2     1.5     1.5K     2.0K            1.0M            3.0         1.5K/s                                                \n    an-identity-name-long-e\u{2026}    7    19          3h          12.2     1.5     1.5K     2.0K            1.0M            3.0         1.5K/s             0.5   12.0                         \n"
+            "NAME                            N   THR    FD   AGE STATE   %CORE   %MACH      PSS      RSS   SWAP      CG MEM     VRAM      GTT   GFX   CMP   DISK R   DISK W CPU ST  IO ST MEM ST NETNS RX NETNS TX\n  Applications (1)              7    19          3h          12.2     1.5     1.5K     2.0K                        1.0M            3.0         1.5K/s                                                \n    an-identity-name-long-e\u{2026}    7    19          3h          12.2     1.5     1.5K     2.0K                        1.0M            3.0         1.5K/s             0.5   12.0                         \n"
         );
 
         let mut out = Vec::new();
         write_rows(&mut out, &cols, &folder_rows(1_030_963.0)).unwrap();
         assert_eq!(
             String::from_utf8(out).unwrap(),
-            "  Applications (1)              7    19          3h          12.2     1.5     1.5K     2.0K            1.0M            3.0       1006.8K/s                                                \n    an-identity-name-long-e\u{2026}    7    19          3h          12.2     1.5     1.5K     2.0K            1.0M            3.0       1006.8K/s             0.5   12.0                         \n"
+            "  Applications (1)              7    19          3h          12.2     1.5     1.5K     2.0K                        1.0M            3.0       1006.8K/s                                                \n    an-identity-name-long-e\u{2026}    7    19          3h          12.2     1.5     1.5K     2.0K                        1.0M            3.0       1006.8K/s             0.5   12.0                         \n"
         );
     }
 

@@ -20,7 +20,7 @@
 //! machine-wide trend is the one place smoothing helps.
 
 use crate::num::f64_of;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use std::ffi::CStr;
 use std::os::fd::OwnedFd;
@@ -60,30 +60,40 @@ impl Sampler {
     pub(crate) fn tick(&mut self, procs: &PidMap<Process>, secs: f64) -> Stalls {
         let mut curr = HashMap::new();
         let mut rates = HashMap::new();
+        let mut mem = HashMap::new();
+        let mut visited = HashSet::new();
         let mut buf = Vec::new();
         for p in procs.values() {
             let Some(path) = cgroup_path(&p.cgroup) else {
                 continue;
             };
-            if curr.contains_key(path) {
+            if !visited.insert(path) {
                 continue;
             }
-            let Some(now) = read_totals(path, &mut buf) else {
+            let Some(dir) = open_cgroup(path) else {
                 continue;
             };
-            if let Some(stall) = delta(self.prev.get(path), now, secs) {
-                rates.insert(path.to_string(), stall);
+            if let Some(now) = read_totals(&dir, &mut buf) {
+                if let Some(stall) = delta(self.prev.get(path), now, secs) {
+                    rates.insert(path.to_string(), stall);
+                }
+                curr.insert(path.to_string(), now);
             }
-            curr.insert(path.to_string(), now);
+            if let Some(cm) = read_mem(&dir, &mut buf) {
+                mem.insert(path.to_string(), cm);
+            }
         }
         self.prev = curr;
-        Stalls(rates)
+        Stalls { rates, mem }
     }
 }
 
-/// This interval's stall percentages, by cgroup path.
+/// This interval's stall percentages and cgroup memory, by cgroup path.
 #[derive(Clone, Debug, Default)]
-pub(crate) struct Stalls(HashMap<String, Stall>);
+pub(crate) struct Stalls {
+    rates: HashMap<String, Stall>,
+    mem: HashMap<String, CgroupMem>,
+}
 
 impl Stalls {
     pub(crate) fn apply(&self, tree: &mut HostTree, procs: &PidMap<Process>) {
@@ -92,7 +102,8 @@ impl Stalls {
             *seen.entry(path).or_default() += 1;
         }
         let t = Apply {
-            rates: &self.0,
+            rates: &self.rates,
+            mem: &self.mem,
             seen,
             procs,
         };
@@ -106,8 +117,15 @@ impl Stalls {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+struct CgroupMem {
+    current: u64,
+    max: Option<u64>,
+}
+
 struct Apply<'a> {
     rates: &'a HashMap<String, Stall>,
+    mem: &'a HashMap<String, CgroupMem>,
     /// How many walked pids each cgroup holds this tick.
     seen: HashMap<&'a str, u32>,
     procs: &'a PidMap<Process>,
@@ -151,9 +169,44 @@ impl<'a> Apply<'a> {
     fn set_row(&self, m: &mut Metrics, pids: &[u32]) {
         if let Some(path) = self.one_cgroup(pids) {
             write(m, self.rates.get(path));
+            write_mem(m, self.mem.get(path));
             return;
         }
         write(m, self.max_some(pids).as_ref());
+        write_mem(m, self.fold_mem(pids).as_ref());
+    }
+
+    /// Sum of `memory.current` across distinct member cgroups; `memory.max`
+    /// is the smallest finite limit, or unset when every member is unlimited.
+    fn fold_mem(&self, pids: &[u32]) -> Option<CgroupMem> {
+        let mut paths = Vec::new();
+        for pid in pids {
+            let path = cgroup_path(&self.procs.get(pid)?.cgroup)?;
+            if !paths.contains(&path) {
+                paths.push(path);
+            }
+        }
+        if paths.len() < 2 {
+            return None;
+        }
+        let mut current: Option<u64> = None;
+        let mut finite_max: Option<u64> = None;
+        for path in paths {
+            let Some(cm) = self.mem.get(path) else {
+                continue;
+            };
+            current = Some(current.unwrap_or(0).saturating_add(cm.current));
+            if let Some(mx) = cm.max {
+                finite_max = Some(match finite_max {
+                    None => mx,
+                    Some(a) => a.min(mx),
+                });
+            }
+        }
+        Some(CgroupMem {
+            current: current?,
+            max: finite_max,
+        })
     }
 
     fn max_some(&self, pids: &[u32]) -> Option<Stall> {
@@ -228,6 +281,14 @@ const fn write(m: &mut Metrics, s: Option<&Stall>) {
     m.mem_stall_pct = Some(s.mem);
 }
 
+const fn write_mem(m: &mut Metrics, c: Option<&CgroupMem>) {
+    let Some(c) = c else {
+        return;
+    };
+    m.cgroup_mem_current_bytes = Some(c.current);
+    m.cgroup_mem_max_bytes = c.max;
+}
+
 fn push_pids(nodes: &[crate::types::ProcNode], out: &mut Vec<u32>) {
     for node in nodes {
         out.push(node.pid);
@@ -242,20 +303,35 @@ fn cgroup_path(cgroup: &str) -> Option<&str> {
     (path != "/" && path.starts_with('/')).then_some(path)
 }
 
-/// The cgroup directory is resolved once, so each pressure file is a
-/// one-name lookup rather than the whole path again.
-fn read_totals(path: &str, buf: &mut Vec<u8>) -> Option<Totals> {
-    let dir = rustix::fs::open(
+fn open_cgroup(path: &str) -> Option<OwnedFd> {
+    rustix::fs::open(
         format!("{}/sys/fs/cgroup{path}", crate::root::prefix()).as_str(),
         OFlags::PATH | OFlags::DIRECTORY | OFlags::CLOEXEC,
         Mode::empty(),
     )
-    .ok()?;
+    .ok()
+}
+
+/// The cgroup directory is resolved once, so each pressure file is a
+/// one-name lookup rather than the whole path again.
+fn read_totals(dir: &OwnedFd, buf: &mut Vec<u8>) -> Option<Totals> {
     Some(Totals {
-        cpu: read_some_total(&dir, c"cpu.pressure", buf)?,
-        io: read_some_total(&dir, c"io.pressure", buf)?,
-        mem: read_some_total(&dir, c"memory.pressure", buf)?,
+        cpu: read_some_total(dir, c"cpu.pressure", buf)?,
+        io: read_some_total(dir, c"io.pressure", buf)?,
+        mem: read_some_total(dir, c"memory.pressure", buf)?,
     })
+}
+
+fn read_mem(dir: &OwnedFd, buf: &mut Vec<u8>) -> Option<CgroupMem> {
+    let current = read_str(dir, c"memory.current", buf)?.trim().parse().ok()?;
+    let max = match read_str(dir, c"memory.max", buf) {
+        Some(t) => {
+            let t = t.trim();
+            if t == "max" { None } else { t.parse().ok() }
+        }
+        None => None,
+    };
+    Some(CgroupMem { current, max })
 }
 
 /// `proc::read_str`, not `fs::read_to_string`, for the reason on `read_at`.
@@ -421,8 +497,10 @@ mod tests {
             ),
         ]);
         let procs = PidMap::from_iter([(1, proc_in(1, "0::/a")), (2, proc_in(2, "0::/b"))]);
+        let mem = HashMap::new();
         let t = Apply {
             rates: &rates,
+            mem: &mem,
             seen: HashMap::new(),
             procs: &procs,
         };
@@ -434,6 +512,93 @@ mod tests {
         let mut solo = Metrics::default();
         t.set_row(&mut solo, &[1]);
         assert_eq!(solo.cpu_stall_pct, Some(10.0));
+    }
+
+    /// Kernel spellings plus the multi-cgroup fold: sum current, min of finite
+    /// maxes, `-`/absent when every member is unlimited.
+    #[test]
+    fn identity_row_cgroup_mem_sums_current_and_takes_the_min_finite_max() {
+        use rustix::fs::{Mode, OFlags};
+        let root = std::env::temp_dir().join(format!("heft-cgmem-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        struct Rm(std::path::PathBuf);
+        impl Drop for Rm {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let _rm = Rm(root.clone());
+        std::fs::write(root.join("memory.current"), "8192\n").unwrap();
+        std::fs::write(root.join("memory.max"), "max\n").unwrap();
+        let dir = rustix::fs::open(
+            root.as_path(),
+            OFlags::PATH | OFlags::DIRECTORY | OFlags::CLOEXEC,
+            Mode::empty(),
+        )
+        .unwrap();
+        let mut buf = Vec::new();
+        let got = read_mem(&dir, &mut buf).unwrap();
+        assert_eq!(got.current, 8192);
+        assert_eq!(got.max, None);
+        std::fs::write(root.join("memory.max"), "4096\n").unwrap();
+        let got = read_mem(&dir, &mut buf).unwrap();
+        assert_eq!(got.max, Some(4096));
+
+        let rates = HashMap::new();
+        let cases: &[(&[_], &[_], Option<u64>, Option<u64>)] = &[
+            (&[("/a", 100, Some(200))], &[1], Some(100), Some(200)),
+            (&[("/a", 100, None)], &[1], Some(100), None),
+            (
+                &[("/a", 10, Some(100)), ("/b", 20, Some(50))],
+                &[1, 2],
+                Some(30),
+                Some(50),
+            ),
+            (
+                &[("/a", 10, None), ("/b", 20, None)],
+                &[1, 2],
+                Some(30),
+                None,
+            ),
+            (
+                &[("/a", 10, Some(100)), ("/b", 20, None)],
+                &[1, 2],
+                Some(30),
+                Some(100),
+            ),
+            (&[], &[1, 2], None, None),
+        ];
+        for (entries, pids, want_cur, want_max) in cases {
+            let mem: HashMap<String, CgroupMem> = entries
+                .iter()
+                .map(|(path, current, max)| {
+                    (
+                        (*path).to_string(),
+                        CgroupMem {
+                            current: *current,
+                            max: *max,
+                        },
+                    )
+                })
+                .collect();
+            let procs = PidMap::from_iter(pids.iter().copied().enumerate().map(|(i, pid)| {
+                let path = entries.get(i).map_or("/a", |(p, _, _)| *p);
+                (pid, proc_in(pid, &format!("0::{path}")))
+            }));
+            let t = Apply {
+                rates: &rates,
+                mem: &mem,
+                seen: HashMap::new(),
+                procs: &procs,
+            };
+            let mut m = Metrics::default();
+            t.set_row(&mut m, pids);
+            assert_eq!(
+                (m.cgroup_mem_current_bytes, m.cgroup_mem_max_bytes),
+                (*want_cur, *want_max),
+                "{entries:?} {pids:?}"
+            );
+        }
     }
 
     /// Empty when the kernel publishes no pressure at all. A single resource

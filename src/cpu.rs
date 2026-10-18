@@ -275,6 +275,8 @@ pub(crate) fn process_metrics(
         cpu_stall_pct: None,
         io_stall_pct: None,
         mem_stall_pct: None,
+        cgroup_mem_current_bytes: None,
+        cgroup_mem_max_bytes: None,
     }
 }
 

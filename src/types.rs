@@ -179,6 +179,16 @@ pub(crate) struct Metrics {
     pub(crate) io_stall_pct: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) mem_stall_pct: Option<f64>,
+    /// Cgroup v2 `memory.current`. Identity and container rows only; `psi`
+    /// fills them from the same directory it already opens for pressure.
+    /// `accumulate` leaves them out: a folder, User or Host row is not one
+    /// cgroup. Several cgroups on a row are summed at apply, not here.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) cgroup_mem_current_bytes: Option<u64>,
+    /// Cgroup v2 `memory.max`. Absent when the file reads `max` (unlimited)
+    /// or is unreadable. Several cgroups: the smallest finite limit.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) cgroup_mem_max_bytes: Option<u64>,
 }
 
 impl Metrics {
@@ -198,8 +208,8 @@ impl Metrics {
         self.gtt_bytes = sum_opt(self.gtt_bytes, other.gtt_bytes);
         self.gfx_pct = sum_opt(self.gfx_pct, other.gfx_pct);
         self.compute_pct = sum_opt(self.compute_pct, other.compute_pct);
-        // net_rx_bps / net_tx_bps and the three *_stall_pct are not summed;
-        // see their field comments.
+        // net_rx_bps / net_tx_bps, the three *_stall_pct, and the cgroup
+        // memory pair are not summed; see their field comments.
     }
 }
 
@@ -454,6 +464,8 @@ mod tests {
             cpu_stall_pct: Some(v),
             io_stall_pct: Some(v),
             mem_stall_pct: Some(v),
+            cgroup_mem_current_bytes: Some(10),
+            cgroup_mem_max_bytes: Some(20),
             ..Metrics::default()
         };
         let mut folder = with(10.0);
@@ -470,6 +482,8 @@ mod tests {
         ] {
             assert_eq!(got, Some(10.0), "{name} was summed into its parent");
         }
+        assert_eq!(folder.cgroup_mem_current_bytes, Some(10));
+        assert_eq!(folder.cgroup_mem_max_bytes, Some(20));
     }
 
     /// `N` counts processes. Open fds add the way threads do, and a count

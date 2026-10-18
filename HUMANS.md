@@ -228,6 +228,15 @@ scan, held between scans the way PSS is; blank on kernel threads until the
 first scan. `AGE` is the oldest start time on a multi-process row, never a
 sum: `45s`, `12m`, `3h`, `9d`.
 
+## CG MEM
+
+Identity and container rows: cgroup v2 `memory.current`/`memory.max` from the
+same directory PSI already opens. Printed as `current/max`; unlimited
+(`max`) is `-`. Several cgroups on a row: sum of current, the smallest finite
+max (no max figure when every member is unlimited). Blank when current is
+unreadable. Folder, User, Host, and process rows stay blank. `--json`:
+`cgroup_mem_current_bytes`, `cgroup_mem_max_bytes`, omitted when unreadable.
+
 ## CPU ST / IO ST / MEM ST
 
 Hidden by default. Pressure is read only while something shows it (column,

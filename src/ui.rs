@@ -216,7 +216,7 @@ fn run_loop(
     trend: Trend,
 ) -> Result<(), Error> {
     let slot = Arc::new(Mutex::new(None));
-    let stalls = Arc::new(AtomicBool::new(crate::once::shows_stalls(&cols, &view)));
+    let stalls = Arc::new(AtomicBool::new(crate::once::samples_cgroup(&cols, &view)));
     let _sampler = proc::spawn_sampler(interval, pss_interval, slot.clone(), stalls.clone())?;
     let tree = proc::placeholder_tree();
     let filter_re = Filter::new(&view.filter);
@@ -257,7 +257,7 @@ fn run_loop(
     loop {
         // The `i` pane shows the stall figures whatever the columns are.
         stalls.store(
-            crate::once::shows_stalls(&app.cols, &app.view) || app.overlay == Overlay::Detail,
+            crate::once::samples_cgroup(&app.cols, &app.view) || app.overlay == Overlay::Detail,
             Ordering::Relaxed,
         );
         let clock = pause_clock(app.paused);

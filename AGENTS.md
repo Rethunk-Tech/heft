@@ -163,7 +163,7 @@ TUI sampling is a background thread; the ratatui loop never blocks on `/proc`.
 (red, else `REVERSED`). Reverse rather than a marker: `CPU ST` is six columns
 and `100.0` is five. A large `%CORE` is work, not trouble.
 
-JSON (`types.rs` `HostTree`): `{ "host": …, "interval_secs": … }` plus
+JSON (`types.rs` `HostTree`): `{ "schema": 1, "host": …, "interval_secs": … }` plus
 `pss_interval_secs` on `--json --follow`, plus `warnings` when seen threads
 are under 90% of the kernel count. `swap_*_bytes` omitted when total is 0,
 kept (including used 0) when the host has swap. `kernel_threads` /

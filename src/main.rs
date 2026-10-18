@@ -7,7 +7,10 @@ use clap::{CommandFactory, Parser, error::ErrorKind};
 use heft::cli::{Cli, Glyphs};
 
 fn main() -> ExitCode {
-    let cli = Cli::parse();
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(e) => return clap_done(e),
+    };
     // Before sampling, not after: the TUI cannot open a terminal it has not
     // got, and surfacing that at the end of a `/proc` walk would burn a whole
     // `--interval` first. Non-zero, and no quiet fall back to `--once`, which
@@ -21,10 +24,9 @@ fn main() -> ExitCode {
         && cli.explain.is_none()
         && !std::io::stdout().is_terminal()
     {
-        eprintln!(
-            "heft: the TUI needs a terminal on stdout. Use --once for one table, or --json for one JSON document."
+        usage(
+            "the TUI needs a terminal on stdout. Use --once for one table, or --json for one JSON document.",
         );
-        return ExitCode::FAILURE;
     }
     // Before any sampling: it reads rule files and nothing else, so it runs
     // in a container with no `/proc` worth walking and no docker socket.
@@ -89,10 +91,10 @@ fn exit_code(result: Result<bool, heft::types::Error>) -> ExitCode {
         // than killing us. `heft --once | head` is the normal case, not a
         // failure, so exit quietly instead of reporting it.
         Err(e) if is_broken_pipe(e.as_ref()) => ExitCode::SUCCESS,
-        Ok(false) => ExitCode::FAILURE,
+        Ok(false) => ExitCode::from(1),
         Err(e) => {
-            eprintln!("{e}");
-            ExitCode::FAILURE
+            eprintln!("heft: {e}");
+            ExitCode::from(128)
         }
     }
 }
@@ -178,10 +180,40 @@ fn check_interval(flag: &str, secs: f64) -> Duration {
     ))
 }
 
-/// Every invalid typed value exits the way clap's own does: same prefix,
-/// usage line and exit code.
+fn clap_done(err: clap::Error) -> ExitCode {
+    match err.kind() {
+        ErrorKind::DisplayHelp | ErrorKind::DisplayVersion => {
+            let _ = err.print();
+            ExitCode::SUCCESS
+        }
+        _ => usage(clap_msg(&err)),
+    }
+}
+
+fn clap_msg(err: &clap::Error) -> String {
+    let rendered = err.to_string();
+    let line = rendered
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .unwrap_or_default();
+    line.strip_prefix("error:")
+        .unwrap_or(line)
+        .trim()
+        .to_string()
+}
+
+/// Typed and clap usage errors: `heft: <message>` then the usage line, exit 129.
 fn usage(msg: impl std::fmt::Display) -> ! {
-    Cli::command().error(ErrorKind::InvalidValue, msg).exit()
+    let msg = msg
+        .to_string()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    eprintln!("heft: {msg}");
+    let usage = Cli::command().render_usage().to_string();
+    eprintln!("{}", usage.replacen("Usage:", "usage:", 1));
+    std::process::exit(129);
 }
 
 /// A typo on the command line is told to the user, where `Sort::from_label`
@@ -192,7 +224,7 @@ fn check_column<'a>(flag: &str, label: &'a str, labels: &[&'static str]) -> &'a 
         return label;
     }
     usage(format!(
-        "invalid value '{label}' for '--{flag} <COLUMN>'\n  [possible values: {}]",
+        "invalid value '{label}' for '--{flag} <COLUMN>': possible values: {}",
         labels.join(", ")
     ))
 }
@@ -243,6 +275,14 @@ fn is_broken_pipe(e: &(dyn std::error::Error + 'static)) -> bool {
 mod tests {
     use super::is_broken_pipe;
     use std::io::{Error, ErrorKind};
+
+    #[test]
+    fn an_internal_error_exits_128() {
+        assert_eq!(
+            super::exit_code(Err("disk full".into())),
+            std::process::ExitCode::from(128)
+        );
+    }
 
     #[test]
     fn only_a_closed_pipe_exits_quietly() {

@@ -86,6 +86,7 @@ fn sample() -> &'static Sample {
             String::from_utf8_lossy(&out.stderr)
         );
         let doc: Value = serde_json::from_slice(&out.stdout).expect("--json emits valid JSON");
+        assert_eq!(doc["schema"], 1, "--json documents carry schema");
         Sample {
             host: doc["host"].clone(),
             self_pid,
@@ -425,11 +426,30 @@ fn an_interval_no_duration_holds_is_a_usage_error() {
         let out = heft(&["--once", flag, "1e30"]).output().expect("run heft");
         assert_eq!(
             out.status.code(),
-            Some(2),
+            Some(129),
             "{flag} 1e30 must be a usage error: {}",
             String::from_utf8_lossy(&out.stderr)
         );
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(err.starts_with("heft: "), "{err}");
+        assert!(!err.contains("error:"), "{err}");
     }
+}
+
+/// Piped stdout is not a terminal. The TUI must not fall back to `--once`.
+#[test]
+fn a_tui_without_a_terminal_is_a_usage_error() {
+    let out = heft(&[]).output().expect("run heft");
+    assert_eq!(
+        out.status.code(),
+        Some(129),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.starts_with("heft: "), "{err}");
+    assert!(err.contains("needs a terminal"), "{err}");
+    assert!(!err.contains("error:"), "{err}");
 }
 
 /// heft's own process node in a published tree, wherever the grouping put it.
@@ -722,9 +742,12 @@ fn check_rules_passes_the_built_ins_and_fails_a_wrong_user_example() {
         .expect("run heft --check-rules --once");
     assert_eq!(
         usage.status.code(),
-        Some(2),
+        Some(129),
         "a flag conflict is a usage error"
     );
+    let err = String::from_utf8_lossy(&usage.stderr);
+    assert!(err.starts_with("heft: "), "{err}");
+    assert!(!err.contains("error:"), "{err}");
 }
 
 /// The trace names the user rule that matches the identity `--explain`

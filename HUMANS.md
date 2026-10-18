@@ -65,10 +65,10 @@ heft --check-rules        # examples in every rules.d file
 heft --fixture > heft-fixture.json
 ```
 
-The TUI needs a terminal: redirected stdout exits non-zero rather than falling
-back to `--once`. `q`, `Esc` and `Ctrl-C` quit; other `Ctrl-` / `Alt-` chords
-are ignored. On `SIGTERM`, a closed emulator, a logout or a panic, heft
-restores the terminal and exits `128 +` the signal.
+The TUI needs a terminal: redirected stdout is a usage error (exit 129) rather
+than falling back to `--once`. `q`, `Esc` and `Ctrl-C` quit; other `Ctrl-` /
+`Alt-` chords are ignored. On `SIGTERM`, a closed emulator, a logout or a
+panic, heft restores the terminal and exits `128 +` the signal.
 
 `--interval` (default 1s) is the catch-all walk. `--pss-interval` (default 5s,
 at least `--interval`) is how often the TUI and `--follow` read
@@ -83,8 +83,9 @@ is still accepted. The TUI and `--follow` keep each process's `stat`, `statm`
 and `io` open; expect about three open files per process.
 
 `--follow` needs `--once` or `--json`. Closing the reader ends any mode
-quietly (`| head` exits 0). Every JSON document carries `interval_secs` and
-`host.sampled_at`; `--json --follow` also carries `pss_interval_secs`.
+quietly (`| head` exits 0). Every JSON document carries `"schema": 1` first,
+then `interval_secs` and `host.sampled_at`; `--json --follow` also carries
+`pss_interval_secs`.
 
 Flags beat `view.json`. `--once` starts from the saved view; `--json` never
 reads it. `--top`, `--hide` and `--order` are refused with `--json`; `--trend`

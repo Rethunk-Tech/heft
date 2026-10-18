@@ -5,6 +5,8 @@ use std::time::Duration;
 use unicode_truncate::UnicodeTruncateStr;
 use unicode_width::UnicodeWidthStr;
 
+use serde::Serialize;
+
 use crate::config::{self, View};
 use crate::num::f64_of;
 use crate::proc;
@@ -1098,26 +1100,27 @@ fn json_text(
         keep_filtered(&mut tree, &filter);
     }
     sort_tree(&mut tree, Sort::from_label(&view.sort), view.desc);
-    // The `Value` detour is what sorts every key alphabetically, which is the
-    // byte shape `--json` publishes. `warnings` is omitted when empty, and
-    // `pss_interval_secs` when this is not a follow sample: the other optional
-    // arrays in the tree do the same.
-    let mut doc = serde_json::Map::new();
-    doc.insert("host".into(), serde_json::to_value(&tree)?);
-    doc.insert(
-        "interval_secs".into(),
-        serde_json::json!(interval.as_secs_f64()),
-    );
-    if let Some(pss) = pss_interval {
-        doc.insert(
-            "pss_interval_secs".into(),
-            serde_json::json!(pss.as_secs_f64()),
-        );
+    // A struct serializes in field order, so `schema` is first. `host` still
+    // goes through `Value` so its keys stay the alphabetical byte shape.
+    // `warnings` is omitted when empty, and `pss_interval_secs` when this is
+    // not a follow sample: the other optional arrays in the tree do the same.
+    #[derive(Serialize)]
+    struct Envelope {
+        schema: u8,
+        host: serde_json::Value,
+        interval_secs: f64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pss_interval_secs: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        warnings: Option<[String; 1]>,
     }
-    if let Some(wording) = coverage_warning(&tree) {
-        doc.insert("warnings".into(), serde_json::json!([wording]));
-    }
-    let doc = serde_json::Value::Object(doc);
+    let doc = Envelope {
+        schema: 1,
+        host: serde_json::to_value(&tree)?,
+        interval_secs: interval.as_secs_f64(),
+        pss_interval_secs: pss_interval.map(|pss| pss.as_secs_f64()),
+        warnings: coverage_warning(&tree).map(|wording| [wording]),
+    };
     // `println!` panics when the reader closes, and the release profile is
     // `panic = abort`, so `heft --json | head` would abort. Serialize first,
     // then write through `io::Write`: serializing into the stream instead
@@ -1881,10 +1884,13 @@ mod tests {
         let interval = Duration::from_secs_f64(1.5);
         let pss = Duration::from_secs(5);
         for pretty in [true, false] {
-            let once: serde_json::Value = serde_json::from_str(
-                &json_text(&tree, &View::default(), pretty, interval, None).unwrap(),
-            )
-            .unwrap();
+            let once_text = json_text(&tree, &View::default(), pretty, interval, None).unwrap();
+            assert!(
+                once_text.starts_with("{\n  \"schema\":") || once_text.starts_with("{\"schema\":"),
+                "schema is the first key: {once_text}"
+            );
+            let once: serde_json::Value = serde_json::from_str(&once_text).unwrap();
+            assert_eq!(once["schema"], 1);
             assert_eq!(once["interval_secs"].as_f64(), Some(interval.as_secs_f64()));
             assert!(once.get("pss_interval_secs").is_none());
             assert!(once.get("warnings").is_none());
@@ -1895,6 +1901,7 @@ mod tests {
                 &json_text(&tree, &View::default(), pretty, interval, Some(pss)).unwrap(),
             )
             .unwrap();
+            assert_eq!(follow["schema"], 1);
             assert_eq!(
                 follow["interval_secs"].as_f64(),
                 Some(interval.as_secs_f64())

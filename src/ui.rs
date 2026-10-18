@@ -874,6 +874,16 @@ fn expand_procs(prefix: &str, procs: &[ProcNode], expand: &mut HashSet<String>) 
     }
 }
 
+/// `s` reports a write failure in the footer rather than leaving the TUI:
+/// the terminal is restored either way, but quitting is not how a full disk
+/// or a permissioned config dir is corrected.
+fn view_save_status(result: Result<(), Error>) -> String {
+    match result {
+        Ok(()) => format!("saved {}", config::view_path().display()),
+        Err(e) => format!("save failed: {e}"),
+    }
+}
+
 fn handle_key(
     app: &mut App,
     code: KeyCode,
@@ -928,10 +938,7 @@ fn handle_key(
         KeyCode::Char('N') => jump_match(app, rows, true),
         KeyCode::Char('E') => expand_tree(&app.tree, &mut app.expand),
         KeyCode::Char('c') => app.expand = default_expand(),
-        KeyCode::Char('s' | 'S') => {
-            config::save_view(&app.view)?;
-            app.status = format!("saved {}", config::view_path().display());
-        }
+        KeyCode::Char('s' | 'S') => app.status = view_save_status(config::save_view(&app.view)),
         KeyCode::Char('d') => app.view.desc = !app.view.desc,
         KeyCode::Char('H') => {
             let label = app.view.sort.clone();
@@ -3393,5 +3400,14 @@ mod tests {
         assert!(shown.iter().any(|r| row_pid(&r.id) == Some(11)));
         handle_key(&mut app, KeyCode::Char('c'), none, &shown).unwrap();
         assert_eq!(app.expand, default_expand());
+    }
+
+    #[test]
+    fn a_failed_view_save_is_a_status_not_an_error() {
+        let msg = view_save_status(Err("permission denied".into()));
+        assert!(msg.starts_with("save failed: "), "{msg}");
+        assert!(msg.contains("permission denied"), "{msg}");
+        let ok = view_save_status(Ok(()));
+        assert!(ok.starts_with("saved "), "{ok}");
     }
 }

@@ -1,5 +1,5 @@
 use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::io::{self, Write};
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
@@ -161,14 +161,25 @@ fn view_header() -> String {
     )
 }
 
-pub(crate) fn config_dir() -> PathBuf {
-    let base = match std::env::var("XDG_CONFIG_HOME") {
-        Ok(v) if !v.is_empty() => PathBuf::from(v),
-        _ => std::env::var("HOME")
-            .map_or_else(|_| PathBuf::from("/"), PathBuf::from)
-            .join(".config"),
+/// XDG Base Directory: `$XDG_CONFIG_HOME` and `$HOME` must be absolute; a
+/// relative value is ignored rather than creating `heft/` under whatever the
+/// process happened to have as cwd.
+fn config_dir_from(xdg: Option<&str>, home: Option<&str>) -> PathBuf {
+    let base = match xdg {
+        Some(v) if !v.is_empty() && Path::new(v).is_absolute() => PathBuf::from(v),
+        _ => match home {
+            Some(h) if Path::new(h).is_absolute() => PathBuf::from(h).join(".config"),
+            _ => PathBuf::from("/").join(".config"),
+        },
     };
     base.join("heft")
+}
+
+pub(crate) fn config_dir() -> PathBuf {
+    config_dir_from(
+        std::env::var("XDG_CONFIG_HOME").ok().as_deref(),
+        std::env::var("HOME").ok().as_deref(),
+    )
 }
 
 pub(crate) fn view_path() -> PathBuf {
@@ -177,14 +188,20 @@ pub(crate) fn view_path() -> PathBuf {
 
 #[must_use]
 pub fn load_view() -> View {
-    let path = view_path();
-    let Ok(text) = fs::read_to_string(&path) else {
-        return View::default();
-    };
-    parse_view(&text, &path).unwrap_or_else(|warning| {
+    load_view_at(&view_path()).unwrap_or_else(|warning| {
         eprintln!("{warning}");
         View::default()
     })
+}
+
+/// The saved view, or a warning that names `path`. A missing file is the
+/// compiled default and not a warning: most hosts have never pressed `s`.
+fn load_view_at(path: &Path) -> Result<View, String> {
+    match fs::read_to_string(path) {
+        Ok(text) => parse_view(&text, path),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(View::default()),
+        Err(e) => Err(format!("heft: ignoring {}: {e}", path.display())),
+    }
 }
 
 /// The view in `text`, or the one-line warning naming `path` and serde's
@@ -199,13 +216,16 @@ fn parse_view(text: &str, path: &Path) -> Result<View, String> {
 /// Returns an error if the XDG config directory cannot be created or
 /// permissioned, the view cannot be serialized, or the file cannot be written.
 pub(crate) fn save_view(view: &View) -> Result<(), Error> {
-    let dir = config_dir();
+    save_view_at(&config_dir(), view)
+}
+
+fn save_view_at(dir: &Path, view: &View) -> Result<(), Error> {
     fs::DirBuilder::new()
         .recursive(true)
         .mode(0o700)
-        .create(&dir)?;
-    fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))?;
-    let path = view_path();
+        .create(dir)?;
+    fs::set_permissions(dir, fs::Permissions::from_mode(0o700))?;
+    let path = dir.join("view.json");
     let data = format!("{}{}\n", view_header(), serde_json::to_string_pretty(view)?);
     // Written beside the target and renamed over it, so a full disk or a kill
     // mid-write leaves the previous view.json whole rather than truncated.
@@ -323,5 +343,56 @@ mod tests {
     fn an_unterminated_block_comment_does_not_panic() {
         assert!(serde_json::from_str::<View>(&strip_comments("{ /* oops")).is_err());
         assert_eq!(strip_comments(""), "");
+    }
+
+    /// XDG requires the base directories to be absolute. A relative value would
+    /// create `heft/` under the cwd, which is how a world-writable working
+    /// directory becomes a write of view.json.
+    #[test]
+    fn a_relative_xdg_or_home_is_ignored() {
+        assert_eq!(
+            config_dir_from(Some("/xdg"), Some("/home/u")),
+            PathBuf::from("/xdg/heft")
+        );
+        assert_eq!(
+            config_dir_from(Some("relative/config"), Some("/home/u")),
+            PathBuf::from("/home/u/.config/heft")
+        );
+        assert_eq!(
+            config_dir_from(Some(""), Some("/home/u")),
+            PathBuf::from("/home/u/.config/heft")
+        );
+        assert_eq!(
+            config_dir_from(None, Some("relative-home")),
+            PathBuf::from("/.config/heft")
+        );
+        assert_eq!(config_dir_from(None, None), PathBuf::from("/.config/heft"));
+    }
+
+    #[test]
+    fn a_missing_view_is_the_default_and_an_unreadable_one_warns() {
+        let dir = std::env::temp_dir().join(format!("heft-view-load-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("view.json");
+        assert_eq!(load_view_at(&path).unwrap().sort, View::default().sort);
+        fs::create_dir(&path).unwrap();
+        let warning = load_view_at(&path).unwrap_err();
+        fs::remove_dir_all(&dir).ok();
+        assert!(
+            warning.starts_with(&format!("heft: ignoring {}: ", path.display())),
+            "{warning}"
+        );
+    }
+
+    #[test]
+    fn a_save_that_cannot_create_the_directory_is_an_error() {
+        let dir = std::env::temp_dir().join(format!("heft-view-save-{}", std::process::id()));
+        let _ = fs::remove_file(&dir);
+        fs::write(&dir, b"not a directory").unwrap();
+        let err = save_view_at(&dir, &View::default()).unwrap_err();
+        fs::remove_file(&dir).ok();
+        let msg = err.to_string();
+        assert!(!msg.is_empty(), "{msg}");
     }
 }

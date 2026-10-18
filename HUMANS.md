@@ -333,7 +333,9 @@ Only regular files (or symlinks) ending `.json`. ASCII case is ignored.
 
 A `match` holds one test: `name` / `name_prefix` / `name_suffix` /
 `name_contains` (`comm` and display name); `exe_*`; `arg_*` (each argument);
-`cgroup_*`; `unit_*`. `identity` and `container` are placement-only; `script`
+`cgroup_*`; `cwd_*` (`/proc/<pid>/cwd`; empty is a miss, never `/`; write a
+home path as `~`, the same rewrite `--fixture` applies to `$HOME`); `unit_*`.
+`identity` and `container` are placement-only; `script`
 only on a `class` rule whose classes are `["anonymous_script"]`. Lists are
 any-of; `all`, `any`, `not` combine. `{"not": {"exe_prefix": "/usr"}}` matches
 a process whose `exe` heft cannot read. Placement never moves a container or

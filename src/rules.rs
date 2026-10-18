@@ -100,6 +100,10 @@ pub enum Match {
     CgroupPrefix(Pat),
     CgroupSuffix(Pat),
     CgroupContains(Pat),
+    Cwd(Pat),
+    CwdPrefix(Pat),
+    CwdSuffix(Pat),
+    CwdContains(Pat),
     Unit(Pat),
     UnitPrefix(Pat),
     UnitSuffix(Pat),
@@ -218,6 +222,10 @@ pub struct Example {
     pub cmdline: Vec<String>,
     #[serde(default)]
     pub cgroup: String,
+    /// `/proc/<pid>/cwd`; empty when unread. Home paths in examples are `~`,
+    /// the same rewrite `--fixture` applies to `$HOME`.
+    #[serde(default)]
+    pub cwd: String,
     #[serde(default)]
     pub unit: Option<String>,
     #[serde(default)]
@@ -249,6 +257,7 @@ enum Field {
     Exe,
     Arg,
     Cgroup,
+    Cwd,
     Unit,
     Script,
     Identity,
@@ -333,6 +342,7 @@ pub struct Facts<'a> {
     pub exe: Option<&'a str>,
     pub argv: &'a [String],
     pub cgroup: &'a str,
+    pub cwd: &'a str,
     pub unit: Option<&'a str>,
     pub script: Option<&'a str>,
     pub identity: Option<&'a str>,
@@ -464,7 +474,7 @@ struct CompileCtx {
 }
 
 fn compile_match(m: Match, ctx: &mut CompileCtx) -> Result<Test, String> {
-    use Field::{Arg, Cgroup, Container, Exe, Identity, Name, Script, Unit};
+    use Field::{Arg, Cgroup, Container, Cwd, Exe, Identity, Name, Script, Unit};
     use Op::{Contains, Prefix, Suffix};
     Ok(match m {
         Match::Name(p) => Test::Eq(Name, bucket(pat(p)?)),
@@ -483,6 +493,10 @@ fn compile_match(m: Match, ctx: &mut CompileCtx) -> Result<Test, String> {
         Match::CgroupPrefix(p) => Test::Str(Cgroup, Prefix, pat(p)?),
         Match::CgroupSuffix(p) => Test::Str(Cgroup, Suffix, pat(p)?),
         Match::CgroupContains(p) => Test::Str(Cgroup, Contains, pat(p)?),
+        Match::Cwd(p) => Test::Eq(Cwd, bucket(pat(p)?)),
+        Match::CwdPrefix(p) => Test::Str(Cwd, Prefix, pat(p)?),
+        Match::CwdSuffix(p) => Test::Str(Cwd, Suffix, pat(p)?),
+        Match::CwdContains(p) => Test::Str(Cwd, Contains, pat(p)?),
         Match::Unit(p) => Test::Eq(Unit, bucket(pat(p)?)),
         Match::UnitPrefix(p) => Test::Str(Unit, Prefix, pat(p)?),
         Match::UnitSuffix(p) => Test::Str(Unit, Suffix, pat(p)?),
@@ -1046,6 +1060,7 @@ impl Subject {
             exe: ex.exe.as_deref(),
             argv: &ex.cmdline,
             cgroup: &ex.cgroup,
+            cwd: &ex.cwd,
             unit: ex.unit.as_deref().or(self.unit.as_deref()),
             script: self.script.as_deref(),
             identity: ex.identity.as_deref(),
@@ -1117,6 +1132,7 @@ fn eval(t: &Test, f: &Facts) -> bool {
             Field::Exe => f.exe.is_some_and(|e| hit(*o, pats, e)),
             Field::Arg => f.argv.iter().any(|a| hit(*o, pats, a)),
             Field::Cgroup => hit(*o, pats, f.cgroup),
+            Field::Cwd => !f.cwd.is_empty() && hit(*o, pats, f.cwd),
             Field::Unit => f.unit.is_some_and(|u| hit(*o, pats, u)),
             Field::Script => f.script.is_some_and(|s| hit(*o, pats, s)),
             Field::Identity => f.identity.is_some_and(|s| hit(*o, pats, s)),
@@ -1137,6 +1153,7 @@ fn eval(t: &Test, f: &Facts) -> bool {
                 Field::Identity => f.identity.is_some_and(one),
                 Field::Container => f.container.is_some_and(one),
                 Field::Cgroup => one(f.cgroup),
+                Field::Cwd => !f.cwd.is_empty() && one(f.cwd),
             }
         }
         Test::All(v) => v.iter().all(|t| eval(t, f)),
@@ -1375,7 +1392,7 @@ mod tests {
 
     #[test]
     fn every_string_test_folds_ascii_case_on_both_sides() {
-        const TESTS: [&str; 23] = [
+        const TESTS: [&str; 27] = [
             "name",
             "name_prefix",
             "name_suffix",
@@ -1392,6 +1409,10 @@ mod tests {
             "cgroup_prefix",
             "cgroup_suffix",
             "cgroup_contains",
+            "cwd",
+            "cwd_prefix",
+            "cwd_suffix",
+            "cwd_contains",
             "unit",
             "unit_prefix",
             "unit_suffix",
@@ -1428,6 +1449,7 @@ mod tests {
                     exe: Some(hay),
                     argv: &argv,
                     cgroup: hay,
+                    cwd: hay,
                     unit: Some(hay),
                     script: Some(hay),
                     identity: (key != "container").then_some(hay),
@@ -1542,6 +1564,77 @@ mod tests {
         assert_eq!(hit("0::/INIT.SCOPE"), ["noise"]);
         assert!(hit("0::/init.scope/").is_empty());
         assert!(hit("0::/user.slice").is_empty());
+    }
+
+    #[test]
+    fn cwd_equals_the_whole_path_and_empty_is_a_miss() {
+        let r = Rules::from_files(&[file(
+            "10-x.json",
+            r#"{"stage":"class","rules":[{"id":"t","match":{"cwd":"~/src/foo"},"classes":["noise"]}]}"#,
+        )]);
+        assert!(r.problems.is_empty(), "{:?}", r.problems);
+        let hit = |cwd: &str| {
+            r.classes(&Facts {
+                comm: "make",
+                name: "make",
+                cwd,
+                ..Facts::default()
+            })
+            .names()
+        };
+        assert_eq!(hit("~/src/foo"), ["noise"]);
+        assert_eq!(hit("~/SRC/FOO"), ["noise"]);
+        assert!(hit("~/src/foo/bar").is_empty());
+        assert!(hit("").is_empty(), "empty cwd is unread, not /");
+        assert!(hit("/").is_empty());
+    }
+
+    #[test]
+    fn cwd_prefix_and_suffix_match_the_path_ends() {
+        let r = Rules::from_files(&[file(
+            "10-x.json",
+            r#"{"stage":"class","rules":[
+                {"id":"pre","match":{"cwd_prefix":"~/src"},"classes":["shell"]},
+                {"id":"suf","match":{"cwd_suffix":"/heft"},"classes":["noise"]}
+            ]}"#,
+        )]);
+        assert!(r.problems.is_empty(), "{:?}", r.problems);
+        let names = |cwd: &str| {
+            r.classes(&Facts {
+                comm: "x",
+                name: "x",
+                cwd,
+                ..Facts::default()
+            })
+            .names()
+        };
+        assert_eq!(names("~/src/heft"), ["shell", "noise"]);
+        assert_eq!(names("~/src"), ["shell"]);
+        assert_eq!(names("/opt/heft"), ["noise"]);
+        assert!(
+            names("").is_empty(),
+            "empty cwd matches no prefix or suffix"
+        );
+        assert!(
+            names("/").is_empty(),
+            "slash is not the fixture home rewrite"
+        );
+    }
+
+    #[test]
+    fn a_fixture_example_cwd_uses_tilde_and_empty_misses() {
+        let r = Rules::from_files(&[file(
+            "90-cwd.json",
+            r#"{"stage":"session","rules":[{"id":"src","match":{"cwd_prefix":"~/src"},"identity":"src","folder":"applications"}],
+               "examples":[
+                 {"comm":"make","cwd":"~/src/foo","expect":{"rule":"src","identity":"src","folder":"applications"}},
+                 {"comm":"make","cwd":"","expect":null},
+                 {"comm":"make","expect":null}
+               ]}"#,
+        )]);
+        assert!(r.problems.is_empty(), "{:?}", r.problems);
+        let report = r.report(&r);
+        assert_eq!(report.failed, 0, "{:?}", report.lines);
     }
 
     #[test]
@@ -1725,6 +1818,7 @@ mod tests {
             exe: Some("/usr/bin/gjs-console"),
             argv: &argv,
             cgroup: "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-x.scope",
+            cwd: "~/src/heft",
             unit: Some("app-org.chromium.Chromium-1.scope"),
             ..Facts::default()
         };

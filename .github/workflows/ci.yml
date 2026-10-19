@@ -27,12 +27,39 @@ jobs:
       # `gate` was `cargo test --locked`. One list now, each step the command
       # that file names. `if: !cancelled()` keeps later gates reporting after
       # an earlier failure.
-      - uses: cargo-bins/cargo-binstall@8a2045612414e945291083f820cd50b4d8fc2218 # v1.26.0
-        if: ${{ !cancelled() }}
-        with:
-          version: "1.26.0"
       - if: ${{ !cancelled() }}
-        run: cargo binstall --no-confirm cargo-deny@0.20.2 cargo-machete@0.9.2
+        env:
+          ACTIONLINT_VERSION: "1.7.12"
+          ACTIONLINT_SHA256: "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+          CARGO_DENY_VERSION: "0.20.2"
+          CARGO_DENY_SHA256: "9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f"
+          CARGO_MACHETE_VERSION: "0.9.2"
+          CARGO_MACHETE_SHA256: "48200087f54c55aabcd4db4af1e25742b49846c02a1b1bfa134711945b35b2e9"
+        run: |
+          set -euo pipefail
+          bin="$RUNNER_TEMP/bin"
+          mkdir -p "$bin"
+          fetch() {
+            url=$1 sha=$2 dest=$3
+            curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+              --output "$dest" "$url"
+            echo "$sha  $dest" | sha256sum --check --strict
+          }
+          fetch "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" \
+            "$ACTIONLINT_SHA256" "$RUNNER_TEMP/actionlint.tar.gz"
+          tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$bin" actionlint
+          tarball="cargo-deny-${CARGO_DENY_VERSION}-x86_64-unknown-linux-musl.tar.gz"
+          fetch "https://github.com/EmbarkStudios/cargo-deny/releases/download/${CARGO_DENY_VERSION}/$tarball" \
+            "$CARGO_DENY_SHA256" "$RUNNER_TEMP/$tarball"
+          tar -xzf "$RUNNER_TEMP/$tarball" --strip-components=1 -C "$bin" \
+            "cargo-deny-${CARGO_DENY_VERSION}-x86_64-unknown-linux-musl/cargo-deny"
+          tarball="cargo-machete-v${CARGO_MACHETE_VERSION}-x86_64-unknown-linux-musl.tar.gz"
+          fetch "https://github.com/bnjbvr/cargo-machete/releases/download/v${CARGO_MACHETE_VERSION}/$tarball" \
+            "$CARGO_MACHETE_SHA256" "$RUNNER_TEMP/$tarball"
+          tar -xzf "$RUNNER_TEMP/$tarball" -C "$RUNNER_TEMP"
+          install -m 0755 "$(find "$RUNNER_TEMP" -type f -name cargo-machete | head -n1)" \
+            "$bin/cargo-machete"
+          echo "$bin" >> "$GITHUB_PATH"
       - id: fmt
         if: ${{ !cancelled() }}
         continue-on-error: true
@@ -64,11 +91,7 @@ jobs:
       - id: actionlint
         if: ${{ !cancelled() }}
         continue-on-error: true
-        run: |
-          bash <(curl --fail --silent --show-error --location \
-            https://raw.githubusercontent.com/rhysd/actionlint/011a6d15e749bb3f2d771eed9c7aa0e7e3e10ee7/scripts/download-actionlint.bash) \
-            1.7.12 "$RUNNER_TEMP"
-          "$RUNNER_TEMP/actionlint" .github/workflows/*.yml
+        run: actionlint .github/workflows/*.yml
       - id: shellcheck
         if: ${{ !cancelled() }}
         continue-on-error: true

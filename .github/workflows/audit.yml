@@ -25,8 +25,19 @@ jobs:
       - uses: Rethunk-Tech/gh-actions/setup-rust@043d9f8fb8b04b983fa8f7012b28241fd20f17b4 # v1.18
         with:
           toolchain: stable
-      - uses: cargo-bins/cargo-binstall@8a2045612414e945291083f820cd50b4d8fc2218 # v1.26.0
-        with:
-          version: "1.26.0"
-      - run: cargo binstall --no-confirm cargo-deny@0.20.2
+      - env:
+          CARGO_DENY_VERSION: "0.20.2"
+          CARGO_DENY_SHA256: "9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f"
+        run: |
+          set -euo pipefail
+          bin="$RUNNER_TEMP/bin"
+          mkdir -p "$bin"
+          tarball="cargo-deny-${CARGO_DENY_VERSION}-x86_64-unknown-linux-musl.tar.gz"
+          curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+            --output "$RUNNER_TEMP/$tarball" \
+            "https://github.com/EmbarkStudios/cargo-deny/releases/download/${CARGO_DENY_VERSION}/$tarball"
+          echo "$CARGO_DENY_SHA256  $RUNNER_TEMP/$tarball" | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/$tarball" --strip-components=1 -C "$bin" \
+            "cargo-deny-${CARGO_DENY_VERSION}-x86_64-unknown-linux-musl/cargo-deny"
+          echo "$bin" >> "$GITHUB_PATH"
       - run: cargo deny --locked check

@@ -319,6 +319,91 @@ mod tests {
     }
 
     #[test]
+    fn name_ref_prefers_a_real_exe_basename_over_comm() {
+        let at = |exe: &str, comm: &str| Process {
+            comm: comm.into(),
+            exe: Some(exe.into()),
+            ..Process::default()
+        };
+        for (exe, comm, want) in [
+            ("/usr/bin/firefox", "GeckoMain", "firefox"),
+            ("/usr/bin/tdeinit", "konsole", "konsole"),
+            ("/usr/bin/tdeinit", "", "tdeinit"),
+            ("/proc/1/exe", "real", "real"),
+            ("/x/[anon]", "real", "real"),
+            ("", "real", "real"),
+        ] {
+            assert_eq!(name_ref(&at(exe, comm)), want, "{exe} / {comm}");
+        }
+    }
+
+    /// unshare has no `--` before its command: option values are skipped, the
+    /// first bare argument is the payload, and an explicit `--` takes the next.
+    #[test]
+    fn unshare_payload_skips_options_and_their_values() {
+        let cmd = |args: &[&str]| args.iter().map(|s| (*s).to_string()).collect::<Vec<_>>();
+        for (args, want) in [
+            (
+                &["unshare", "-r", "--map-user", "1000", "/usr/bin/foo"][..],
+                Some("foo"),
+            ),
+            (
+                &["unshare", "--root=/srv", "-w", "/srv", "bar"],
+                Some("bar"),
+            ),
+            (&["unshare", "-r", "--", "--weird"], Some("--weird")),
+            (&["unshare", "-r"], None),
+        ] {
+            assert_eq!(unshare_payload(&cmd(args)), want, "{args:?}");
+        }
+        assert_eq!(
+            launcher_payload_hint(&p("unshare", &["unshare", "-U", "baz"]), &Rules::builtin())
+                .as_deref(),
+            Some("baz")
+        );
+    }
+
+    #[test]
+    fn launcher_payload_hint_reads_only_after_the_last_double_dash() {
+        let launcher = p(
+            "zypak-wrapper",
+            &["zypak-wrapper", "word", "--", "/opt/app/real"],
+        );
+        assert_eq!(
+            launcher_payload_hint(&launcher, &Rules::builtin()).as_deref(),
+            Some("real")
+        );
+    }
+
+    #[test]
+    fn an_appimage_mount_is_a_temp_dir_named_by_its_launcher() {
+        let prefix = ".mount_grok_b";
+        for (exe, want) in [
+            ("/tmp/.mount_grok_bHb2bit/usr/bin/grok", true),
+            ("/run/user/1000/.mount_grok_bHb2bit/grok", true),
+            ("/home/u/.mount_grok_bHb2bit/grok", false),
+            ("/tmp/.mount_grok_bXY/grok", false),
+        ] {
+            assert_eq!(in_appimage_mount(exe, prefix), want, "{exe}");
+        }
+    }
+
+    #[test]
+    fn a_generic_child_folds_only_into_a_parent_of_no_refusing_class() {
+        assert!(absorbs_generic(Classes::empty()));
+        for c in [
+            Classes::GENERIC,
+            Classes::LAUNCHER,
+            Classes::SHELL,
+            Classes::TERMINAL,
+            Classes::COMPOSITOR,
+            Classes::NO_ABSORB,
+        ] {
+            assert!(!absorbs_generic(c), "{c:?}");
+        }
+    }
+
+    #[test]
     fn appimage_launcher_hint_ignores_case() {
         // Shipping AppImages are mixed case; every other fixture here is not.
         let cursor = Process {

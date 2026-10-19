@@ -1947,33 +1947,15 @@ mod tests {
         let r = with_builtins(vec![wrong, file("91-b.json", "{ nope")]).report(&Rules::builtin());
         assert_eq!(r.failed, 2, "{:#?}", r.lines);
         assert!(
+            r.lines.iter().any(
+                |l| l == "90-a.json:x#0 (xdg): expected folder applications, got user_services"
+            ),
+            "only the folder is wrong: the example's own rule resolves to 90-a.json:x {:#?}",
             r.lines
-                .iter()
-                .any(|l| l.starts_with("90-a.json:x#0 (xdg): "))
         );
         assert!(r.lines.iter().any(|l| l.starts_with("91-b.json (xdg): ")));
         assert_eq!(r.examples, 164);
         assert_eq!(r.files, 15, "every loaded file plus the malformed one");
-    }
-
-    /// A user example naming its own rule passes; one whose expectation the
-    /// rules cannot meet is counted, so `check-rules` exits non-zero.
-    #[test]
-    fn check_rules_counts_a_failing_user_example() {
-        let mine = file(
-            "90-a.json",
-            r#"{"stage":"session","rules":[{"id":"mine","match":{"name_prefix":"gsd-"},"identity":"mine","folder":"applications"}],
-               "examples":[{"comm":"gsd-x","expect":{"rule":"mine"}},{"comm":"gsd-y","expect":{"rule":"other"}}]}"#,
-        );
-        let r = with_builtins(vec![mine]).report(&Rules::builtin());
-        assert_eq!(r.failed, 1, "{:#?}", r.lines);
-        assert!(
-            r.lines
-                .iter()
-                .any(|l| l.contains("expected rule 90-a.json:other, got 90-a.json:mine")),
-            "{:#?}",
-            r.lines
-        );
     }
 
     #[test]

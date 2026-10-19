@@ -21,7 +21,7 @@
 //! a terminal has no graphics support would be to wait out the full timeout on
 //! every start.
 
-use std::io::Write;
+use std::io::{IsTerminal, Write};
 use std::time::Duration;
 
 /// What the terminal said it can do.
@@ -39,6 +39,11 @@ const QUERY: &str = "\x1b_Gi=4919,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\\x1b[c";
 /// ever waited out in full by a terminal that answers neither query, which is
 /// rare enough that `--trend chars` is the answer for it anyway.
 const TIMEOUT: Duration = Duration::from_millis(400);
+
+/// DA1 and the kitty reply are tens of bytes. Past this the stream is not a
+/// capability answer — a redirected stdin that never contains `c` must not
+/// grow the buffer for the whole timeout.
+const MAX_REPLY: usize = 4096;
 
 /// Read the two replies out of whatever the terminal sent back.
 ///
@@ -70,8 +75,13 @@ fn done(s: &str) -> bool {
 /// line-buffered and echoed into the screen.
 ///
 /// Returns nothing found on any failure — a terminal that cannot be asked is
-/// one heft draws characters for.
+/// one heft draws characters for. A non-terminal stdin is that case: there is
+/// no DA1 coming, and reading it would be a 400ms busy-copy of whatever is
+/// piped in.
 pub(crate) fn probe() -> Caps {
+    if !std::io::stdin().is_terminal() {
+        return Caps::default();
+    }
     let mut out = std::io::stdout();
     if out.write_all(QUERY.as_bytes()).is_err() || out.flush().is_err() {
         return Caps::default();
@@ -96,12 +106,21 @@ pub(crate) fn probe() -> Caps {
         if n == 0 {
             break;
         }
-        buf.push_str(&String::from_utf8_lossy(&chunk[..n]));
-        if done(&buf) {
+        if absorb(&mut buf, &chunk[..n]) {
             break;
         }
     }
     parse_reply(&buf)
+}
+
+/// Append a chunk, then stop on a complete DA1 or once `MAX_REPLY` is full.
+fn absorb(buf: &mut String, bytes: &[u8]) -> bool {
+    let room = MAX_REPLY.saturating_sub(buf.len());
+    if room == 0 {
+        return true;
+    }
+    buf.push_str(&String::from_utf8_lossy(&bytes[..bytes.len().min(room)]));
+    buf.len() >= MAX_REPLY || done(buf)
 }
 
 /// `poll` rather than a non-blocking read spun in a loop: the reply arrives
@@ -195,5 +214,35 @@ mod tests {
         );
         assert!(done("\x1b[?62;4;22c"));
         assert!(done("\x1b_Gi=4919;OK\x1b\\\x1b[?62;22c"));
+    }
+
+    #[test]
+    fn the_read_stops_once_the_buffer_is_full() {
+        let mut buf = String::new();
+        let chunk = [b'x'; 256];
+        let mut stopped = false;
+        for _ in 0..32 {
+            if absorb(&mut buf, &chunk) {
+                stopped = true;
+                break;
+            }
+        }
+        assert!(stopped);
+        assert_eq!(buf.len(), MAX_REPLY);
+        absorb(&mut buf, &chunk);
+        assert_eq!(buf.len(), MAX_REPLY, "a later chunk must not grow it");
+    }
+
+    #[test]
+    fn a_non_terminal_stdin_is_not_read() {
+        if std::io::stdin().is_terminal() {
+            return;
+        }
+        let t = std::time::Instant::now();
+        assert_eq!(probe(), Caps::default());
+        assert!(
+            t.elapsed() < Duration::from_millis(50),
+            "piped stdin must not wait out the probe timeout"
+        );
     }
 }

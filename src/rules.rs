@@ -1859,11 +1859,11 @@ mod tests {
     fn disable_drops_a_file_and_a_rule_across_every_source() {
         let r = with_builtins(vec![file(
             "90-a.json",
-            r#"{"stage":"placement","disable":["10-classes.json:noise","05-units.json","nothing.json"],"rules":[]}"#,
+            r#"{"stage":"placement","disable":["10-classes.json:noise","05-units.json","nothing.json","10-classes.json:nothing"],"rules":[]}"#,
         )]);
         assert!(r.is_empty(Stage::Unit));
         assert!(!r.classes_of_name("cat").intersects(Classes::NOISE));
-        assert_eq!(r.warnings.len(), 1, "{:?}", r.warnings);
+        assert_eq!(r.warnings.len(), 2, "{:?}", r.warnings);
     }
 
     /// `disable` applies to a file name in every source, so a user file named
@@ -1882,6 +1882,54 @@ mod tests {
             ..Facts::default()
         };
         assert_eq!(r.session(&kicker), None);
+    }
+
+    #[test]
+    fn a_placement_example_checks_fold_to_and_owner_uid() {
+        let r = Rules::from_files(&[file(
+            "90-a.json",
+            r#"{"stage":"placement","rules":[
+                {"id":"f","match":{"identity":"htop"},"fold_to":"top"},
+                {"id":"o","match":{"container":"c"},"owner_uid":7}],
+               "examples":[
+                 {"identity":"htop","expect":{"fold_to":"top"}},
+                 {"identity":"htop","expect":{"fold_to":"btop"}},
+                 {"container":"c","expect":{"owner_uid":7}},
+                 {"container":"c","expect":{"owner_uid":8}}]}"#,
+        )]);
+        assert!(r.problems.is_empty(), "{:?}", r.problems);
+        let report = r.report(&r);
+        assert_eq!(report.failed, 2, "{:#?}", report.lines);
+        assert!(
+            report.lines[0].ends_with("expected fold_to btop, got top"),
+            "{:#?}",
+            report.lines
+        );
+        assert!(
+            report.lines[1].ends_with("expected owner_uid 8, got 7"),
+            "{:#?}",
+            report.lines
+        );
+    }
+
+    #[test]
+    fn load_dir_warns_on_a_path_it_cannot_list_but_not_a_missing_one() {
+        let src = Source {
+            rank: 0,
+            label: "xdg".into(),
+        };
+        let mut warnings = vec![];
+        assert!(
+            load_dir(
+                std::path::Path::new("/nonexistent/heft"),
+                &src,
+                &mut warnings
+            )
+            .is_empty()
+        );
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert!(load_dir(std::path::Path::new("Cargo.toml"), &src, &mut warnings).is_empty());
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
     }
 
     fn with_builtins(mut files: Vec<LoadedFile>) -> Rules {
@@ -1905,6 +1953,7 @@ mod tests {
         );
         assert!(r.lines.iter().any(|l| l.starts_with("91-b.json (xdg): ")));
         assert_eq!(r.examples, 164);
+        assert_eq!(r.files, 15, "every loaded file plus the malformed one");
     }
 
     #[test]
@@ -1916,6 +1965,7 @@ mod tests {
         );
         let r = with_builtins(vec![mine]).report(&Rules::builtin());
         assert_eq!(r.failed, 0, "{:#?}", r.lines);
+        assert_eq!((r.overridden, r.disabled), (3, 14), "{:#?}", r.lines);
         assert!(
             r.lines
                 .iter()

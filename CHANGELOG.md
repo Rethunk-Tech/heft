@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- `--trend auto` bounds its terminal capability probe, so a terminal that never answers on stdin no longer stalls startup.
+
 ## 0.12.4 - 2026-10-18
 
 ### Added

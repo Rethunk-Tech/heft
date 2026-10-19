@@ -286,17 +286,16 @@ pub(crate) fn script_basename(cmdline: &[String]) -> Option<String> {
 }
 
 pub(crate) fn cmdline_flag_value<'a>(cmdline: &'a [String], flag: &str) -> Option<&'a str> {
-    let mut i = 0;
-    while i < cmdline.len() {
-        if cmdline[i] == flag {
+    for (i, arg) in cmdline.iter().enumerate() {
+        if arg == flag {
             return cmdline.get(i + 1).map(String::as_str);
         }
-        if let Some(rest) = cmdline[i].strip_prefix(flag)
-            && let Some(v) = rest.strip_prefix('=')
+        if let Some(v) = arg
+            .strip_prefix(flag)
+            .and_then(|rest| rest.strip_prefix('='))
         {
             return Some(v);
         }
-        i += 1;
     }
     None
 }

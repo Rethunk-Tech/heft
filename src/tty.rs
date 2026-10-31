@@ -34,6 +34,11 @@ static mut SHM_PATH: [u8; 128] = [0; 128];
 /// The terminal settings from before raw mode, kept for the handler. A signal
 /// handler cannot ask crossterm for them, and it cannot allocate to store them.
 static mut SAVED: MaybeUninit<libc::termios> = MaybeUninit::uninit();
+/// The thread that called `guard`, which is the one that draws. A signal the
+/// kernel hands a sampler thread is forwarded here, because restoring from
+/// another thread races the frame this one is still writing and the frame's
+/// trailing hide-cursor lands after the restore.
+static mut UI_THREAD: MaybeUninit<libc::pthread_t> = MaybeUninit::uninit();
 
 /// Captures the current terminal settings, installs a panic hook, and takes
 /// over the signals that would otherwise kill heft mid-screen.
@@ -47,6 +52,12 @@ pub(crate) fn guard() {
     if !ok {
         return;
     }
+    // SAFETY: as for SAVED.
+    unsafe {
+        (&raw mut UI_THREAD)
+            .cast::<libc::pthread_t>()
+            .write(libc::pthread_self())
+    };
     ARMED.store(true, Ordering::SeqCst);
 
     // Runs even under `panic = abort`: the hook fires, then the process
@@ -71,6 +82,13 @@ pub(crate) fn guard() {
 /// 128 + signal is what a shell reports for a signalled child, so `$?` says
 /// which signal even though heft exited on its own terms.
 extern "C" fn on_signal(sig: libc::c_int) {
+    // SAFETY: the handler is installed only after `guard` wrote UI_THREAD.
+    let ui = unsafe { (&raw const UI_THREAD).cast::<libc::pthread_t>().read() };
+    // SAFETY: `pthread_self` and `pthread_kill` are async-signal-safe.
+    if unsafe { libc::pthread_self() } != ui {
+        unsafe { libc::pthread_kill(ui, sig) };
+        return;
+    }
     restore();
     drop_shm();
     // Not `process::exit`: that runs atexit handlers and destructors, neither

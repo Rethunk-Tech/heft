@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- On Ctrl-C the terminal is restored on the drawing thread, so no stray frame lands after heft exits.
+
 ## 0.12.5 - 2026-10-19
 
 ### Fixed

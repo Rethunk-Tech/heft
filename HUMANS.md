@@ -44,14 +44,25 @@ paru -S heft       # built from the release tag
 paru -S heft-git   # built from main
 ```
 
-Or build it. There is no crates.io package; `cargo install --git
-https://github.com/Rethunk-Tech/heft` is the same as the clone. Completions
-from a local build: [CONTRIBUTING.md](CONTRIBUTING.md#setup).
+Or build it. There is no crates.io package; `cargo install --git` is the
+same as the clone. Completions from a local build:
+[CONTRIBUTING.md](CONTRIBUTING.md#setup). Musl binaries also sit on the
+[latest release](https://github.com/Rethunk-Tech/heft/releases/latest).
+
+```sh
+cargo install --git https://github.com/Rethunk-Tech/heft
+```
 
 ```sh
 git clone https://github.com/Rethunk-Tech/heft.git && cd heft
 cargo build --release
 install -Dm755 target/release/heft ~/.local/bin/heft
+```
+
+From a clone, without installing:
+
+```sh
+cargo run --release -- --once
 ```
 
 Linux only. Reads `/proc`, `/sys/class/drm`, and (when reachable) Docker or

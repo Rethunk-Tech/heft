@@ -14,22 +14,15 @@ Linux process tree from `/proc` and DRM fdinfo: **Host → User (Applications,
 User Services, Containers) → System**. Observe-only; blank metrics on
 `EACCES`. Docker/Podman workloads never bill to `dockerd`.
 
+## Quick start
+
 ```sh
 cargo run --release -- --once
 ```
 
-## Installation
+Install, keys, XDG, rules: [HUMANS.md](HUMANS.md).
 
-```sh
-brew install rethunk-tech/tap/heft
-```
-
-```sh
-cargo install --git https://github.com/Rethunk-Tech/heft
-```
-
-Musl binaries: [latest release](https://github.com/Rethunk-Tech/heft/releases/latest).
-Flags: `heft --help`. Install, keys, XDG, rules: [HUMANS.md](HUMANS.md).
+## Documentation
 
 | Doc | Purpose |
 | --- | --- |

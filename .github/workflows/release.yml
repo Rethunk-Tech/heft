@@ -139,6 +139,21 @@ jobs:
           sha256sum -- * > ../SHA256SUMS
           mv ../SHA256SUMS .
 
+      # Detached signature over SHA256SUMS; the Homebrew tap and Scoop bucket verify it against the pinned
+      # fingerprint (see SECURITY.md).
+      - name: Sign SHA256SUMS
+        env:
+          RELEASE_GPG_KEY: ${{ secrets.RELEASE_GPG_KEY }}
+        run: |
+          set -euo pipefail
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
+          install -d -m 700 "$GNUPGHOME"
+          trap 'gpgconf --kill all >/dev/null 2>&1 || true; rm -rf "$GNUPGHOME"' EXIT
+          printf '%s\n' "$RELEASE_GPG_KEY" | gpg --batch --quiet --import
+          fpr=$(gpg --with-colons --list-secret-keys | awk -F: '/^fpr/{print $10; exit}')
+          gpg --batch --yes --local-user "$fpr" --armor --detach-sign -o dist/SHA256SUMS.asc dist/SHA256SUMS
+          gpg --batch --verify dist/SHA256SUMS.asc dist/SHA256SUMS
+
       # Signs a statement that these exact digests came out of this workflow at
       # this commit, so `gh attestation verify` answers the question a
       # published .sha256 cannot: the checksum proves the download was not

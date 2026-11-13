@@ -202,6 +202,9 @@ pub(crate) fn process_metrics(
     elapsed: Duration,
     consts: &HostHeader,
 ) -> Metrics {
+    // A pid reused since the last tick is another process; its counters are
+    // not a continuation of the old one's.
+    let prev = prev.filter(|p| p.starttime_ticks == cur.starttime_ticks);
     let secs = elapsed.as_secs_f64().max(1e-6);
     let cores = f64::from(consts.nproc.max(1));
     let (core, machine) = match prev {
@@ -485,6 +488,32 @@ mod tests {
             "{:?}",
             m.compute_pct
         );
+    }
+
+    /// A pid reused between ticks is a new process: its whole lifetime of CPU
+    /// and disk is not one interval's work, so it reads like a first sample.
+    #[test]
+    fn a_reused_pid_is_not_billed_against_the_process_it_replaced() {
+        let consts = HostHeader {
+            nproc: 1,
+            clk_tck: 100,
+            page_size: 4096,
+        };
+        let old = Process {
+            starttime_ticks: Some(1_000),
+            utime: 10,
+            read_bytes: Some(4096),
+            ..Process::default()
+        };
+        let new = Process {
+            starttime_ticks: Some(9_000),
+            utime: 500,
+            read_bytes: Some(40 << 20),
+            ..Process::default()
+        };
+        let m = process_metrics(Some(&old), &new, Duration::from_secs(1), &consts);
+        assert_eq!(m.cpu_core_pct, 0.0);
+        assert_eq!(m.disk_r_bps, None);
     }
 
     /// The whole point of `btime`: `starttime` is ticks since boot, and

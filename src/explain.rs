@@ -304,9 +304,7 @@ fn explain_doc<'a>(
         visible,
         place: found.map(|f| f.path.as_str()),
         identity: found.map(|f| f.ident.as_str()),
-        rules: process
-            .map(|p| matched_rules(rules, p, ident))
-            .unwrap_or_default(),
+        rules: process.map_or_default(|p| matched_rules(rules, p, ident)),
     }
 }
 

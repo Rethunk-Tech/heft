@@ -906,8 +906,7 @@ pub(crate) fn detail(pid: u32) -> Vec<(&'static str, String)> {
     let uid = parse_uid(status.as_bytes());
     let argv = dir
         .as_ref()
-        .map(|d| read_cmdline(d, &mut buf).join(" "))
-        .unwrap_or_default();
+        .map_or_default(|d| read_cmdline(d, &mut buf).join(" "));
     vec![
         ("PID", pid.to_string()),
         ("PPID", field("PPid:")),

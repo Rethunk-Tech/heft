@@ -14,7 +14,7 @@ static ROOT: OnceLock<String> = OnceLock::new();
 /// Set the prefix. Called once, before any sampling. A trailing slash is
 /// dropped so `path()` never produces a doubled separator.
 pub fn init(root: Option<&str>) {
-    let _ = ROOT.set(root.map(trimmed).unwrap_or_default().to_string());
+    let _ = ROOT.set(root.map_or_default(trimmed).to_string());
 }
 
 fn trimmed(given: &str) -> &str {

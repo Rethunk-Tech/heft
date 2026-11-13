@@ -80,7 +80,7 @@ pub(crate) const COLUMNS: &[Column] = &[
         label: "threads",
         header: "THR",
         width: 5,
-        fmt: |_, _, m| m.threads.map(|t| t.to_string()).unwrap_or_default(),
+        fmt: |_, _, m| m.threads.map_or_default(|t| t.to_string()),
         pct: false,
         stall: false,
         key: Some(|_, m| opt_u(m.threads)),
@@ -91,7 +91,7 @@ pub(crate) const COLUMNS: &[Column] = &[
         label: "fds",
         header: "FD",
         width: 5,
-        fmt: |_, _, m| m.fds.map(|n| n.to_string()).unwrap_or_default(),
+        fmt: |_, _, m| m.fds.map_or_default(|n| n.to_string()),
         pct: false,
         stall: false,
         key: Some(|_, m| opt_u(m.fds)),
@@ -110,7 +110,7 @@ pub(crate) const COLUMNS: &[Column] = &[
         label: "state",
         header: "STATE",
         width: 5,
-        fmt: |_, _, m| m.state.map(String::from).unwrap_or_default(),
+        fmt: |_, _, m| m.state.map_or_default(String::from),
         pct: false,
         stall: false,
         key: Some(|_, m| m.state.map(|c| f64::from(u32::from(c)))),
@@ -1253,14 +1253,13 @@ fn fmt_cg_mem(m: &Metrics) -> String {
 }
 
 fn fmt_rate(n: Option<f64>) -> String {
-    n.map(|v| {
+    n.map_or_default(|v| {
         if v <= 0.0 {
             "0".into()
         } else {
             format!("{}/s", scale_1024(v).unwrap_or_else(|| format!("{v:.0}")))
         }
     })
-    .unwrap_or_default()
 }
 /// One unit, largest that fits: `45s`, `12m`, `3h`, `9d`. A duration is read
 /// at a glance to place a process in time, so the coarse unit is the whole
@@ -1289,7 +1288,7 @@ pub(crate) fn fmt_pct(v: f64) -> String {
 }
 
 fn fmt_opt_pct(v: Option<f64>) -> String {
-    v.map(fmt_pct).unwrap_or_default()
+    v.map_or_default(fmt_pct)
 }
 
 #[cfg(test)]

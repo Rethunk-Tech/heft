@@ -233,14 +233,13 @@ impl ContainerIndex {
             .or_else(|| workdir.as_deref().and_then(|p| owner_of(Path::new(p))))
             .or_else(|| {
                 inspect
-                    .map(|i| i.mounts.as_slice())
-                    .unwrap_or_default()
+                    .map_or_default(|i| i.mounts.as_slice())
                     .iter()
                     .filter(|m| m.kind.as_deref() == Some("bind"))
                     .filter_map(|m| owner_of(Path::new(m.source.as_deref()?)))
                     .find(|&uid| uid != 0)
             });
-        let ips = inspect.map(Inspect::ips).unwrap_or_default();
+        let ips = inspect.map_or_default(Inspect::ips);
         let running = inspect
             .and_then(|i| i.state.as_ref())
             .and_then(|s| s.running)

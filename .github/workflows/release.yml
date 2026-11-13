@@ -38,7 +38,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: Rethunk-Tech/gh-actions/setup-rust@00f86ab1d379ecfb8d7d5b5cfa6e21a2722ac159 # v1.25
+      - uses: Rethunk-Tech/gh-actions/setup-rust@4c3240b9077c81a6f03f499dafaec6494220aad5 # v1.27
         with:
           toolchain: stable
           targets: ${{ matrix.target }}

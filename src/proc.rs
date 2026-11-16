@@ -1275,6 +1275,20 @@ mod tests {
     }
 
     #[test]
+    fn humans_labels_include_cgmem() {
+        let text = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/HUMANS.md"));
+        let list = text
+            .split("Labels:")
+            .nth(1)
+            .and_then(|s| s.split("`--sort`").next())
+            .expect("HUMANS.md Labels list");
+        assert!(
+            list.contains("`cgmem`"),
+            "HUMANS.md Labels omit cgmem: {list}"
+        );
+    }
+
+    #[test]
     fn stat_with_spaces_in_comm() {
         let mut tail = String::from("10 (my app) S 1 10 10 0 0 0 0 0 0 0 30 40");
         for _ in 0..20 {

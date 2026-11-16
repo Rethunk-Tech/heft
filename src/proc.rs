@@ -1131,7 +1131,7 @@ fn fixture_process(p: &Process) -> serde_json::Value {
         "exe": p.exe.as_deref().map(home_tilde),
         "cmdline": p.cmdline.iter().map(|a| home_tilde(a)).collect::<Vec<_>>(),
         "cgroup": &*p.cgroup,
-        "cwd": home_tilde(&p.cwd),
+        "cwd": cwd_tilde(&p.cwd),
     })
 }
 
@@ -1152,6 +1152,22 @@ pub(crate) fn home_tilde(s: &str) -> String {
     }
 }
 
+/// A cwd is one path, so only its start can be the home directory; `/mnt/home/user` is not `~`.
+fn cwd_tilde(s: &str) -> String {
+    let Some(home) = std::env::var("HOME")
+        .ok()
+        .filter(|h| h.len() > 1)
+        .map(|h| h.trim_end_matches('/').to_string())
+    else {
+        return s.to_string();
+    };
+    match s.strip_prefix(&home) {
+        Some("") => "~".into(),
+        Some(rest) if rest.starts_with('/') => format!("~{rest}"),
+        _ => s.to_string(),
+    }
+}
+
 /// `Facts` is `Copy` and borrows `cwd`, so a rewritten path is interned.
 pub(crate) fn home_tilde_ref(s: &str) -> &'static str {
     use std::collections::HashMap;
@@ -1164,7 +1180,7 @@ pub(crate) fn home_tilde_ref(s: &str) -> &'static str {
     if let Some(&v) = map.get(s) {
         return v;
     }
-    let v: &'static str = Box::leak(home_tilde(s).into_boxed_str());
+    let v: &'static str = Box::leak(cwd_tilde(s).into_boxed_str());
     map.insert(s.to_string(), v);
     v
 }
@@ -1261,6 +1277,9 @@ mod tests {
             .unwrap_or("/home");
         let sibling = format!("{parent}/user2/proj");
         assert_eq!(home_tilde(&sibling), sibling);
+        assert_eq!(cwd_tilde(&format!("{home}/src")), "~/src");
+        let mounted = format!("/mnt{home}/src");
+        assert_eq!(cwd_tilde(&mounted), mounted);
     }
 
     #[test]

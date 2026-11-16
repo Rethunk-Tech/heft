@@ -1153,36 +1153,19 @@ pub(crate) fn home_tilde(s: &str) -> String {
 }
 
 /// A cwd is one path, so only its start can be the home directory; `/mnt/home/user` is not `~`.
-fn cwd_tilde(s: &str) -> String {
+pub(crate) fn cwd_tilde(s: &str) -> Cow<'_, str> {
     let Some(home) = std::env::var("HOME")
         .ok()
         .filter(|h| h.len() > 1)
         .map(|h| h.trim_end_matches('/').to_string())
     else {
-        return s.to_string();
+        return Cow::Borrowed(s);
     };
     match s.strip_prefix(&home) {
-        Some("") => "~".into(),
-        Some(rest) if rest.starts_with('/') => format!("~{rest}"),
-        _ => s.to_string(),
+        Some("") => Cow::Borrowed("~"),
+        Some(rest) if rest.starts_with('/') => Cow::Owned(format!("~{rest}")),
+        _ => Cow::Borrowed(s),
     }
-}
-
-/// `Facts` is `Copy` and borrows `cwd`, so a rewritten path is interned.
-pub(crate) fn home_tilde_ref(s: &str) -> &'static str {
-    use std::collections::HashMap;
-    use std::sync::{Mutex, OnceLock};
-    static MAP: OnceLock<Mutex<HashMap<String, &'static str>>> = OnceLock::new();
-    let mut map = MAP
-        .get_or_init(|| Mutex::new(HashMap::new()))
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if let Some(&v) = map.get(s) {
-        return v;
-    }
-    let v: &'static str = Box::leak(cwd_tilde(s).into_boxed_str());
-    map.insert(s.to_string(), v);
-    v
 }
 
 /// `--fixture`: the fields grouping reads, in the shape `tests/grouping.rs`
@@ -1280,6 +1263,20 @@ mod tests {
         assert_eq!(cwd_tilde(&format!("{home}/src")), "~/src");
         let mounted = format!("/mnt{home}/src");
         assert_eq!(cwd_tilde(&mounted), mounted);
+    }
+
+    #[test]
+    fn cwd_tilde_owns_a_home_child_and_borrows_a_mounted_path() {
+        let home = std::env::var("HOME").expect("HOME is set");
+        let home = home.trim_end_matches('/');
+        let under_home = format!("{home}/x");
+        let rewritten = cwd_tilde(&under_home);
+        assert_eq!(rewritten, "~/x");
+        assert!(matches!(rewritten, Cow::Owned(_)));
+        let foreign = "/mnt/home/u/x";
+        let unchanged = cwd_tilde(foreign);
+        assert_eq!(unchanged, foreign);
+        assert!(matches!(unchanged, Cow::Borrowed(_)));
     }
 
     #[test]

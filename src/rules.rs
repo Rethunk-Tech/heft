@@ -32,6 +32,7 @@
 //!   tree to that editor, matched by `exe` path rather than PPID so a real app
 //!   started from its terminal keeps its row.
 use serde::Deserialize;
+use std::borrow::Cow;
 use std::collections::{BTreeMap, HashSet};
 
 use crate::types::Folder;
@@ -335,14 +336,15 @@ pub struct LoadedFile {
 }
 
 /// What one process looks like to the engine. Borrowed, never lowercased.
-#[derive(Default, Clone, Copy)]
+/// `cwd` owns a `~/` rewrite of `$HOME`; other paths borrow the process.
+#[derive(Default, Clone)]
 pub struct Facts<'a> {
     pub comm: &'a str,
     pub name: &'a str,
     pub exe: Option<&'a str>,
     pub argv: &'a [String],
     pub cgroup: &'a str,
-    pub cwd: &'a str,
+    pub cwd: Cow<'a, str>,
     pub unit: Option<&'a str>,
     pub script: Option<&'a str>,
     pub identity: Option<&'a str>,
@@ -1060,7 +1062,7 @@ impl Subject {
             exe: ex.exe.as_deref(),
             argv: &ex.cmdline,
             cgroup: &ex.cgroup,
-            cwd: crate::proc::home_tilde_ref(&ex.cwd),
+            cwd: crate::proc::cwd_tilde(&ex.cwd),
             unit: ex.unit.as_deref().or(self.unit.as_deref()),
             script: self.script.as_deref(),
             identity: ex.identity.as_deref(),
@@ -1132,7 +1134,7 @@ fn eval(t: &Test, f: &Facts) -> bool {
             Field::Exe => f.exe.is_some_and(|e| hit(*o, pats, e)),
             Field::Arg => f.argv.iter().any(|a| hit(*o, pats, a)),
             Field::Cgroup => hit(*o, pats, f.cgroup),
-            Field::Cwd => !f.cwd.is_empty() && hit(*o, pats, f.cwd),
+            Field::Cwd => !f.cwd.is_empty() && hit(*o, pats, &f.cwd),
             Field::Unit => f.unit.is_some_and(|u| hit(*o, pats, u)),
             Field::Script => f.script.is_some_and(|s| hit(*o, pats, s)),
             Field::Identity => f.identity.is_some_and(|s| hit(*o, pats, s)),
@@ -1153,7 +1155,7 @@ fn eval(t: &Test, f: &Facts) -> bool {
                 Field::Identity => f.identity.is_some_and(one),
                 Field::Container => f.container.is_some_and(one),
                 Field::Cgroup => one(f.cgroup),
-                Field::Cwd => !f.cwd.is_empty() && one(f.cwd),
+                Field::Cwd => !f.cwd.is_empty() && one(&f.cwd),
             }
         }
         Test::All(v) => v.iter().all(|t| eval(t, f)),
@@ -1449,7 +1451,7 @@ mod tests {
                     exe: Some(hay),
                     argv: &argv,
                     cgroup: hay,
-                    cwd: hay,
+                    cwd: hay.into(),
                     unit: Some(hay),
                     script: Some(hay),
                     identity: (key != "container").then_some(hay),
@@ -1577,7 +1579,7 @@ mod tests {
             r.classes(&Facts {
                 comm: "make",
                 name: "make",
-                cwd,
+                cwd: cwd.into(),
                 ..Facts::default()
             })
             .names()
@@ -1603,7 +1605,7 @@ mod tests {
             r.classes(&Facts {
                 comm: "x",
                 name: "x",
-                cwd,
+                cwd: cwd.into(),
                 ..Facts::default()
             })
             .names()
@@ -1853,7 +1855,7 @@ mod tests {
             exe: Some("/usr/bin/gjs-console"),
             argv: &argv,
             cgroup: "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-x.scope",
-            cwd: "~/src/heft",
+            cwd: "~/src/heft".into(),
             unit: Some("app-org.chromium.Chromium-1.scope"),
             ..Facts::default()
         };

@@ -217,8 +217,8 @@ fn matched_rules(rules: &Rules, p: &Process, ident: &str) -> Vec<MatchedRule> {
                 ..Facts::default()
             },
         ),
-        (Stage::Class, "class", process),
-        (Stage::Session, "session", process),
+        (Stage::Class, "class", process.clone()),
+        (Stage::Session, "session", process.clone()),
         (Stage::App, "app", process),
         (
             Stage::Placement,
@@ -257,8 +257,8 @@ fn trace(rules: &Rules, p: Option<&Process>, ident: &str) -> Vec<String> {
                 ..Facts::default()
             },
         ),
-        (Stage::Class, "class", process),
-        (Stage::Session, "session", process),
+        (Stage::Class, "class", process.clone()),
+        (Stage::Session, "session", process.clone()),
         (Stage::App, "app", process),
         (
             Stage::Placement,

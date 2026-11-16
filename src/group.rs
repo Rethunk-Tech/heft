@@ -106,7 +106,7 @@ pub(crate) fn facts_of<'p>(p: &'p Process, unit: Option<&'p str>) -> Facts<'p> {
         exe: p.exe.as_deref(),
         argv: &p.cmdline,
         cgroup: &p.cgroup,
-        cwd: proc::home_tilde_ref(&p.cwd),
+        cwd: proc::cwd_tilde(&p.cwd),
         unit,
         script: None,
         identity: None,

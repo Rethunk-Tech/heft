@@ -1121,6 +1121,54 @@ pub(crate) fn sample_placement() -> HostTree {
     )
 }
 
+fn fixture_process(p: &Process) -> serde_json::Value {
+    serde_json::json!({
+        "pid": p.pid,
+        "ppid": p.ppid,
+        "pgrp": p.pgrp,
+        "uid": p.uid,
+        "comm": p.comm,
+        "exe": p.exe.as_deref().map(home_tilde),
+        "cmdline": p.cmdline.iter().map(|a| home_tilde(a)).collect::<Vec<_>>(),
+        "cgroup": &*p.cgroup,
+        "cwd": home_tilde(&p.cwd),
+    })
+}
+
+/// `$HOME` → `~`, `$HOME/…` → `~/…`. A sibling of HOME (`/home/user2`) is
+/// left alone: only an exact match or a `/` after HOME rewrites.
+pub(crate) fn home_tilde(s: &str) -> String {
+    let Some(home) = std::env::var("HOME")
+        .ok()
+        .filter(|h| h.len() > 1)
+        .map(|h| h.trim_end_matches('/').to_string())
+    else {
+        return s.to_string();
+    };
+    if s == home {
+        "~".into()
+    } else {
+        s.replace(&format!("{home}/"), "~/")
+    }
+}
+
+/// `Facts` is `Copy` and borrows `cwd`, so a rewritten path is interned.
+pub(crate) fn home_tilde_ref(s: &str) -> &'static str {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+    static MAP: OnceLock<Mutex<HashMap<String, &'static str>>> = OnceLock::new();
+    let mut map = MAP
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some(&v) = map.get(s) {
+        return v;
+    }
+    let v: &'static str = Box::leak(home_tilde(s).into_boxed_str());
+    map.insert(s.to_string(), v);
+    v
+}
+
 /// `--fixture`: the fields grouping reads, in the shape `tests/grouping.rs`
 /// loads, so a wrong row reported from a desktop heft has never run on becomes
 /// a regression test verbatim. A screenshot or `--json` carries none of exe,
@@ -1135,34 +1183,12 @@ pub fn print_fixture() -> Result<(), crate::types::Error> {
     use std::io::Write;
     let consts = cpu::host_consts();
     let procs = WalkPool::new(usize::MAX).collect(false, false, None);
-    let home = std::env::var("HOME")
-        .ok()
-        .filter(|h| h.len() > 1)
-        .map(|h| format!("{}/", h.trim_end_matches('/')));
-    let tilde = |s: &str| {
-        home.as_deref()
-            .map_or_else(|| s.to_string(), |h| s.replace(h, "~/"))
-    };
     let mut rows: Vec<&Process> = procs
         .values()
         .filter(|p| !crate::identity::is_kernel(p))
         .collect();
     rows.sort_by_key(|p| p.pid);
-    let processes: Vec<serde_json::Value> = rows
-        .iter()
-        .map(|p| {
-            serde_json::json!({
-                "pid": p.pid,
-                "ppid": p.ppid,
-                "pgrp": p.pgrp,
-                "uid": p.uid,
-                "comm": p.comm,
-                "exe": p.exe.as_deref().map(tilde),
-                "cmdline": p.cmdline.iter().map(|a| tilde(a)).collect::<Vec<_>>(),
-                "cgroup": &*p.cgroup,
-            })
-        })
-        .collect();
+    let processes: Vec<serde_json::Value> = rows.iter().map(|p| fixture_process(p)).collect();
     let doc = serde_json::json!({
         "nproc": consts.nproc,
         "clk_tck": consts.clk_tck,
@@ -1221,6 +1247,31 @@ mod tests {
         assert_eq!(carried, 8);
         assert!(!carries_identity(&prev, 6, "bash", Some("/usr/bin/sleep")));
         assert!(!carries_identity(&prev, 6, "sleep", Some("/usr/bin/bash")));
+    }
+
+    #[test]
+    fn home_tilde_rewrites_home_and_leaves_a_sibling() {
+        let home = std::env::var("HOME").expect("HOME is set");
+        let home = home.trim_end_matches('/');
+        assert_eq!(home_tilde(home), "~");
+        assert_eq!(home_tilde(&format!("{home}/src")), "~/src");
+        let parent = std::path::Path::new(home)
+            .parent()
+            .and_then(|p| p.to_str())
+            .unwrap_or("/home");
+        let sibling = format!("{parent}/user2/proj");
+        assert_eq!(home_tilde(&sibling), sibling);
+    }
+
+    #[test]
+    fn fixture_process_json_includes_rewritten_cwd() {
+        let home = std::env::var("HOME").expect("HOME is set");
+        let p = Process {
+            cwd: format!("{}/proj", home.trim_end_matches('/')).into(),
+            ..Default::default()
+        };
+        let row = fixture_process(&p);
+        assert_eq!(row["cwd"], "~/proj");
     }
 
     #[test]

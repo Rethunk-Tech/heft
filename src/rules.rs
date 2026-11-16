@@ -1060,7 +1060,7 @@ impl Subject {
             exe: ex.exe.as_deref(),
             argv: &ex.cmdline,
             cgroup: &ex.cgroup,
-            cwd: &ex.cwd,
+            cwd: crate::proc::home_tilde_ref(&ex.cwd),
             unit: ex.unit.as_deref().or(self.unit.as_deref()),
             script: self.script.as_deref(),
             identity: ex.identity.as_deref(),
@@ -1635,6 +1635,41 @@ mod tests {
         assert!(r.problems.is_empty(), "{:?}", r.problems);
         let report = r.report(&r);
         assert_eq!(report.failed, 0, "{:?}", report.lines);
+    }
+
+    #[test]
+    fn a_process_cwd_under_home_matches_a_tilde_prefix_rule() {
+        let home = std::env::var("HOME").expect("HOME is set");
+        let r = Rules::from_files(&[file(
+            "90-cwd.json",
+            r#"{"stage":"class","rules":[{"id":"t","match":{"cwd_prefix":"~/"},"classes":["noise"]}]}"#,
+        )]);
+        assert!(r.problems.is_empty(), "{:?}", r.problems);
+        let proc_at = |cwd: String| crate::types::Process {
+            comm: "make".into(),
+            cwd: cwd.into(),
+            ..crate::types::Process::default()
+        };
+        let under = proc_at(format!("{home}/src/foo"));
+        let f = crate::group::facts_of(&under, None);
+        assert_eq!(f.cwd, "~/src/foo");
+        assert_eq!(r.classes(&f).names(), ["noise"]);
+        let at_home = proc_at(home.clone());
+        let f = crate::group::facts_of(&at_home, None);
+        assert_eq!(f.cwd, "~");
+        assert!(r.classes(&f).names().is_empty(), "exact HOME is ~, not ~/");
+        let parent = std::path::Path::new(&home)
+            .parent()
+            .and_then(|p| p.to_str())
+            .unwrap_or("/home");
+        let sibling = proc_at(format!("{parent}/user2/proj"));
+        let f = crate::group::facts_of(&sibling, None);
+        assert_eq!(f.cwd, format!("{parent}/user2/proj"));
+        assert!(
+            r.classes(&f).names().is_empty(),
+            "a sibling of HOME must not rewrite: {}",
+            f.cwd
+        );
     }
 
     #[test]

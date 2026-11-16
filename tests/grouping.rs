@@ -37,6 +37,8 @@ struct ProcFix {
     cmdline: Vec<String>,
     cgroup: String,
     #[serde(default)]
+    cwd: String,
+    #[serde(default)]
     utime: u64,
     #[serde(default)]
     stime: u64,
@@ -65,6 +67,7 @@ fn load(path: &str, rules: &Rules) -> (PidMap<Process>, ContainerIndex, HostHead
                 exe: p.exe,
                 cmdline: p.cmdline.into(),
                 cgroup: p.cgroup.into(),
+                cwd: p.cwd.into(),
                 utime: p.utime,
                 stime: p.stime,
                 ..Process::default()
@@ -186,6 +189,29 @@ fn a_fixture_dump_loads_as_a_fixture() {
         String::from_utf8_lossy(&out.stderr)
     );
     std::fs::write(&path, &out.stdout).unwrap();
+    let dump: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(
+        dump["processes"]
+            .as_array()
+            .expect("processes")
+            .iter()
+            .all(|p| p.get("cwd").is_some()),
+        "fixture dump includes cwd"
+    );
+    let fix: Fixture = serde_json::from_slice(&out.stdout).unwrap();
+    let (procs, _, _) = load(path.to_str().unwrap(), &Rules::builtin());
+    assert!(
+        fix.processes.iter().any(|p| !p.cwd.is_empty()),
+        "fixture dump rewrites at least one cwd"
+    );
+    for p in &fix.processes {
+        assert_eq!(
+            procs[&p.pid].cwd.as_ref(),
+            p.cwd.as_str(),
+            "pid {} cwd round-trips",
+            p.pid
+        );
+    }
     let tree = tree_of(path.to_str().unwrap(), &Rules::builtin());
     std::fs::remove_file(&path).unwrap();
     assert!(

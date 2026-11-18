@@ -10,9 +10,12 @@
 
 ---
 
-Linux process tree from `/proc` and DRM fdinfo: **Host → User (Applications,
-User Services, Containers) → System**. Observe-only; blank metrics on
-`EACCES`. Docker/Podman workloads never bill to `dockerd`.
+## Highlights
+
+- Linux process tree from `/proc` and DRM fdinfo: **Host → User (Applications,
+  User Services, Containers) → System**
+- Observe-only; blank metrics on `EACCES`
+- Docker/Podman workloads never bill to `dockerd`
 
 ## Quick start
 
@@ -32,5 +35,7 @@ Install, keys, XDG, rules: [HUMANS.md](HUMANS.md).
 | [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | Expected conduct |
 | [SECURITY.md](SECURITY.md) | Observe-only boundary and disclosure |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes |
+
+## License
 
 Apache-2.0. See [LICENSE](LICENSE).

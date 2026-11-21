@@ -8,6 +8,7 @@
 
 ### Fixed
 
+- The test gate fails when a test target does not build, and runs every `tests/*.rs` binary instead of a hand-kept list.
 - A rule's `cwd` match sees a leading home directory as `~/`, and only a leading one, without leaking the real path.
 - A reused pid's lifetime CPU counters are no longer billed as one interval.
 

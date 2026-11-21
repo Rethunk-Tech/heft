@@ -2,14 +2,9 @@
 
 use num_traits::ToPrimitive;
 
-const TWO_POW_32: f64 = 4_294_967_296.0;
-
-/// `n` as the nearest f64, the rounding an `as` cast gives: both halves are exact in f64, so the one addition rounds
-/// once.
+/// `n` as the nearest f64, the rounding an `as` cast gives.
 pub fn f64_of(n: u64) -> f64 {
-    let hi = u32::try_from(n >> 32).unwrap_or(u32::MAX);
-    let lo = u32::try_from(n & u64::from(u32::MAX)).unwrap_or(u32::MAX);
-    f64::from(hi) * TWO_POW_32 + f64::from(lo)
+    n.to_f64().unwrap_or(f64::MAX)
 }
 
 pub fn f64_of_usize(n: usize) -> f64 {
@@ -38,23 +33,6 @@ pub fn sat_usize(f: f64) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn f64_of_matches_the_as_cast_at_the_edges() {
-        for n in [
-            0u64,
-            1,
-            (1 << 53) + 1,
-            (1 << 53) + 3,
-            u64::MAX,
-            u64::MAX - 1,
-            0xFFFF_FFFF,
-            0x1_0000_0000,
-            12_345_678_901_234_567,
-        ] {
-            assert_eq!(f64_of(n).to_bits(), n.to_f64().unwrap().to_bits(), "{n}");
-        }
-    }
 
     #[test]
     fn saturating_float_conversions_follow_as_cast_semantics() {

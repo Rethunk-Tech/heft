@@ -129,9 +129,13 @@ publish() {
   local rel="https://github.com/$repo/releases/download/$tag"
   published() { hex64 "$(curl -fsSL "$rel/$1.sha256" | cut -d' ' -f1)"; }
   set_pkgver heft-bin
-  set_sum sha256sums "$(published heft-completions-man.tar.gz)" "$aur/heft-bin/PKGBUILD"
-  set_sum sha256sums_x86_64 "$(published heft-x86_64-unknown-linux-musl)" "$aur/heft-bin/PKGBUILD"
-  set_sum sha256sums_aarch64 "$(published heft-aarch64-unknown-linux-musl)" "$aur/heft-bin/PKGBUILD"
+  local s
+  s=$(published heft-completions-man.tar.gz) || exit
+  set_sum sha256sums "$s" "$aur/heft-bin/PKGBUILD"
+  s=$(published heft-x86_64-unknown-linux-musl) || exit
+  set_sum sha256sums_x86_64 "$s" "$aur/heft-bin/PKGBUILD"
+  s=$(published heft-aarch64-unknown-linux-musl) || exit
+  set_sum sha256sums_aarch64 "$s" "$aur/heft-bin/PKGBUILD"
   srcinfo heft-bin
   git add "$aur/heft-bin"
   git diff --cached --quiet || git commit -q -m "chore(aur): heft-bin $version"

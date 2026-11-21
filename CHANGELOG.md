@@ -4,7 +4,8 @@
 
 ### Fixed
 
-- The `heft-bin` AUR package names its x86_64 download with `$CARCH` (pkgrel 2).
+- `release.sh publish` stops when a release checksum is missing instead of writing an empty sum into `heft-bin`.
+- The `heft-bin` AUR package names its x86_64 download `heft-$pkgver-x86_64` again, so `.SRCINFO` does not depend on the machine that generated it.
 
 ## 0.13.0 - 2026-11-21
 

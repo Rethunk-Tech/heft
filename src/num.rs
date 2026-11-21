@@ -11,11 +11,6 @@ pub fn f64_of_usize(n: usize) -> f64 {
     f64_of(u64::try_from(n).unwrap_or(u64::MAX))
 }
 
-/// Saturates at `u64::MAX`, which only a nanosecond count of centuries reaches.
-pub fn f64_of_u128(n: u128) -> f64 {
-    f64_of(u64::try_from(n).unwrap_or(u64::MAX))
-}
-
 /// `f` truncated toward zero and clamped into the type: NaN and anything at or below zero is 0, anything past the top
 /// is the maximum.
 pub fn sat_u64(f: f64) -> u64 {

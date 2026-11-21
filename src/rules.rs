@@ -172,6 +172,13 @@ bitflags::bitflags! {
     }
 }
 
+fn lowered_names<F: bitflags::Flags>(flags: F) -> Vec<String> {
+    flags
+        .iter_names()
+        .map(|(n, _)| n.to_ascii_lowercase())
+        .collect()
+}
+
 impl Classes {
     fn of(cs: &[Class]) -> Self {
         cs.iter()
@@ -180,9 +187,7 @@ impl Classes {
     }
     #[must_use]
     pub fn names(self) -> Vec<String> {
-        self.iter_names()
-            .map(|(n, _)| n.to_ascii_lowercase())
-            .collect()
+        lowered_names(self)
     }
 }
 
@@ -194,9 +199,7 @@ impl UnitFlags {
     }
     #[must_use]
     pub fn names(self) -> Vec<String> {
-        self.iter_names()
-            .map(|(n, _)| n.to_ascii_lowercase())
-            .collect()
+        lowered_names(self)
     }
 }
 
@@ -2092,7 +2095,10 @@ mod tests {
                         };
                     }
                 }
-                let ns = crate::num::f64_of_u128(t.elapsed().as_nanos()) / f64::from(iters) / n;
+                let ns =
+                    crate::num::f64_of(u64::try_from(t.elapsed().as_nanos()).unwrap_or(u64::MAX))
+                        / f64::from(iters)
+                        / n;
                 let _ = write!(line, ", {label} {ns:.0} ns");
             }
             std::hint::black_box(acc);

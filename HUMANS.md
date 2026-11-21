@@ -50,7 +50,7 @@ builds the tag with its lockfile. Completions from a local build:
 [latest release](https://github.com/Rethunk-Tech/heft/releases/latest).
 
 ```sh
-cargo install --locked --git https://github.com/Rethunk-Tech/heft --tag v0.13.0
+cargo install --locked --git https://github.com/Rethunk-Tech/heft --tag "$(gh release view -R Rethunk-Tech/heft --json tagName -q .tagName)"
 ```
 
 ```sh

@@ -44,13 +44,13 @@ paru -S heft       # built from the release tag
 paru -S heft-git   # built from main
 ```
 
-Or build it. There is no crates.io package; `cargo install --git` is the
-same as the clone. Completions from a local build:
+Or build it. There is no crates.io package; `cargo install --locked --git`
+builds the tag with its lockfile. Completions from a local build:
 [CONTRIBUTING.md](CONTRIBUTING.md#setup). Musl binaries also sit on the
 [latest release](https://github.com/Rethunk-Tech/heft/releases/latest).
 
 ```sh
-cargo install --git https://github.com/Rethunk-Tech/heft
+cargo install --locked --git https://github.com/Rethunk-Tech/heft --tag v0.13.0
 ```
 
 ```sh

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## 0.13.0 - 2026-11-21
+
 ### Added
 
 - `SHA256SUMS` in GitHub releases is signed with the Rethunk.Tech release key.

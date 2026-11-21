@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- `SHA256SUMS` in GitHub releases is signed with the Rethunk.Tech release key.
+
+### Fixed
+
+- A rule's `cwd` match sees a leading home directory as `~/`, and only a leading one, without leaking the real path.
+- A reused pid's lifetime CPU counters are no longer billed as one interval.
+
 ## 0.12.6 - 2026-11-08
 
 ### Fixed

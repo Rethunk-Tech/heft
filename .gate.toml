@@ -38,3 +38,31 @@ run = "cargo deny --locked check advisories"
 # Dependencies declared and never used.
 [gates.machete]
 run = "cargo machete"
+
+# /proc and DRM fdinfo are architecture-neutral; check only, nothing links.
+[gates.cross-check]
+timeout = "5m"
+run = "cargo check --locked --all-targets --target aarch64-unknown-linux-gnu"
+
+# e2e: needs the 1.98 toolchain, which a dev machine does not carry by default.
+[gates.msrv]
+e2e = true
+timeout = "10m"
+run = "cargo +1.98 check --locked --all-targets"
+
+# e2e: pulls and runs an Alpine container.
+[gates.bare-container]
+e2e = true
+timeout = "10m"
+run = '''
+art=$(mktemp)
+cargo test --locked --target x86_64-unknown-linux-musl --test live_proc --no-run --message-format=json > "$art"
+bin=$(jq -r 'select(.target.name == "live_proc" and .executable != null) | .executable' "$art" | tail -n1)
+heft=$(jq -r 'select(.target.name == "heft" and .executable != null) | .executable' "$art" | tail -n1)
+test -n "$bin" && test -f "$heft"
+docker run --rm --network none \
+  -v "$bin:/live_proc:ro" \
+  -v "$(dirname "$heft"):$(dirname "$heft"):ro" \
+  alpine@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 \
+  /live_proc
+'''

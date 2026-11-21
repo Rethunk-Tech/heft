@@ -63,24 +63,18 @@ const AT_CLKTCK: u64 = 17;
 
 pub(crate) fn clk_tck() -> u64 {
     static V: OnceLock<u64> = OnceLock::new();
-    *V.get_or_init(|| auxv_at(AT_CLKTCK).unwrap_or_else(sysconf_clk_tck))
+    *V.get_or_init(|| auxv_at(AT_CLKTCK).unwrap_or_else(|| sysconf_u64(libc::_SC_CLK_TCK, 100)))
 }
 
 pub(crate) fn page_size() -> u64 {
     static V: OnceLock<u64> = OnceLock::new();
-    *V.get_or_init(|| auxv_at(AT_PAGESZ).unwrap_or_else(sysconf_page_size))
+    *V.get_or_init(|| auxv_at(AT_PAGESZ).unwrap_or_else(|| sysconf_u64(libc::_SC_PAGESIZE, 4096)))
 }
 
-fn sysconf_clk_tck() -> u64 {
+fn sysconf_u64(name: libc::c_int, fallback: u64) -> u64 {
     // SAFETY: sysconf is a pure query; a non-positive result is replaced.
-    let v = unsafe { libc::sysconf(libc::_SC_CLK_TCK) };
-    if v > 0 { v.cast_unsigned() } else { 100 }
-}
-
-fn sysconf_page_size() -> u64 {
-    // SAFETY: sysconf is a pure query; a non-positive result is replaced.
-    let v = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
-    if v > 0 { v.cast_unsigned() } else { 4096 }
+    let v = unsafe { libc::sysconf(name) };
+    if v > 0 { v.cast_unsigned() } else { fallback }
 }
 
 fn auxv_at(tag: u64) -> Option<u64> {

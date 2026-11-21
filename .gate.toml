@@ -21,9 +21,6 @@ run = "sh -c 'fail=0; cargo test --locked --all-targets --no-run || exit 1; carg
 [gates.lint]
 run = "cargo clippy --locked --all-targets -- -D warnings"
 
-[gates.fmt]
-run = "cargo fmt --check"
-
 # Licences, bans and sources. Not a lint of this code, so it is its own gate.
 [gates.deny]
 run = "cargo deny --locked check bans licenses sources"

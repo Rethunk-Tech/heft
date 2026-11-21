@@ -80,22 +80,26 @@ fn charmap_set(locale: &str) -> Set {
     }
 }
 
+fn pick(ascii_char: char, unicode_char: char) -> char {
+    if ascii() { ascii_char } else { unicode_char }
+}
+
 /// A filled bar segment, and the densest step of the ramp.
 pub(crate) fn full() -> char {
-    if ascii() { '#' } else { '█' }
+    pick('#', '█')
 }
 
 pub(crate) fn dark() -> char {
-    if ascii() { '=' } else { '▓' }
+    pick('=', '▓')
 }
 
 pub(crate) fn medium() -> char {
-    if ascii() { '+' } else { '▒' }
+    pick('+', '▒')
 }
 
 /// The unfilled tail of a bar. Never a segment: it has to read as absence.
 pub(crate) fn light() -> char {
-    if ascii() { '.' } else { '░' }
+    pick('.', '░')
 }
 
 /// Eight rising steps for a sparkline, lowest first. Every one is a single
@@ -116,12 +120,12 @@ pub(crate) fn spark_ramp() -> &'static [char; 8] {
 }
 
 pub(crate) fn rule() -> char {
-    if ascii() { '-' } else { '─' }
+    pick('-', '─')
 }
 
 /// One column, so the truncation width arithmetic is unchanged.
 pub(crate) fn ellipsis() -> char {
-    if ascii() { '~' } else { '…' }
+    pick('~', '…')
 }
 
 /// The four cursor keys, for the help overlay, and the right arrow `--explain`

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- The `heft-bin` AUR package names its x86_64 download with `$CARCH` (pkgrel 2).
+
 ## 0.13.0 - 2026-11-21
 
 ### Added

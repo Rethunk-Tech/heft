@@ -224,21 +224,31 @@ fn save_view_at(dir: &Path, view: &View) -> Result<(), Error> {
         .recursive(true)
         .mode(0o700)
         .create(dir)?;
-    fs::set_permissions(dir, fs::Permissions::from_mode(0o700))?;
-    let path = dir.join("view.json");
+    // A symlinked view.json is the user's arrangement: write through it, so
+    // the link survives the rename. A dangling link resolves to its target.
+    let link = dir.join("view.json");
+    let path = match fs::canonicalize(&link) {
+        Ok(real) => real,
+        Err(_) => match fs::read_link(&link) {
+            Ok(t) => dir.join(t),
+            Err(_) => link,
+        },
+    };
     let data = format!("{}{}\n", view_header(), serde_json::to_string_pretty(view)?);
     // Written beside the target and renamed over it, so a full disk or a kill
     // mid-write leaves the previous view.json whole rather than truncated.
     let tmp = path.with_extension("json.tmp");
+    // 0600 only for a file heft creates; an existing one keeps its mode.
+    let mode = fs::metadata(&path).map_or(0o600, |m| m.permissions().mode() & 0o7777);
     let written = (|| {
         let mut f = OpenOptions::new()
             .write(true)
             .create(true)
             .truncate(true)
-            .mode(0o600)
+            .mode(mode)
             .open(&tmp)?;
         f.write_all(data.as_bytes())?;
-        f.set_permissions(fs::Permissions::from_mode(0o600))?;
+        f.set_permissions(fs::Permissions::from_mode(mode))?;
         f.sync_all()?;
         fs::rename(&tmp, &path)
     })();
@@ -251,6 +261,38 @@ fn save_view_at(dir: &Path, view: &View) -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn save_writes_through_a_symlinked_view_and_keeps_existing_modes() {
+        use std::os::unix::fs::symlink;
+        let root = std::env::temp_dir().join(format!("heft-view-link-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let dir = root.join("cfg");
+        let store = root.join("store");
+        fs::create_dir_all(&dir).unwrap();
+        fs::create_dir_all(&store).unwrap();
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).unwrap();
+        let target = store.join("real.json");
+        fs::write(&target, "{}").unwrap();
+        symlink(&target, dir.join("view.json")).unwrap();
+        let view = View {
+            sort: "core".into(),
+            ..Default::default()
+        };
+        save_view_at(&dir, &view).unwrap();
+        assert!(
+            fs::symlink_metadata(dir.join("view.json"))
+                .unwrap()
+                .is_symlink()
+        );
+        let text = fs::read_to_string(&target).unwrap();
+        assert!(text.contains("\"sort\": \"core\""), "{text}");
+        assert_eq!(
+            fs::metadata(&dir).unwrap().permissions().mode() & 0o777,
+            0o755
+        );
+        fs::remove_dir_all(&root).unwrap();
+    }
 
     #[test]
     fn comments_are_blanked_without_moving_anything_else() {

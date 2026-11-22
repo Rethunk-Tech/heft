@@ -761,6 +761,18 @@ fn check_rules_passes_the_built_ins_and_fails_a_wrong_user_example() {
     assert!(!err.contains("error:"), "{err}");
 }
 
+/// The pattern is in heft's own argv, and in the shell's when run through one.
+/// A match there would keep heft's row for a pattern that names nothing else.
+#[test]
+fn filter_does_not_match_heft_own_argv() {
+    let out = heft(&["--json", "--filter", "zzq-no-such-process-zzq"])
+        .output()
+        .expect("run heft --json --filter");
+    let doc: serde_json::Value = serde_json::from_slice(&out.stdout).expect("json");
+    assert_eq!(doc["host"]["users"], serde_json::json!([]), "{doc}");
+    assert_eq!(doc["host"]["system"], serde_json::json!([]), "{doc}");
+}
+
 /// A rules file that cannot be read never ran its examples, so a clean exit
 /// would certify rules that are not in force. Invalid UTF-8 fails the read
 /// the same way for any user, root included.

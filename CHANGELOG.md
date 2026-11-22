@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- `--filter` no longer matches heft's own command line or its parent shells', so a pattern that names nothing else shows nothing.
 - `release.sh tag` finds the `## [Unreleased]` heading again.
 - `heft --check-rules` exits 1 when a rules file or directory cannot be read, as `HUMANS.md` says.
 - `release.sh publish` stops when a release checksum is missing instead of writing an empty sum into `heft-bin`.

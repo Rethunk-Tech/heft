@@ -794,7 +794,9 @@ fn prune_procs(procs: &mut Vec<ProcNode>, filter: &Filter) -> bool {
 /// match here does not keep a child that missed.
 fn proc_matches(filter: &Filter, proc: &ProcNode) -> bool {
     let mut text = String::from(&proc.name);
-    push_proc_lines(&mut text, &proc.cmdline, &proc.cwd);
+    if !is_invoker(proc.pid) {
+        push_proc_lines(&mut text, &proc.cmdline, &proc.cwd);
+    }
     filter.matches(&text)
 }
 
@@ -1014,9 +1016,42 @@ pub(crate) fn ident_haystack(ident: &IdentNode) -> String {
 /// one process's argv into its working directory, or into the next process.
 fn push_cmdlines(out: &mut String, procs: &[ProcNode]) {
     for p in procs {
-        push_proc_lines(out, &p.cmdline, &p.cwd);
+        if !is_invoker(p.pid) {
+            push_proc_lines(out, &p.cmdline, &p.cwd);
+        }
         push_cmdlines(out, &p.children);
     }
+}
+
+/// heft and the shells above it carry the typed `--filter` pattern in their
+/// own argv, so matching their argv would make every pattern find itself. They
+/// still match by name. Pid 1 is left out: its argv is a real target, not the
+/// command line that launched heft. Another machine's pids (`--proc-root`)
+/// are not ours.
+fn is_invoker(pid: u32) -> bool {
+    static CHAIN: std::sync::OnceLock<Vec<u32>> = std::sync::OnceLock::new();
+    CHAIN
+        .get_or_init(|| {
+            let mut chain = vec![];
+            if !crate::root::prefix().is_empty() {
+                return chain;
+            }
+            let mut p = std::process::id();
+            while p > 1 && !chain.contains(&p) {
+                chain.push(p);
+                let Ok(stat) = std::fs::read_to_string(format!("/proc/{p}/stat")) else {
+                    break;
+                };
+                // comm may hold spaces and parens: fields start after the last `)`.
+                p = stat
+                    .rsplit_once(')')
+                    .and_then(|(_, rest)| rest.split_whitespace().nth(1))
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(0);
+            }
+            chain
+        })
+        .contains(&pid)
 }
 
 fn push_proc_lines(out: &mut String, cmdline: &str, cwd: &str) {

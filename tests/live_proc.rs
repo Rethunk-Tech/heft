@@ -773,6 +773,27 @@ fn filter_does_not_match_heft_own_argv() {
     assert_eq!(doc["host"]["system"], serde_json::json!([]), "{doc}");
 }
 
+/// The usage-error contract: exit 129, `heft: ` first, clap's possible values
+/// kept, a repeated `--hide` refused, and a view flag no mode reads refused.
+#[test]
+fn usage_errors_keep_their_detail_and_refuse_ignored_flags() {
+    for (args, want) in [
+        (&["--glyphs", "foo"][..], "possible values: auto, unicode"),
+        (
+            &["--once", "--hide", "vram", "--hide", "vram"],
+            "listed more than once",
+        ),
+        (&["--check-rules", "--top", "3"], "cannot be used with"),
+        (&["--explain", "1", "--sort", "pss"], "cannot be used with"),
+    ] {
+        let out = heft(args).output().expect("run heft");
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert_eq!(out.status.code(), Some(129), "{args:?}: {err}");
+        assert!(err.starts_with("heft: "), "{args:?}: {err}");
+        assert!(err.contains(want), "{args:?}: {err}");
+    }
+}
+
 /// A rules file that cannot be read never ran its examples, so a clean exit
 /// would certify rules that are not in force. Invalid UTF-8 fails the read
 /// the same way for any user, root included.

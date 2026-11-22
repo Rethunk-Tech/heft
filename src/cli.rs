@@ -65,13 +65,13 @@ pub struct Cli {
     #[arg(long, value_enum, default_value_t = Glyphs::Auto, value_name = "SET")]
     pub glyphs: Glyphs,
     /// Say where this pid landed in the tree, the identity a placement rule keys on, and the rule per stage. --json is a small object, not the host tree
-    #[arg(long, value_name = "PID", conflicts_with_all = ["once", "follow"])]
+    #[arg(long, value_name = "PID", conflicts_with_all = ["once", "follow", "sort", "filter", "user", "top", "desc", "asc", "hide", "order"])]
     pub explain: Option<u32>,
     /// Print what grouping reads about every process, as a test fixture to attach to a grouping bug report
     #[arg(long, conflicts_with_all = ["once", "json", "follow", "explain"])]
     pub fixture: bool,
     /// Run the examples in every loaded rules.d file; exit 1 on a failure or a file that did not load
-    #[arg(long, conflicts_with_all = ["once", "json", "follow", "explain", "fixture", "trend"])]
+    #[arg(long, conflicts_with_all = ["once", "json", "follow", "explain", "fixture", "trend", "sort", "filter", "user", "top", "desc", "asc", "hide", "order"])]
     pub check_rules: bool,
     /// How TREND is drawn. `auto` asks the terminal and draws an image if it can
     #[arg(long, value_enum, default_value_t = Trend::Auto, value_name = "MODE", conflicts_with_all = ["once", "json"])]

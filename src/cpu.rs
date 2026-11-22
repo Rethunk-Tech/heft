@@ -203,7 +203,11 @@ pub(crate) fn process_metrics(
     let cores = f64::from(consts.nproc.max(1));
     let (core, machine) = match prev {
         Some(p) => {
-            let ticks = f64_of((cur.utime + cur.stime).saturating_sub(p.utime + p.stime));
+            let ticks = f64_of(
+                cur.utime
+                    .saturating_add(cur.stime)
+                    .saturating_sub(p.utime.saturating_add(p.stime)),
+            );
             let core = 100.0 * ticks / (f64_of(consts.clk_tck) * secs);
             (core, core / cores)
         }

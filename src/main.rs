@@ -127,8 +127,14 @@ fn resolve_view(cli: &Cli) -> heft::config::View {
     }
     // Adds to what the view hides rather than replacing it, or `--hide vram`
     // would bring back the stall columns a default view keeps out.
+    let mut hidden = std::collections::HashSet::new();
     for label in &cli.hide {
         let label = check_hide(label).to_string();
+        if !hidden.insert(label.clone()) {
+            usage(format!(
+                "invalid value '{label}' for '--hide <COLUMN>': listed more than once"
+            ))
+        }
         if !view.hide_columns.contains(&label) {
             view.hide_columns.push(label);
         }
@@ -191,14 +197,16 @@ fn clap_done(err: clap::Error) -> ExitCode {
 }
 
 fn clap_msg(err: &clap::Error) -> String {
+    // The first paragraph: the message and the possible values clap wraps under
+    // it, not the usage and tips after the blank line. `usage` joins the lines.
     let rendered = err.to_string();
-    let line = rendered
-        .lines()
-        .map(str::trim)
-        .find(|line| !line.is_empty())
+    let para = rendered
+        .trim_start()
+        .split("\n\n")
+        .next()
         .unwrap_or_default();
-    line.strip_prefix("error:")
-        .unwrap_or(line)
+    para.strip_prefix("error:")
+        .unwrap_or(para)
         .trim()
         .to_string()
 }

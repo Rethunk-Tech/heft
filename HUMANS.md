@@ -112,6 +112,9 @@ reads it. `--top`, `--hide` and `--order` are refused with `--json`; `--trend`
 with `--once` and `--json`. `--filter` is allowed with `--json`: matching
 processes and their ancestors stay; siblings that do not match drop; ancestors
 keep the totals they were built with. `--user` and `--top` are never saved.
+`--desc` / `--asc` set the sort direction whatever the saved view holds. The
+view flags (`--sort`, `--filter`, `--user`, `--top`, `--desc`, `--asc`, `--hide`,
+`--order`) are refused with `--explain` and `--check-rules`, which show no view.
 
 `--filter` / `/` is a regex, case-insensitive unless `(?-i)` (no Unicode
 classes). It matches name, each process's argv, and cwd, each on its own line.

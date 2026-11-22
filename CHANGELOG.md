@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- A usage error from clap keeps the possible values it lists, instead of cutting the message after its first line.
+- A column named twice with `--hide` is a usage error, as `--order` already was.
+- `--explain` and `--check-rules` refuse the view flags (`--sort`, `--filter`, `--user`, `--top`, `--desc`, `--asc`, `--hide`, `--order`) they used to ignore.
 - `--filter` no longer matches heft's own command line or its parent shells', so a pattern that names nothing else shows nothing.
 - `release.sh tag` finds the `## [Unreleased]` heading again.
 - `heft --check-rules` exits 1 when a rules file or directory cannot be read, as `HUMANS.md` says.

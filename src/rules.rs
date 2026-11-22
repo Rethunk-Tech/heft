@@ -375,6 +375,9 @@ pub struct Rules {
     stages: [Vec<Compiled>; 5],
     pub problems: Vec<Problem>,
     pub warnings: Vec<String>,
+    /// Leading `warnings` entries that are a directory or file heft could not
+    /// read: rules the user wrote that are not in force.
+    pub unreadable: usize,
     /// Files that compiled, with their examples, for `report`.
     files: Vec<(Source, String, Stage, Vec<Example>)>,
     /// Every `disable` entry, with the file and source label that carried it.
@@ -415,7 +418,12 @@ fn example_name(file: &str, ex: &Example, i: usize, source: &Source) -> String {
 /// Returns an error if stdout cannot be written.
 pub fn print_check() -> Result<bool, crate::types::Error> {
     use std::io::Write;
-    let r = Rules::load().report(&Rules::builtin());
+    let rules = Rules::load();
+    let mut r = rules.report(&Rules::builtin());
+    // `load` already printed these to stderr; they fail the check because a
+    // file that never loaded cannot have had its examples run.
+    r.failed += rules.unreadable;
+    r.files += rules.unreadable;
     let mut out = std::io::stdout().lock();
     // A line carries file names and example subjects, which are not ours.
     for l in &r.lines {
@@ -690,6 +698,7 @@ impl Rules {
             }
             files.extend(builtin_files());
             let mut r = Self::from_files(&files);
+            r.unreadable = warnings.len();
             r.warnings.splice(0..0, warnings);
             for p in &r.problems {
                 eprintln!("heft: skipping {} ({}): {}", p.file, p.source.label, p.what);
@@ -766,6 +775,7 @@ impl Rules {
             stages,
             problems,
             warnings,
+            unreadable: 0,
             files: kept_files,
             disabled,
         }

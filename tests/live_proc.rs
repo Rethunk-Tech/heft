@@ -761,6 +761,21 @@ fn check_rules_passes_the_built_ins_and_fails_a_wrong_user_example() {
     assert!(!err.contains("error:"), "{err}");
 }
 
+/// A rules file that cannot be read never ran its examples, so a clean exit
+/// would certify rules that are not in force. Invalid UTF-8 fails the read
+/// the same way for any user, root included.
+#[test]
+fn check_rules_fails_on_an_unreadable_rules_file() {
+    let dir = scratch("check-rules-unreadable");
+    std::fs::write(dir.join("90-bad.json"), [0xff, 0xfe]).expect("write rule");
+    let out = heft(&["--check-rules"])
+        .env("HEFT_RULES_PATH", &dir)
+        .output()
+        .expect("run heft --check-rules");
+    std::fs::remove_dir_all(&dir).ok();
+    assert_eq!(out.status.code(), Some(1), "{out:?}");
+}
+
 /// The trace names the user rule that matches the identity `--explain`
 /// itself reports, read off a first run so the test names no application.
 #[test]

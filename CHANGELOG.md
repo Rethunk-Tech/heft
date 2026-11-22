@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- `s` saves through a symlinked `view.json` instead of replacing the link, and sets `0600`/`0700` only on a file or directory it creates.
+- A column listed twice in `hide_columns` of `view.json` is warned about, as in `column_order`.
 - A usage error from clap keeps the possible values it lists, instead of cutting the message after its first line.
 - A column named twice with `--hide` is a usage error, as `--order` already was.
 - `--explain` and `--check-rules` refuse the view flags (`--sort`, `--filter`, `--user`, `--top`, `--desc`, `--asc`, `--hide`, `--order`) they used to ignore.

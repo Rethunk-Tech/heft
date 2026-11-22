@@ -331,7 +331,14 @@ impl Columns {
                     COLUMNS[0].label
                 );
             } else if let Some(c) = COLUMNS.iter().find(|c| c.label == label.as_str()) {
-                hidden.push(c.label);
+                if hidden.contains(&c.label) {
+                    eprintln!(
+                        "heft: ignoring duplicate column {label:?} in {}",
+                        path.display()
+                    );
+                } else {
+                    hidden.push(c.label);
+                }
             } else {
                 eprintln!(
                     "heft: ignoring unknown column {label:?} in {}",

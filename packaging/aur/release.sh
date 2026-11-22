@@ -85,9 +85,9 @@ tag_release() {
   [[ $(git rev-parse --abbrev-ref HEAD) == main ]] || die "not on main"
   git diff --quiet HEAD || die "uncommitted changes"
   git rev-parse -q --verify "refs/tags/$tag" >/dev/null && die "$tag already exists"
-  grep -q '^## Unreleased$' CHANGELOG.md || die "CHANGELOG.md has no '## Unreleased' section"
+  grep -q '^## \[Unreleased\]$' CHANGELOG.md || die "CHANGELOG.md has no '## [Unreleased]' section"
 
-  sed -i "s/^## Unreleased$/## $version - $(date -u +%F)/" CHANGELOG.md
+  sed -i "s/^## \[Unreleased\]$/## $version - $(date -u +%F)/" CHANGELOG.md
   sed -i "0,/^version = .*/s//version = \"$version\"/" Cargo.toml
   cargo update --offline --workspace --quiet
   git add CHANGELOG.md Cargo.toml Cargo.lock

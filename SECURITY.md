@@ -37,7 +37,7 @@ Failures that break observe-only or leak data heft should not need:
 Releases from the first one after this section landed carry `SHA256SUMS.asc`, a detached signature over `SHA256SUMS` made with the Rethunk.Tech release signing key. Earlier releases are unsigned.
 
 - Fingerprint: `827D 0553 6BF3 3C8F 634E  DBE3 E60A 9B0F 6E3F 276E`
-- Verify: `gpg --import rethunk-release-signing.pub.asc && gpg --verify SHA256SUMS.asc SHA256SUMS`
+- Verify: save the key block below as `rethunk-release-signing.pub.asc`, then `gpg --import rethunk-release-signing.pub.asc && gpg --verify SHA256SUMS.asc SHA256SUMS`
 
 ```text
 -----BEGIN PGP PUBLIC KEY BLOCK-----

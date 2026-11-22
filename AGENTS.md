@@ -46,7 +46,7 @@ tests/live_proc.rs   real /proc; must hold in a bare container
 tests/reconcile.rs   heft against /proc read independently
 tests/tty_restore.rs SIGTERM/SIGHUP on a pty: terminal restored, exit 128+signal
 tests/common/mod.rs  heft(), arr(), pids()
-tests/fixtures/      gui/ desktop snapshot, zygote/ fallback
+tests/fixtures/      gui/ desktop snapshot, zygote/ fallback, install-dir/ and appimage/ grouping by install location
 packaging/aur/       three PKGBUILDs + release.sh
 ```
 
